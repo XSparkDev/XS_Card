@@ -14,7 +14,7 @@ import { useColorScheme } from '../../context/ColorSchemeContext';
 import { generateVCard, generateFileName, generateMultipleVCards, generateBatchFileName } from '../../utils/vCardGenerator';
 
 // Define constant for free plan contact limit
-const FREE_PLAN_CONTACT_LIMIT = 3;
+const FREE_PLAN_CONTACT_LIMIT = 20;
 
 // Update interfaces to match Firestore structure
 interface Contact {

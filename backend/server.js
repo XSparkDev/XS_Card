@@ -308,7 +308,7 @@ app.post('/AddContact', async (req, res) => {
         }
 
         // Free plan contact limit
-        const FREE_PLAN_CONTACT_LIMIT = 3;
+        const FREE_PLAN_CONTACT_LIMIT = 20;
 
         // Check if free user has reached contact limit
         if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {

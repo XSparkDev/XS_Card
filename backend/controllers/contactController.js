@@ -3,7 +3,7 @@ const { transporter, sendMailWithStatus } = require('../public/Utils/emailServic
 const { formatDate } = require('../utils/dateFormatter');
 
 // Add constant for free plan limit
-const FREE_PLAN_CONTACT_LIMIT = 3;
+const FREE_PLAN_CONTACT_LIMIT = 20;
 
 exports.getAllContacts = async (req, res) => {
     try {

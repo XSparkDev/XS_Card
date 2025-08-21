@@ -304,21 +304,7 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {/* Deactivate Button */}
-        <TouchableOpacity
-          style={[styles.deactivateButton, deactivating && styles.deactivateButtonDisabled]}
-          onPress={handleDeactivateAccount}
-          disabled={deactivating}
-        >
-          {deactivating ? (
-            <ActivityIndicator size="small" color={COLORS.white} />
-          ) : (
-            <>
-              <MaterialIcons name="delete-forever" size={20} color={COLORS.white} />
-              <Text style={styles.deactivateButtonText}>Deactivate Account</Text>
-            </>
-          )}
-        </TouchableOpacity>
+
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -413,25 +399,6 @@ const styles = StyleSheet.create({
   },
   destructiveText: {
     color: COLORS.error,
-  },
-  deactivateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.error,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginTop: 24,
-    gap: 8,
-  },
-  deactivateButtonDisabled: {
-    opacity: 0.6,
-  },
-  deactivateButtonText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
   },
   bottomSpacing: {
     height: 40,

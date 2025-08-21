@@ -6,7 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from '../context/ColorSchemeContext';
-import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, testTokenExpiration, manuallyExpireToken } from '../utils/api';
+import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
 // Update this type to match your actual navigation type
@@ -278,31 +278,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Settings</Text>
             </TouchableOpacity>
 
-            {/* DEVELOPMENT ONLY: Test Token Expiration */}
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={async () => {
-                console.log('[Test] Testing token expiration...');
-                await testTokenExpiration();
-                setIsMenuVisible(false);
-              }}
-            >
-              <MaterialIcons name="bug-report" size={24} color="#FF6B35" />
-              <Text style={[styles.menuText, { color: '#FF6B35' }]}>Test Token Expiry</Text>
-            </TouchableOpacity>
 
-            {/* DEVELOPMENT ONLY: Manually Expire Token */}
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={async () => {
-                console.log('[Test] Manually expiring token...');
-                await manuallyExpireToken();
-                setIsMenuVisible(false);
-              }}
-            >
-              <MaterialIcons name="delete" size={24} color="#FF4444" />
-              <Text style={[styles.menuText, { color: '#FF4444' }]}>Manual Token Expiry</Text>
-            </TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.menuItem}
