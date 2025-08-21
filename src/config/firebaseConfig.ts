@@ -4,12 +4,12 @@ import { getAuth } from 'firebase/auth';
 // Firebase configuration for XSCard App
 // This should match your Firebase project (same as backend)
 const firebaseConfig = {
-    apiKey: "AIzaSyAHxd3TGf8v9DVUevw6p5F47EBV7ihYTuk", // From your FIREBASE_WEB_API_KEY
-    authDomain: "xscard-addd4.firebaseapp.com", // Your project + .firebaseapp.com  
-    projectId: "xscard-addd4", // From your FIREBASE_PROJECT_ID
-    storageBucket: "xscard-addd4.firebasestorage.app", // From your FIREBASE_STORAGE_BUCKET
-    messagingSenderId: "628567737496", // Get this from Firebase Console
-    appId: "NEED_FROM_CONSOLE" // Get this from Firebase Console
+    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
   };
 
 // Initialize Firebase
