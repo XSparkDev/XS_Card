@@ -1,0 +1,1038 @@
+{
+	"info": {
+		"_postman_id": "xscard-events-api-phase2a",
+		"name": "XSCard Events API - Phase 2A WebSocket Testing",
+		"description": "Complete API collection for testing XSCard Events Phase 2A real-time WebSocket broadcasting functionality",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8383",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "eventId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "testEventId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "broadcastTestId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Phase 2A - WebSocket Infrastructure",
+			"item": [
+				{
+					"name": "WebSocket Status Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('WebSocket service is available', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.status.enabled).to.be.true;",
+									"    pm.expect(responseJson.status.broadcastServiceStatus.available).to.be.true;",
+									"});",
+									"",
+									"pm.test('Circuit breaker is not open', function () {",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.status.broadcastServiceStatus.circuitBreakerOpen).to.be.false;",
+									"});",
+									"",
+									"pm.test('Service has reasonable connected users', function () {",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.status.broadcastServiceStatus.connectedUsers).to.be.at.least(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/websocket/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "websocket", "status"]
+						}
+					}
+				},
+				{
+					"name": "Server Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Server is responding', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response time is reasonable', function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(1000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/public?limit=1",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "public"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Authentication Setup",
+			"item": [
+				{
+					"name": "Sign In - Primary User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Authentication successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.token).to.exist;",
+									"    pm.expect(responseJson.user).to.exist;",
+									"    ",
+									"    // Save auth details",
+									"    pm.collectionVariables.set('authToken', responseJson.token);",
+									"    pm.collectionVariables.set('userId', responseJson.user.uid);",
+									"    console.log('Primary user authenticated:', responseJson.user.email);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testehakke@gufum.com\",\n    \"password\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/SignIn",
+							"host": ["{{baseUrl}}"],
+							"path": ["SignIn"]
+						}
+					}
+				},
+				{
+					"name": "Initialize Database Collections",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Database initialized successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/initialize-db",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "initialize-db"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Phase 2A - Broadcasting Tests",
+			"item": [
+				{
+					"name": "Create Event (Broadcast Test)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Event created successfully', function () {",
+									"    pm.response.to.have.status(201);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.event).to.exist;",
+									"    pm.expect(responseJson.event.id).to.exist;",
+									"    ",
+									"    // Save event ID for further tests",
+									"    pm.collectionVariables.set('broadcastTestId', responseJson.event.id);",
+									"    console.log('Broadcast test event created:', responseJson.event.id);",
+									"});",
+									"",
+									"pm.test('Event has correct initial status', function () {",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.event.status).to.equal('draft');",
+									"});",
+									"",
+									"// Auto-publish this event to ensure it's always published",
+									"const eventId = pm.response.json().event.id;",
+									"setTimeout(() => {",
+									"    pm.sendRequest({",
+									"        url: pm.variables.get('baseUrl') + '/events/' + eventId + '/publish',",
+									"        method: 'POST',",
+									"        header: { 'Authorization': 'Bearer ' + pm.collectionVariables.get('authToken') }",
+									"    }, function (err, response) {",
+									"        if (response && response.code === 200) {",
+									"            console.log('✅ Broadcast test event auto-published successfully');",
+									"            console.log('📺 Check WebSocket test page for new event notification');",
+									"        } else {",
+									"            console.log('❌ Failed to auto-publish broadcast test event');",
+									"        }",
+									"    });",
+									"}, 1000);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"WebSocket Broadcast Test Event\",\n    \"description\": \"Testing real-time WebSocket broadcasting for Phase 2A\",\n    \"eventDate\": \"2024-06-15T18:00:00.000Z\",\n    \"endDate\": \"2024-06-15T21:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"WebSocket Test Venue\",\n        \"address\": \"123 Broadcasting Street\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"tech\",\n    \"eventType\": \"free\",\n    \"ticketPrice\": 0,\n    \"maxAttendees\": 100,\n    \"visibility\": \"public\",\n    \"tags\": [\"websocket\", \"testing\", \"phase2a\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Publish Event (Broadcast Test)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Event published successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.event.status).to.equal('published');",
+									"    console.log('✅ Broadcast test event is now published and visible publicly');",
+									"});",
+									"",
+									"// Add delay for WebSocket processing",
+									"setTimeout(() => {",
+									"    console.log('✅ Event publishing should have triggered WebSocket broadcast');",
+									"    console.log('📺 Check WebSocket test page for published event notification');",
+									"}, 2000);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{broadcastTestId}}/publish",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{broadcastTestId}}", "publish"]
+						}
+					}
+				},
+				{
+					"name": "Update Event (Broadcast Test)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Event updated successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.event.title).to.include('UPDATED');",
+									"});",
+									"",
+									"// Add delay for WebSocket processing",
+									"setTimeout(() => {",
+									"    console.log('✅ Event update should have triggered WebSocket broadcast');",
+									"    console.log('📺 Check WebSocket test page for event update notification');",
+									"    console.log('🔄 Original event should be removed and replaced with updated version');",
+									"}, 2000);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"UPDATED WebSocket Broadcast Test Event\",\n    \"description\": \"Updated event description to test real-time WebSocket broadcasting\",\n    \"maxAttendees\": 150\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events/{{broadcastTestId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{broadcastTestId}}"]
+						}
+					}
+				},
+				{
+					"name": "Register for Event (Broadcast Test)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Event registration successful', function () {",
+									"    pm.response.to.have.status(201);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.registration).to.exist;",
+									"});",
+									"",
+									"// Add delay for WebSocket processing",
+									"setTimeout(() => {",
+									"    console.log('✅ Event registration should have triggered WebSocket broadcast');",
+									"    console.log('📺 Check WebSocket test page for registration notification');",
+									"}, 2000);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"specialRequests\": \"Testing WebSocket broadcasting for registrations\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events/{{broadcastTestId}}/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{broadcastTestId}}", "register"]
+						}
+					}
+				},
+				{
+					"name": "Unregister from Event (Broadcast Test)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Event unregistration successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"});",
+									"",
+									"// Add delay for WebSocket processing",
+									"setTimeout(() => {",
+									"    console.log('✅ Event unregistration should have triggered WebSocket broadcast');",
+									"    console.log('📺 Check WebSocket test page for unregistration notification');",
+									"}, 2000);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{broadcastTestId}}/unregister",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{broadcastTestId}}", "unregister"]
+						}
+					}
+				},
+				{
+					"name": "Cancel Event (Broadcast Test)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Event cancelled successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.data.event.status).to.equal('cancelled');",
+									"});",
+									"",
+									"// Add delay for WebSocket processing",
+									"setTimeout(() => {",
+									"    console.log('✅ Event cancellation should have triggered WebSocket broadcast');",
+									"    console.log('📺 Check WebSocket test page for cancellation notification');",
+									"    console.log('🗑️ Updated event should be removed from list');",
+									"    console.log('🔴 Red \"Event Cancelled!\" notification should appear briefly');",
+									"}, 2000);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{broadcastTestId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{broadcastTestId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Phase 2A - Complete Event Lifecycle Tests",
+			"item": [
+				{
+					"name": "Create + Publish Tech Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Test event creation",
+									"pm.test('Event created successfully', function () {",
+									"    pm.response.to.have.status(201);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.event.id).to.exist;",
+									"    pm.collectionVariables.set('techEventId', responseJson.event.id);",
+									"});",
+									"",
+									"// Auto-publish the event",
+									"const eventId = pm.response.json().event.id;",
+									"pm.sendRequest({",
+									"    url: pm.variables.get('baseUrl') + '/events/' + eventId + '/publish',",
+									"    method: 'POST',",
+									"    header: { 'Authorization': 'Bearer ' + pm.collectionVariables.get('authToken') }",
+									"}, function (err, response) {",
+									"    pm.test('Event auto-published successfully', function () {",
+									"        pm.expect(response.code).to.equal(200);",
+									"        const publishData = response.json();",
+									"        pm.expect(publishData.success).to.be.true;",
+									"        pm.expect(publishData.event.status).to.equal('published');",
+									"    });",
+									"    console.log('✅ Tech event created and published automatically');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Advanced JavaScript Workshop\",\n    \"description\": \"Deep dive into modern JavaScript frameworks and tools\",\n    \"eventDate\": \"2024-08-15T18:00:00.000Z\",\n    \"endDate\": \"2024-08-15T21:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Tech Academy\",\n        \"address\": \"123 Innovation Street\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"tech\",\n    \"eventType\": \"paid\",\n    \"ticketPrice\": 200,\n    \"maxAttendees\": 25,\n    \"visibility\": \"public\",\n    \"tags\": [\"javascript\", \"workshop\", \"programming\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Create + Publish Business Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Business event created successfully', function () {",
+									"    pm.response.to.have.status(201);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.collectionVariables.set('businessEventId', responseJson.event.id);",
+									"});",
+									"",
+									"// Auto-publish the event",
+									"const eventId = pm.response.json().event.id;",
+									"pm.sendRequest({",
+									"    url: pm.variables.get('baseUrl') + '/events/' + eventId + '/publish',",
+									"    method: 'POST',",
+									"    header: { 'Authorization': 'Bearer ' + pm.collectionVariables.get('authToken') }",
+									"}, function (err, response) {",
+									"    pm.test('Business event auto-published successfully', function () {",
+									"        pm.expect(response.code).to.equal(200);",
+									"        const publishData = response.json();",
+									"        pm.expect(publishData.success).to.be.true;",
+									"    });",
+									"    console.log('✅ Business event created and published automatically');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Startup Pitch Competition\",\n    \"description\": \"Present your startup idea to investors and win funding\",\n    \"eventDate\": \"2024-08-20T19:00:00.000Z\",\n    \"endDate\": \"2024-08-20T22:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Investor Hub\",\n        \"address\": \"456 Business Plaza\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"business\",\n    \"eventType\": \"free\",\n    \"maxAttendees\": 50,\n    \"visibility\": \"public\",\n    \"tags\": [\"startup\", \"pitch\", \"investment\", \"competition\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Create + Publish Arts Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Arts event created successfully', function () {",
+									"    pm.response.to.have.status(201);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.collectionVariables.set('artsEventId', responseJson.event.id);",
+									"});",
+									"",
+									"// Auto-publish the event",
+									"const eventId = pm.response.json().event.id;",
+									"pm.sendRequest({",
+									"    url: pm.variables.get('baseUrl') + '/events/' + eventId + '/publish',",
+									"    method: 'POST',",
+									"    header: { 'Authorization': 'Bearer ' + pm.collectionVariables.get('authToken') }",
+									"}, function (err, response) {",
+									"    pm.test('Arts event auto-published successfully', function () {",
+									"        pm.expect(response.code).to.equal(200);",
+									"        const publishData = response.json();",
+									"        pm.expect(publishData.success).to.be.true;",
+									"    });",
+									"    console.log('✅ Arts event created and published automatically');",
+									"    ",
+									"    // Check public events API after all events created",
+									"    setTimeout(() => {",
+									"        pm.sendRequest({",
+									"            url: pm.variables.get('baseUrl') + '/events/public?limit=10',",
+									"            method: 'GET'",
+									"        }, function (err, response) {",
+									"            const data = response.json();",
+									"            console.log(`📊 Total published events now: ${data.data.events.length}`);",
+									"            console.log('🔄 Refresh WebSocket test page to see persistent events!');",
+									"        });",
+									"    }, 1000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Abstract Photography Exhibition\",\n    \"description\": \"Explore the world through abstract lens - photography exhibition and workshop\",\n    \"eventDate\": \"2024-08-25T16:00:00.000Z\",\n    \"endDate\": \"2024-08-25T20:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Gallery Space\",\n        \"address\": \"789 Art District\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"arts\",\n    \"eventType\": \"paid\",\n    \"ticketPrice\": 120,\n    \"maxAttendees\": 40,\n    \"visibility\": \"public\",\n    \"tags\": [\"photography\", \"exhibition\", \"abstract\", \"art\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Verify All Events Published",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Public events API returns published events', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"    pm.expect(responseJson.data.events.length).to.be.at.least(3);",
+									"});",
+									"",
+									"const events = pm.response.json().data.events;",
+									"console.log('📊 PUBLISHED EVENTS VERIFICATION:');",
+									"console.log('====================================');",
+									"events.forEach((event, index) => {",
+									"    console.log(`${index + 1}. ${event.title} (${event.category}) - Status: ${event.status}`);",
+									"});",
+									"console.log('');",
+									"console.log('✅ All events should now persist on WebSocket test page refresh!');",
+									"console.log('🔄 Go to http://localhost:8383/websocket-test.html and refresh to test persistence');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/public?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "public"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Phase 2A - Performance & Reliability",
+			"item": [
+				{
+					"name": "API Performance Test (with Broadcasting)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('API response time not affected by WebSocket', function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(2000);",
+									"});",
+									"",
+									"pm.test('Event creation still works normally', function () {",
+									"    pm.response.to.have.status(201);",
+									"    const responseJson = pm.response.json();",
+									"    pm.expect(responseJson.success).to.be.true;",
+									"});",
+									"",
+									"console.log('⏱️ Response time:', pm.response.responseTime + 'ms');",
+									"console.log('📊 WebSocket broadcasting should not slow down HTTP API');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Performance Test Event\",\n    \"description\": \"Testing API performance with WebSocket broadcasting enabled\",\n    \"eventDate\": \"2024-07-01T10:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Performance Test Venue\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"tech\",\n    \"eventType\": \"free\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Multiple Events Rapid Creation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Rapid event creation successful', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"console.log('🚀 Multiple rapid events should not break WebSocket broadcasting');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Rapid Test Event {{$randomInt}}\",\n    \"description\": \"Testing rapid event creation with WebSocket broadcasting\",\n    \"eventDate\": \"2024-08-01T14:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Rapid Test Venue\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"business\",\n    \"eventType\": \"free\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Original Phase 1 Tests",
+			"item": [
+				{
+					"name": "Standard Event Lifecycle",
+					"item": [
+						{
+							"name": "Create Standard Event",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"if (pm.response.code === 201) {",
+											"    const responseJson = pm.response.json();",
+											"    pm.collectionVariables.set('eventId', responseJson.event.id);",
+											"    console.log('Standard event ID saved:', responseJson.event.id);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{authToken}}"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"title\": \"Standard Test Tech Meetup\",\n    \"description\": \"A great networking event for tech professionals\",\n    \"eventDate\": \"2024-02-15T18:00:00.000Z\",\n    \"endDate\": \"2024-02-15T21:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Tech Hub\",\n        \"address\": \"123 Tech Street\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"tech\",\n    \"eventType\": \"free\",\n    \"ticketPrice\": 0,\n    \"maxAttendees\": 50,\n    \"visibility\": \"public\",\n    \"tags\": [\"networking\", \"technology\", \"meetup\"]\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/events",
+									"host": ["{{baseUrl}}"],
+									"path": ["events"]
+								}
+							}
+						},
+						{
+							"name": "Get Event by ID",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{authToken}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/events/{{eventId}}",
+									"host": ["{{baseUrl}}"],
+									"path": ["events", "{{eventId}}"]
+								}
+							}
+						},
+						{
+							"name": "Update Event",
+							"request": {
+								"method": "PATCH",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{authToken}}"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"title\": \"Updated Standard Tech Meetup\",\n    \"description\": \"An even better networking event for tech professionals\",\n    \"maxAttendees\": 75\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/events/{{eventId}}",
+									"host": ["{{baseUrl}}"],
+									"path": ["events", "{{eventId}}"]
+								}
+							}
+						},
+						{
+							"name": "Publish Event",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{authToken}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/events/{{eventId}}/publish",
+									"host": ["{{baseUrl}}"],
+									"path": ["events", "{{eventId}}", "publish"]
+								}
+							}
+						},
+						{
+							"name": "Delete Event",
+							"request": {
+								"method": "DELETE",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{authToken}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/events/{{eventId}}",
+									"host": ["{{baseUrl}}"],
+									"path": ["events", "{{eventId}}"]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Event Discovery",
+					"item": [
+						{
+							"name": "Get All Public Events",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/events/public?limit=10&page=1",
+									"host": ["{{baseUrl}}"],
+									"path": ["events", "public"],
+									"query": [
+										{
+											"key": "limit",
+											"value": "10"
+										},
+										{
+											"key": "page",
+											"value": "1"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Search Events",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/events/search?q=tech&category=tech&limit=10",
+									"host": ["{{baseUrl}}"],
+									"path": ["events", "search"],
+									"query": [
+										{
+											"key": "q",
+											"value": "tech"
+										},
+										{
+											"key": "category",
+											"value": "tech"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Manual WebSocket Testing Guide",
+			"item": [
+				{
+					"name": "Testing Instructions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/websocket-test.html",
+							"host": ["{{baseUrl}}"],
+							"path": ["websocket-test.html"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"console.log('🧪 MANUAL WEBSOCKET TESTING GUIDE');",
+									"console.log('=====================================');",
+									"console.log('');",
+									"console.log('1. Open WebSocket test page: http://localhost:8383/websocket-test.html');",
+									"console.log('2. Login with: testehakke@gufum.com / 123456');",
+									"console.log('3. Watch for real-time notifications while running this collection');",
+									"console.log('');",
+									"console.log('Expected Notifications:');",
+									"console.log('📊 Loaded events appear first (dashed border, \"loaded\" label)');",
+									"console.log('🔴 Real-time events appear at top (solid border, sound)');",
+									"console.log('🔄 Event updates replace original notifications');",
+									"console.log('🗑️ Event cancellations remove original and show red notification');",
+									"console.log('');",
+									"console.log('Verification Points:');",
+									"console.log('✅ No duplicate events for same ID');",
+									"console.log('✅ Chronological order maintained');",
+									"console.log('✅ Real-time events interrupt smoothly');",
+									"console.log('✅ Page refresh loads existing events + accepts new ones');",
+									"console.log('');",
+									"console.log('🚀 Run the \"Phase 2A - Broadcasting Tests\" folder while watching the page!');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		}
+	]
+} 

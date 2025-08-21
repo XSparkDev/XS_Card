@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful - XSCard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #FF4B6E;
+            --secondary-color: #1B2B5B;
+            --success-color: #28a745;
+            --dark-text: #333;
+            --light-text: #666;
+            --lighter-text: #888;
+            --border-color: #e9e9e9;
+            --background-light: var(--white);
+            --white: #FFFFFF;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #FF4B6E, #1B2B5B, #FF4B6E);
+            background-size: 400% 400%;
+            animation: dramaticGradient 8s ease infinite;
+            color: var(--dark-text);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        @keyframes dramaticGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(255, 75, 110, 0.3) 0%, transparent 60%),
+                radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.15) 0%, transparent 60%),
+                radial-gradient(circle at 40% 80%, rgba(255, 193, 7, 0.2) 0%, transparent 60%);
+            animation: dramaticFloat 12s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes dramaticFloat {
+            0%, 100% { 
+                transform: rotate(0deg) scale(1);
+                filter: hue-rotate(0deg);
+            }
+            33% { 
+                transform: rotate(120deg) scale(1.1);
+                filter: hue-rotate(60deg);
+            }
+            66% { 
+                transform: rotate(240deg) scale(0.9);
+                filter: hue-rotate(120deg);
+            }
+        }
+
+        .container {
+            position: relative;
+            z-index: 2;
+            width: 90%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .card {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.85));
+            border-radius: 25px;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.3),
+                0 0 0 1px rgba(255, 255, 255, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            padding: 40px;
+            text-align: center;
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(40, 167, 69, 0.3);
+            transform: perspective(1000px) rotateX(5deg);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: cardEntrance 1.5s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        @keyframes cardEntrance {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateX(25deg) translateY(100px) scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateX(5deg) translateY(0) scale(1);
+            }
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(40, 167, 69, 0.1), transparent);
+            transform: rotate(45deg);
+            animation: cardShimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes cardShimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            50% { transform: translateX(100%) rotate(45deg); }
+            100% { transform: translateX(-100%) rotate(45deg); }
+        }
+
+        .card:hover {
+            transform: perspective(1000px) rotateX(0deg) translateY(-10px) scale(1.05);
+            box-shadow: 
+                0 30px 80px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(40, 167, 69, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            border-color: var(--success-color);
+        }
+
+        .icon-container {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(40, 167, 69, 0.2), rgba(40, 167, 69, 0.1));
+            border-radius: 50%;
+            position: relative;
+            animation: dramaticPulse 2s ease-in-out infinite;
+            box-shadow: 
+                0 0 0 0 rgba(40, 167, 69, 0.4),
+                0 0 0 10px rgba(40, 167, 69, 0.1),
+                0 0 0 20px rgba(40, 167, 69, 0.05);
+        }
+
+        @keyframes dramaticPulse {
+            0% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 0 0 rgba(40, 167, 69, 0.4),
+                    0 0 0 10px rgba(40, 167, 69, 0.1),
+                    0 0 0 20px rgba(40, 167, 69, 0.05);
+            }
+            50% { 
+                transform: scale(1.1);
+                box-shadow: 
+                    0 0 0 10px rgba(40, 167, 69, 0.2),
+                    0 0 0 25px rgba(40, 167, 69, 0.1),
+                    0 0 0 40px rgba(40, 167, 69, 0.05);
+            }
+            100% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 0 0 rgba(40, 167, 69, 0.4),
+                    0 0 0 10px rgba(40, 167, 69, 0.1),
+                    0 0 0 20px rgba(40, 167, 69, 0.05);
+            }
+        }
+
+        .icon-container::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: -20px;
+            right: -20px;
+            bottom: -20px;
+            border: 2px solid transparent;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--success-color), transparent, var(--success-color)) border-box;
+            mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+            mask-composite: subtract;
+            animation: rotateBorder 4s linear infinite;
+        }
+
+        @keyframes rotateBorder {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .success-icon {
+            color: var(--success-color);
+            font-size: 60px;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            animation: iconBounce 3s ease-in-out infinite;
+            text-shadow: 0 0 20px rgba(40, 167, 69, 0.5);
+        }
+
+        @keyframes iconBounce {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            25% { transform: scale(1.2) rotate(-10deg); }
+            75% { transform: scale(1.1) rotate(10deg); }
+        }
+
+        .icon-container:hover .success-icon {
+            transform: scale(1.3) rotate(360deg);
+            color: #20c997;
+            text-shadow: 0 0 30px rgba(32, 201, 151, 0.8);
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--success-color);
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        p {
+            margin-bottom: 20px;
+            color: var(--light-text);
+            font-size: 16px;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
+        }
+
+        .event-details {
+            background: linear-gradient(135deg, rgba(27, 43, 91, 0.05), rgba(27, 43, 91, 0.02));
+            border: 1px solid rgba(27, 43, 91, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            animation: fadeInUp 0.8s ease-out 0.4s both;
+            backdrop-filter: blur(5px);
+        }
+        
+        .event-details h3 {
+            color: var(--secondary-color);
+            margin-bottom: 10px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .event-details p {
+            margin-bottom: 10px;
+            font-size: 15px;
+            animation: none;
+        }
+
+
+
+        footer {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            padding: 20px;
+            font-size: 14px;
+            color: var(--white);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 15px;
+            }
+            
+            .card {
+                padding: 30px 20px;
+            }
+            
+
+            
+            h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card" id="mainContent">
+            <div class="icon-container">
+                <span class="success-icon">✓</span>
+            </div>
+            
+        <h1>Payment Successful!</h1>
+            
+        <div id="registrationContent" style="display: none;">
+            <p>Your event registration payment has been processed successfully.</p>
+                <div class="event-details">
+                    <h3>Registration Confirmed</h3>
+                <p>You are now registered for the event. Your ticket is ready!</p>
+                    <p>You will receive a confirmation email shortly with your ticket details and event information.</p>
+            </div>
+            </div>
+            
+        <div id="publishingContent" style="display: none;">
+            <p>Your event publishing payment has been processed successfully.</p>
+                <div class="event-details">
+                    <h3>Event Published</h3>
+                <p>Your event is now published and visible to users.</p>
+                <p>You can now manage your event and track registrations in the app.</p>
+            </div>
+        </div>
+        
+            
+        </div>
+    </div>
+    
+    <footer>
+        <p>&copy; <span id="currentYear"></span> XSCard. All Rights Reserved.</p>
+    </footer>
+    
+    <script>
+        // Set current year in footer
+        document.getElementById('currentYear').textContent = new Date().getFullYear();
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+            const eventId = urlParams.get('eventId') || urlParams.get('event');
+            const registrationId = urlParams.get('registrationId');
+            const title = urlParams.get('title');
+            const type = urlParams.get('type') || (registrationId ? 'registration' : 'publishing');
+            
+            // Show appropriate content based on payment type
+            if (type === 'registration') {
+                document.getElementById('registrationContent').style.display = 'block';
+            } else {
+                document.getElementById('publishingContent').style.display = 'block';
+            }
+            
+            // Set page title if event title is provided
+            if (title) {
+                document.title = `Payment Successful - ${decodeURIComponent(title)} - XSCard`;
+            }
+            
+
+        });
+    </script>
+</body>
+</html>

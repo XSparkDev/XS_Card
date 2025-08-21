@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Contact XS</title>
+    <style>
+        :root {
+            --primary: #FF4B6E;
+            --secondary: #1B2B5B;
+            --white: #FFFFFF;
+            --black: #000000;
+        }        body {
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #FF4B6E, #1B2B5B, #FF4B6E);
+            background-size: 400% 400%;
+            animation: dramaticGradient 8s ease infinite;
+            min-height: 100vh;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        @keyframes dramaticGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(255, 75, 110, 0.3) 0%, transparent 60%),
+                radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.15) 0%, transparent 60%),
+                radial-gradient(circle at 40% 80%, rgba(255, 193, 7, 0.2) 0%, transparent 60%);
+            animation: dramaticFloat 12s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes dramaticFloat {
+            0%, 100% { 
+                transform: rotate(0deg) scale(1);
+                filter: hue-rotate(0deg);
+            }
+            33% { 
+                transform: rotate(120deg) scale(1.1);
+                filter: hue-rotate(60deg);
+            }
+            66% { 
+                transform: rotate(240deg) scale(0.9);
+                filter: hue-rotate(120deg);
+            }
+        }        .container {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.85));
+            border-radius: 25px;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.3),
+                0 0 0 1px rgba(255, 255, 255, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            width: 90%;
+            max-width: 600px;
+            padding: 50px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(255, 75, 110, 0.3);
+            transform: perspective(1000px) rotateX(5deg);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: cardEntrance 1.5s ease-out;
+            position: relative;
+            overflow: hidden;
+            z-index: 2;
+        }
+
+        @keyframes cardEntrance {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateX(25deg) translateY(100px) scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateX(5deg) translateY(0) scale(1);
+            }
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 75, 110, 0.1), transparent);
+            transform: rotate(45deg);
+            animation: cardShimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes cardShimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            50% { transform: translateX(100%) rotate(45deg); }
+            100% { transform: translateX(-100%) rotate(45deg); }
+        }
+
+        .container:hover {
+            transform: perspective(1000px) rotateX(0deg) translateY(-10px) scale(1.02);
+            box-shadow: 
+                0 30px 80px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(255, 75, 110, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            border-color: var(--primary);
+        }        .logo-section {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .logo-icon {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, rgba(255, 75, 110, 0.2), rgba(255, 75, 110, 0.1));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            color: var(--primary);
+            animation: dramaticPulse 2s ease-in-out infinite;
+            box-shadow: 
+                0 0 0 0 rgba(255, 75, 110, 0.4),
+                0 0 0 10px rgba(255, 75, 110, 0.1),
+                0 0 0 20px rgba(255, 75, 110, 0.05);
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        @keyframes dramaticPulse {
+            0% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 0 0 rgba(255, 75, 110, 0.4),
+                    0 0 0 10px rgba(255, 75, 110, 0.1),
+                    0 0 0 20px rgba(255, 75, 110, 0.05);
+            }
+            50% { 
+                transform: scale(1.1);
+                box-shadow: 
+                    0 0 0 10px rgba(255, 75, 110, 0.2),
+                    0 0 0 25px rgba(255, 75, 110, 0.1),
+                    0 0 0 40px rgba(255, 75, 110, 0.05);
+            }
+            100% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 0 0 rgba(255, 75, 110, 0.4),
+                    0 0 0 10px rgba(255, 75, 110, 0.1),
+                    0 0 0 20px rgba(255, 75, 110, 0.05);
+            }
+        }
+
+        .logo-icon::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: -20px;
+            right: -20px;
+            bottom: -20px;
+            border: 2px solid transparent;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), transparent, var(--primary)) border-box;
+            mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+            mask-composite: subtract;
+            animation: rotateBorder 4s linear infinite;
+        }
+
+        @keyframes rotateBorder {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .logo-text {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--secondary);
+            text-align: center;
+            animation: fadeInUp 0.8s ease-out 0.3s both;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .logo {
+            width: 100%;
+            max-width: 200px;
+            height: auto;
+        }        .form-section {
+            width: 100%;
+            position: relative;
+            z-index: 2;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--secondary);
+            margin-bottom: 30px;
+            animation: fadeInUp 0.8s ease-out;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }        .form-group {
+            margin-bottom: 25px;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 16px 20px;
+            border: 2px solid rgba(255, 75, 110, 0.1);
+            border-radius: 15px;
+            font-size: 16px;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            font-family: 'Poppins', sans-serif;
+            color: var(--secondary);
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.95);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 8px 25px rgba(255, 75, 110, 0.2),
+                0 0 0 3px rgba(255, 75, 110, 0.1);
+        }
+
+        input:hover, textarea:hover {
+            border-color: rgba(255, 75, 110, 0.3);
+            transform: translateY(-1px);
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }        .submit-btn {
+            background: linear-gradient(135deg, var(--primary), #ff6b8a, #ff1744, var(--primary));
+            background-size: 300% 300%;
+            color: var(--white);
+            padding: 18px 32px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: buttonFloat 6s ease-in-out infinite, buttonGradient 4s ease infinite;
+            box-shadow: 
+                0 8px 30px rgba(255, 75, 110, 0.4),
+                0 0 0 1px rgba(255, 255, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        @keyframes buttonFloat {
+            0%, 100% { 
+                transform: translateY(0px);
+            }
+            50% { 
+                transform: translateY(-3px);
+            }
+        }
+
+        @keyframes buttonGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .submit-btn::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transform: rotate(45deg);
+            transition: all 0.6s ease;
+            opacity: 0;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 
+                0 15px 45px rgba(255, 75, 110, 0.6),
+                0 0 0 1px rgba(255, 255, 255, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            animation: buttonFloat 3s ease-in-out infinite, buttonGradient 2s ease infinite, buttonPulseGlow 1.5s ease infinite;
+        }
+
+        .submit-btn:hover::before {
+            opacity: 1;
+            animation: buttonShimmer 1.5s ease-in-out;
+        }
+
+        @keyframes buttonShimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
+        }
+
+        @keyframes buttonPulseGlow {
+            0%, 100% { 
+                box-shadow: 
+                    0 15px 45px rgba(255, 75, 110, 0.6),
+                    0 0 20px rgba(255, 75, 110, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            }
+            50% { 
+                box-shadow: 
+                    0 15px 45px rgba(255, 75, 110, 0.8),
+                    0 0 40px rgba(255, 75, 110, 0.8),
+                    0 0 0 1px rgba(255, 255, 255, 0.5),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+            }
+        }
+
+        @media screen and (max-width: 768px) {
+            .container {
+                flex-direction: column;
+                padding: 30px;
+                margin: 20px;
+            }
+
+            .logo-section {
+                margin-bottom: 20px;
+            }
+
+            .logo {
+                max-width: 150px;
+            }
+
+            .title {
+                font-size: 20px;
+                margin-bottom: 20px;
+            }
+        }
+
+        @media screen and (max-width: 480px) {
+            .container {
+                padding: 20px;
+            }
+
+            input, textarea {
+                padding: 10px;
+                font-size: 15px;
+            }
+
+            .submit-btn {
+                padding: 12px;
+                font-size: 15px;
+            }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>    <div class="container">
+        <div class="form-section">
+            <h1 class="title">Get in touch</h1>
+            <form id="queryForm" onsubmit="handleSubmit(event)">
+                <div class="form-group">
+                    <input type="text" id="name" placeholder="Name" required>
+                </div>
+                <div class="form-group">
+                    <input type="email" id="email" placeholder="Email" required>
+                </div>
+                <div class="form-group">
+                    <textarea id="message" placeholder="Message" required></textarea>
+                </div>
+                <button type="submit" class="submit-btn">
+                    <span class="material-icons">send</span>
+                    Send
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Add debugging code to check image loading
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('Debugging image paths:');
+            console.log('Current page URL:', window.location.href);
+            
+            // Test if images directory is accessible
+            fetch('assets/images/')
+                .then(response => console.log('assets/images/ directory response:', response.status))
+                .catch(err => console.error('Error accessing assets/images/ directory:', err));
+                
+            // Test alternative paths
+            const testPaths = [
+                'assets/images/xslogo.png',
+                '../assets/images/xslogo.png',
+                '/assets/images/xslogo.png',
+                './assets/images/xslogo.png',
+                '../../assets/images/xslogo.png'
+            ];
+            
+            testPaths.forEach(path => {
+                const img = new Image();
+                img.onload = () => console.log(`Image at ${path} exists!`);
+                img.onerror = () => console.log(`Image at ${path} does not exist or is inaccessible`);
+                img.src = path;
+            });
+        });
+        
+        async function handleSubmit(event) {
+            event.preventDefault();
+            
+            const formData = {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                message: document.getElementById('message').value,
+                to: 'xscard@xspark.co.za' // Destination email address
+            };
+
+            try {
+                const response = await fetch('/submit-query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to submit query');
+                }
+
+                alert('Query submitted successfully!');
+                document.getElementById('queryForm').reset();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to submit query. Please try again.');
+            }
+        }
+    </script>
+</body>
+</html>

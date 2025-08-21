@@ -1,0 +1,502 @@
+{
+	"info": {
+		"_postman_id": "xscard-events-api",
+		"name": "XSCard Events API - Phase 1",
+		"description": "Complete API collection for testing XSCard Events functionality",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8383",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "eventId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Sign In",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const responseJson = pm.response.json();",
+									"    pm.collectionVariables.set('authToken', responseJson.token);",
+									"    pm.collectionVariables.set('userId', responseJson.user.uid);",
+									"    console.log('Auth token saved:', responseJson.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testehakke@gufum.com\",\n    \"password\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/SignIn",
+							"host": ["{{baseUrl}}"],
+							"path": ["SignIn"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Database Setup",
+			"item": [
+				{
+					"name": "Initialize Event Collections",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/initialize-db",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "initialize-db"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Event Management",
+			"item": [
+				{
+					"name": "Create Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const responseJson = pm.response.json();",
+									"    pm.collectionVariables.set('eventId', responseJson.event.id);",
+									"    console.log('Event ID saved:', responseJson.event.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Test Registration Event\",\n    \"description\": \"A test event to verify registration works\",\n    \"eventDate\": \"2024-12-31T18:00:00.000Z\",\n    \"endDate\": \"2024-12-31T21:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Test Venue\",\n        \"address\": \"123 Test Street\",\n        \"city\": \"Cape Town\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"tech\",\n    \"eventType\": \"free\",\n    \"ticketPrice\": 0,\n    \"maxAttendees\": 50,\n    \"visibility\": \"public\",\n    \"tags\": [\"test\", \"registration\", \"demo\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Get Event by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{eventId}}"]
+						}
+					}
+				},
+				{
+					"name": "Update Event",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Updated Test Registration Event\",\n    \"description\": \"An updated test event to verify registration works\",\n    \"maxAttendees\": 75\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{eventId}}"]
+						}
+					}
+				},
+				{
+					"name": "Publish Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}/publish",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{eventId}}", "publish"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Event Discovery",
+			"item": [
+				{
+					"name": "Get All Public Events",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/public?limit=10&page=1",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "public"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Events by Category",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/public?category=tech&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "public"],
+							"query": [
+								{
+									"key": "category",
+									"value": "tech"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Search Events",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/events/search?q=test&category=tech&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "search"],
+							"query": [
+								{
+									"key": "q",
+									"value": "test"
+								},
+								{
+									"key": "category",
+									"value": "tech"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Event Registration",
+			"item": [
+				{
+					"name": "Register for Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"specialRequests\": \"Looking forward to this event!\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{eventId}}", "register"]
+						}
+					}
+				},
+				{
+					"name": "Unregister from Event",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}/unregister",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{eventId}}", "unregister"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "User Events",
+			"item": [
+				{
+					"name": "Get My Created Events",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/user/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "events"]
+						}
+					}
+				},
+				{
+					"name": "Get My Event Registrations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/user/registrations",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "registrations"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Event Preferences",
+			"item": [
+				{
+					"name": "Get Event Preferences",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/user/event-preferences",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "event-preferences"]
+						}
+					}
+				},
+				{
+					"name": "Update Event Preferences",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"eventPreferences\": {\n        \"receiveEventNotifications\": true,\n        \"receiveNewEventBroadcasts\": true,\n        \"receiveEventUpdates\": true,\n        \"receiveEventReminders\": false,\n        \"preferredCategories\": [\"tech\", \"business\"],\n        \"locationRadius\": 25,\n        \"preferredLocation\": {\n            \"city\": \"Cape Town\",\n            \"country\": \"South Africa\"\n        }\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/user/event-preferences",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "event-preferences"]
+						}
+					}
+				},
+				{
+					"name": "Initialize Event Preferences",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/user/event-preferences/initialize",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "event-preferences", "initialize"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Test Scenarios",
+			"item": [
+				{
+					"name": "Create Paid Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Premium Business Workshop\",\n    \"description\": \"Exclusive workshop for business professionals\",\n    \"eventDate\": \"2024-03-01T09:00:00.000Z\",\n    \"endDate\": \"2024-03-01T17:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Business Center\",\n        \"address\": \"456 Business Ave\",\n        \"city\": \"Johannesburg\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"business\",\n    \"eventType\": \"paid\",\n    \"ticketPrice\": 250,\n    \"maxAttendees\": 20,\n    \"visibility\": \"public\",\n    \"tags\": [\"business\", \"workshop\", \"professional\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				},
+				{
+					"name": "Create Private Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Team Building Event\",\n    \"description\": \"Private team building for company employees\",\n    \"eventDate\": \"2024-02-20T14:00:00.000Z\",\n    \"endDate\": \"2024-02-20T18:00:00.000Z\",\n    \"location\": {\n        \"venue\": \"Company Retreat Center\",\n        \"address\": \"789 Retreat Road\",\n        \"city\": \"Durban\",\n        \"country\": \"South Africa\"\n    },\n    \"category\": \"social\",\n    \"eventType\": \"free\",\n    \"ticketPrice\": 0,\n    \"maxAttendees\": 30,\n    \"visibility\": \"private\",\n    \"tags\": [\"team-building\", \"company\", \"private\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/events",
+							"host": ["{{baseUrl}}"],
+							"path": ["events"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Cleanup (Run Last)",
+			"item": [
+				{
+					"name": "Delete Event",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/events/{{eventId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["events", "{{eventId}}"]
+						}
+					}
+				}
+			]
+		}
+	]
+} 

@@ -1,0 +1,316 @@
+{
+  "info": {
+    "name": "Paid Event Credits System Tests",
+    "description": "Comprehensive test collection for the paid event publishing credit system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.globals.set('baseUrl', 'http://localhost:8383');"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8383",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication & User Setup",
+      "item": [
+        {
+          "name": "Create User 1 (Free Tier)",
+          "disabled": true,
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('User created successfully', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.contain('User added successfully');",
+                  "    pm.globals.set('user1Id', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Free\",\n  \"surname\": \"User\",\n  \"email\": \"kirtuzagna@gmail.com\",\n  \"password\": \"123456\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Create User 2 (Premium Tier)",
+          "disabled": true,
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('User created successfully', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.contain('User added successfully');",
+                  "    pm.globals.set('user2Id', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Premium\",\n  \"surname\": \"User\",\n  \"email\": \"jirise5201@gmail.com\",\n  \"password\": \"123456\",\n  \"status\": \"active\",\n  \"tier\": \"premium\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Create User 3 (Enterprise Tier)",
+          "disabled": true,
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('User created successfully', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.contain('User added successfully');",
+                  "    pm.globals.set('user3Id', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Enterprise\",\n  \"surname\": \"User\",\n  \"email\": \"tepsasikne@gmail.com\",\n  \"password\": \"123456\",\n  \"status\": \"active\",\n  \"tier\": \"enterprise\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Login User 1 (Free Tier)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login successful', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.token).to.exist;",
+                  "    pm.globals.set('authToken', response.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"kirtuzagna@gmail.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SignIn",
+              "host": ["{{baseUrl}}"],
+              "path": ["SignIn"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credit System Tests",
+      "item": [
+        {
+          "name": "Get User Credits (Free Tier - Initial)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Credits retrieved successfully', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.credits.tier).to.equal('free');",
+                  "    pm.expect(response.credits.welcomeCreditUsed).to.be.false;",
+                  "    pm.expect(response.credits.monthlyCredits.allocated).to.equal(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/credits",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "credits"]
+            }
+          }
+        },
+        {
+          "name": "Create Paid Event (Should Use Welcome Credit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Paid event created with welcome credit', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.event.eventType).to.equal('paid');",
+                  "    pm.expect(response.event.publishingCost.price).to.equal(0);",
+                  "    pm.expect(response.event.publishingCost.creditType).to.equal('welcome');",
+                  "    ",
+                  "    // Capture event ID properly",
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Paid Test Event\",\n  \"description\": \"This is a paid test event\",\n  \"eventDate\": \"2024-12-31T20:00:00.000Z\",\n  \"eventType\": \"paid\",\n  \"ticketPrice\": 100,\n  \"maxAttendees\": 100,\n  \"visibility\": \"public\",\n  \"category\": \"business\",\n  \"venue\": \"Premium Venue\",\n  \"address\": \"456 Premium Street\",\n  \"city\": \"Premium City\",\n  \"country\": \"South Africa\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"]
+            }
+          }
+        },
+        {
+          "name": "Publish Paid Event (Should Use Welcome Credit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Event published using welcome credit', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.message).to.contain('welcome credit');",
+                  "    pm.expect(response.creditInfo.creditUsed).to.equal('welcome');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{testEventId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{testEventId}}", "publish"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

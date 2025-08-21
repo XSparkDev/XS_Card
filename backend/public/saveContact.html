@@ -1,0 +1,2494 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Save Contact</title>
+    <style>
+        :root {
+            --primary: #FF4B6E;
+            --secondary: #1B2B5B;
+            --white: #FFFFFF;
+            --black: #000000;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--white);
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .container {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* XS Card Logo Header Styles */
+        .xs-logo-header {
+            background-color: var(--secondary);
+            padding: 15px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: relative;
+            z-index: 10;
+        }
+        
+        .xs-logo {
+            height: 40px;
+            width: auto;
+        }
+        
+        /* End of XS Card Logo Header Styles */
+
+        .logo-container {
+            width: 100%;
+            position: relative;
+            overflow: visible;
+            margin-bottom: 60px;
+            background-color: #FFFFFF;
+            padding: 10px 10px 0 10px;
+            box-sizing: border-box;
+            min-height: 17rem;
+        }
+
+        .company-logo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 10px;
+            min-height: 16rem;
+        }
+
+        /* Add a logo frame similar to React screens for consistent overflow handling */
+        .logo-frame {
+            width: 100%;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            border-radius: 12px;
+            background: transparent;
+        }
+
+        .profile-overlay {
+            position: absolute;
+            bottom: -56px;
+            left: 50%;
+            transform: translateX(-48px);
+            z-index: 2;
+        }
+
+        .profile-container {
+            width: 96px;
+            height: 96px;
+            overflow: hidden;
+            border-radius: 50%;
+            border: 3px solid var(--white);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .profile-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+
+        .contact-info {
+            margin-top: 45px;
+            padding: 0 20px;
+            text-align: center;
+        }
+
+        .name {
+            font-size: 2.25rem;
+            font-weight: 600;
+            margin: 15px 0 5px 0;
+            color: var(--secondary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.1;
+            letter-spacing: -0.5px;
+        }
+
+        .position, .company {
+            font-size: 1.75rem;
+            font-weight: 400;
+            margin: 2px 0;
+            color: #666;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.3;
+        }
+
+        .contact-section {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin: 15px 0;
+            padding: 0px 40px;
+        }
+
+        .contact-icon {
+            color: var(--secondary);
+            margin-right: 15px;
+            font-size: 20px;
+        }
+
+        .contact-text {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--secondary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+        }
+
+        .form-container {
+            padding: 20px;
+            margin-top: 10px;
+            margin-bottom: 20px;
+            transform: translateY(0);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .form-container .form-content {
+            padding: 25px 20px 20px 20px;
+            max-height: calc(85vh - env(safe-area-inset-bottom));
+            overflow-y: auto;
+        }
+
+        .form-container:not(.hidden) {
+            transform: translateY(0);
+        }
+        
+        .form-container.sliding-out-up {
+            animation: slideOutUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        
+        .form-container.sliding-in-down {
+            animation: slideInDown 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        
+        .form-container.hidden {
+            display: none;
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        
+        .form-container.sliding-in {
+            display: block;
+            opacity: 0;
+            transform: translateY(30px);
+            animation: slideIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        
+        .form-container.sliding-out {
+            animation: slideOut 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes slideOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+                max-height: 600px; /* Start with full height for form */
+                margin-top: 0px;
+                margin-bottom: 20px;
+                padding: 20px;
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+                max-height: 0; /* Collapse height smoothly */
+                margin-top: 0;
+                margin-bottom: 0;
+                padding: 0 20px; /* Keep horizontal padding, remove vertical */
+            }
+        }
+        
+        @keyframes slideOutUp {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+                max-height: 200px;
+                margin-top: 10px;
+                margin-bottom: 20px;
+                padding: 20px;
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-30px);
+                max-height: 0;
+                margin-top: 0;
+                margin-bottom: 0;
+                padding: 0 20px;
+            }
+        }
+        
+        @keyframes slideInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+                max-height: 0;
+                margin-top: 0;
+                margin-bottom: 0;
+                padding: 0 20px;
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+                max-height: 200px;
+                margin-top: 10px;
+                margin-bottom: 20px;
+                padding: 20px;
+            }
+        }
+        
+        .close-btn {
+            position: absolute;
+            bottom: 30px;
+            right: 0px;
+            background: #ff4757;
+            border: none;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .close-btn:hover {
+            background: #ff3742;
+            transform: scale(1.1);
+        }
+        
+        .close-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .form-header {
+            position: relative;
+        }
+
+        @media screen and (max-width: 480px) {
+            .logo-container {
+                min-height: 12rem;
+            }
+
+            .logo-frame {
+                height: 200px; /* Keep consistent height even on mobile to match React screens */
+            }
+
+            .company-logo {
+                min-height: 11rem;
+            }
+
+            .profile-container {
+                width: 118px;
+                height: 118px;
+            }
+
+            .profile-overlay {
+                transform: translateX(-59px);
+                bottom: -49px;
+            }
+
+            .contact-info {
+                padding: 0 15px;
+            }
+
+            .contact-section {
+                padding: 0px 20px;
+                margin: 12px 0;
+            }
+
+            .contact-icon {
+                font-size: 18px;
+                margin-right: 12px;
+            }
+
+            .contact-text {
+                font-size: 16px;
+            }
+
+            .name {
+                font-size: 2rem;
+            }
+
+            .position, .company {
+                font-size: 1.5rem;
+            }
+
+            .form-container {
+                padding: 15px;
+            }
+
+            .form-group input {
+                padding: 10px;
+                font-size: 15px;
+            }
+
+            .submit-btn {
+                padding: 10px;
+                font-size: 1.15rem;
+                margin: 8px 10px; /* Slightly reduced for mobile */
+            }
+
+            .app-btn {
+                padding: 10px;
+                font-size: 1.15rem;
+                margin: 8px 10px; /* Same as submit-btn for mobile */
+            }
+
+            .app-description-text {
+                margin: 8px 15px 0 15px; /* Adjusted for mobile */
+                font-size: 12px;
+            }
+        }
+
+        @media screen and (min-width: 768px) {
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+            }
+        }
+
+        .success-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255, 75, 110, 0.95), rgba(27, 43, 91, 0.95));
+            backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 1000;
+            animation: overlayFadeIn 0.4s ease-out;
+        }
+
+        .success-card {
+            background: white;
+            border-radius: 24px;
+            padding: 40px 30px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            animation: cardSlideUp 0.5s ease-out 0.1s both;
+        }
+
+        .success-header {
+            margin-bottom: 30px;
+        }
+
+        .success-icon-container {
+            margin-bottom: 20px;
+        }
+
+        .success-checkmark {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto;
+        }
+
+        .checkmark {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: block;
+            stroke-width: 2;
+            stroke: #4CAF50;
+            stroke-miterlimit: 10;
+            animation: checkmarkBounce 0.6s ease-in-out 0.3s both;
+        }
+
+        .checkmark-circle {
+            stroke-dasharray: 166;
+            stroke-dashoffset: 166;
+            stroke-width: 2;
+            stroke-miterlimit: 10;
+            stroke: #4CAF50;
+            fill: none;
+            animation: checkmarkCircle 0.6s cubic-bezier(0.65, 0, 0.45, 1) 0.2s both;
+        }
+
+        .checkmark-check {
+            transform-origin: 50% 50%;
+            stroke-dasharray: 48;
+            stroke-dashoffset: 48;
+            animation: checkmarkCheck 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s both;
+        }
+
+        .success-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--secondary);
+            margin: 0 0 8px 0;
+            animation: textSlideUp 0.4s ease-out 0.7s both;
+        }
+
+        .success-subtitle {
+            font-size: 16px;
+            color: #666;
+            margin: 0;
+            animation: textSlideUp 0.4s ease-out 0.8s both;
+        }
+
+        .contact-name {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .exchange-summary {
+            background: #f8f9fa;
+            border-radius: 16px;
+            padding: 20px;
+            margin: 25px 0;
+            animation: textSlideUp 0.4s ease-out 0.9s both;
+        }
+
+        .summary-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        .summary-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .summary-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            width: 32px;
+            text-align: center;
+        }
+
+        .summary-text {
+            flex: 1;
+        }
+
+        .summary-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .summary-value {
+            font-size: 16px;
+            color: var(--secondary);
+            font-weight: 600;
+            margin: 2px 0 0 0;
+        }
+
+        .completion-notice {
+            background: linear-gradient(135deg, #e8f5e8, #f0f8f0);
+            border: 1px solid #d4edda;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: textSlideUp 0.4s ease-out 1.0s both;
+        }
+
+        .notice-icon {
+            font-size: 20px;
+            margin-right: 10px;
+        }
+
+        .completion-notice p {
+            margin: 0;
+            font-size: 14px;
+            color: #155724;
+            font-weight: 500;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 25px;
+            animation: textSlideUp 0.4s ease-out 1.1s both;
+        }
+
+        .primary-action-btn {
+            background: linear-gradient(135deg, var(--primary), #ff6b8a);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 16px 24px;
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 75, 110, 0.3);
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .primary-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 75, 110, 0.4);
+        }
+
+        .secondary-action-btn {
+            background: transparent;
+            color: var(--secondary);
+            border: 2px solid var(--secondary);
+            border-radius: 50px;
+            padding: 14px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .secondary-action-btn:hover {
+            background: var(--secondary);
+            color: var(--white);
+        }
+
+        /* Animations */
+        @keyframes overlayFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes overlayFadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @keyframes cardSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes checkmarkBounce {
+            0%, 20%, 53%, 80%, 100% {
+                transform: scale(1);
+            }
+            40%, 43% {
+                transform: scale(1.1);
+            }
+            70% {
+                transform: scale(1.05);
+            }
+            90% {
+                transform: scale(1.02);
+            }
+        }
+
+        @keyframes checkmarkCircle {
+            0% {
+                stroke-dashoffset: 166;
+            }
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes checkmarkCheck {
+            0% {
+                stroke-dashoffset: 48;
+            }
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes textSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Legacy styles for backward compatibility */
+        .success-icon {
+            font-size: 64px;
+            color: var(--secondary);
+            margin-bottom: 20px;
+        }
+
+        .success-message {
+            font-size: 20px;
+            color: var(--secondary);
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .success-instructions {
+            font-size: 16px;
+            color: #666;
+            text-align: center;
+            margin-bottom: 25px;
+            max-width: 300px;
+        }
+
+        .direct-save-btn {
+            background-color: var(--secondary);
+            color: var(--white);
+            padding: 14px 10px;
+            border: none;
+            border-radius: 80px;
+            cursor: pointer;
+            font-size: 1.35rem;
+            font-weight: bold;
+            width: calc(100% - 20px);
+            margin: 20px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            box-sizing: border-box;
+        }
+
+        .form-header {
+            text-align: center;
+            margin: 30px 0 20px 0;
+            padding: 0 20px;
+        }
+
+        .form-header h3 {
+            margin: 0 0 8px 0;
+            color: var(--secondary);
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .form-header p {
+            margin: 0;
+            color: #888;
+            font-size: 15px;
+        }
+
+        .app-link-text {
+            color: #777;
+            font-size: 13px;
+            margin-top: 0px;
+            line-height: 1.5;
+            max-width: 280px;
+            margin-left: auto;
+            margin-right: auto;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .submit-btn {
+            background-color: var(--secondary);
+            color: var(--white);
+            padding: 14px 10px;
+            border: none;
+            border-radius: 80px;
+            cursor: pointer;
+            font-size: 1.35rem;
+            font-weight: bold;
+            width: calc(100% - 20px);
+            margin: 10px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            box-sizing: border-box;
+        }        .submit-btn:hover {
+            opacity: 0.9;
+        }
+        
+        .submit-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .app-description-container {
+            padding: 20px;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        /* Special styling for exchange form to reduce gap */
+        #exchangeForm {
+            padding: 0;
+            margin: 0;
+            transform: translateY(100%);
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.15);
+            z-index: 10;
+            max-height: 85vh;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        #exchangeForm:not(.hidden) {
+            transform: translateY(0);
+        }
+
+        .app-btn {
+            background-color: var(--white);
+            color: var(--secondary);
+            padding: 14px 10px;
+            border: 2px solid var(--secondary);
+            border-radius: 80px;
+            cursor: pointer;
+            font-size: 1.35rem;
+            font-weight: bold;
+            width: calc(100% - 20px);
+            margin: 10px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            box-sizing: border-box;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .app-btn:hover {
+            background-color: var(--secondary);
+            color: var(--white);
+        }
+
+        .app-btn:active {
+            transform: scale(0.98);
+        }
+
+        .app-description-text {
+            color: #777;
+            font-size: 13px;
+            margin: 10px 20px 0 20px;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        /* Background overlay for modal effect */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.3);
+            z-index: 5;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 24px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        .floating-label {
+            position: relative;
+        }
+
+        .floating-label input {
+            width: 100%;
+            padding: 16px 0px 8px 0px;
+            border: none;
+            border-bottom: 1px solid #E0E0E0;
+            border-radius: 0;
+            font-size: 16px;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            outline: none;
+            transition: border-bottom-color 0.3s ease;
+            color: #333;
+        }
+
+        .floating-label input:focus {
+            border-bottom-color: var(--secondary);
+        }
+
+        .floating-label label {
+            position: absolute;
+            left: 0px;
+            top: 16px;
+            transform: translateY(0);
+            background: transparent;
+            padding: 0;
+            color: #999;
+            font-size: 16px;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .floating-label input:focus + label,
+        .floating-label input:not(:placeholder-shown) + label {
+            top: 0;
+            transform: translateY(0);
+            font-size: 12px;
+            color: var(--secondary);
+            font-weight: 500;
+        }
+
+        .floating-label input::placeholder {
+            color: transparent;
+        }
+
+        /* Exchange form specific styling */
+        #exchangeForm .form-group {
+            margin-bottom: 24px;
+        }
+
+        #exchangeForm .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 24px;
+        }
+
+        #exchangeForm .form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        #exchangeForm .floating-label {
+            position: relative;
+        }
+
+        #exchangeForm .floating-label input {
+            width: 100%;
+            padding: 16px 0px 8px 0px;
+            border: none;
+            border-bottom: 1px solid #E0E0E0;
+            border-radius: 0;
+            font-size: 16px;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            outline: none;
+            transition: border-bottom-color 0.3s ease;
+            color: #333;
+        }
+
+        #exchangeForm .floating-label input:focus {
+            border-bottom-color: var(--secondary);
+        }
+
+        #exchangeForm .floating-label label {
+            position: absolute;
+            left: 0px;
+            top: 16px;
+            transform: translateY(0);
+            background: transparent;
+            padding: 0;
+            color: #999;
+            font-size: 16px;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #exchangeForm .floating-label input:focus + label,
+        #exchangeForm .floating-label input:not(:placeholder-shown) + label {
+            top: 0;
+            transform: translateY(0);
+            font-size: 12px;
+            color: var(--secondary);
+            font-weight: 500;
+        }
+
+        #exchangeForm .floating-label input::placeholder {
+            color: transparent;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 480px) {
+            .success-card {
+                padding: 30px 20px;
+                margin: 20px;
+                border-radius: 20px;
+            }
+            
+            .success-title {
+                font-size: 24px;
+            }
+            
+            .checkmark {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .success-checkmark {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .action-buttons {
+                margin-top: 20px;
+            }
+            
+            .primary-action-btn, .secondary-action-btn {
+                padding: 14px 20px;
+                font-size: 16px;
+            }
+
+            .exchange-summary {
+                padding: 16px;
+                margin: 20px 0;
+            }
+
+            .summary-icon {
+                font-size: 20px;
+                width: 28px;
+            }
+        }        /* Required field indicators */
+        .required-indicator {
+            color: var(--primary);
+            margin-left: 3px;
+            font-size: 12px;
+            opacity: 0.7;
+            position: relative;
+            top: -1px;
+        }        /* Floating label adjustments for required indicators */
+        .floating-label label.required::after {
+            content: "*";
+            color: var(--primary);
+            margin-left: 3px;
+            font-size: 12px;
+            opacity: 0.7;
+            vertical-align: super;
+            position: relative;
+            top: -2px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>
+    <!-- Modal overlay for background darkening -->
+    <div class="modal-overlay" id="modalOverlay"></div>
+    
+    <div class="container">
+        <div class="logo-container">
+            <div style="background-color: #f5f5f5; height: 16rem; width: 100%;"></div>
+            <div class="profile-overlay">
+                <div class="profile-container">
+                    <div style="background-color: #e0e0e0; height: 100%; width: 100%; border-radius: 50%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="contact-info">
+            <div id="userData"></div>
+        </div>
+
+        <div class="form-container">
+            <button class="submit-btn" onclick="saveContactAndShowForm(event)">
+                <span class="material-icons">save</span>
+                Save Contact
+            </button>
+            
+            <button class="app-btn" id="appButton" onclick="handleAppDownload(event)">
+                <span class="material-icons" id="appIcon">android</span>
+                <span id="appLinkText">Get XS Card</span>
+            </button>
+            
+            <div class="app-description-text" id="appDescription">
+                XS Card is currently in beta testing - Get early access!
+            </div>
+        </div>
+
+        <div class="form-container hidden" id="exchangeForm">
+            <div class="form-content">
+                <div class="form-header">
+                    <button class="close-btn" onclick="skipForm()">
+                        <span class="material-icons">close</span>
+                    </button>
+                    <h3>Contact Saved!</h3>
+                    <p>Please share your contacts with me</p>
+                </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                        <div class="floating-label">
+                            <input type="text" id="scannerName" placeholder=" ">
+                            <label for="scannerName" class="required">First name</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="floating-label">
+                            <input type="text" id="scannerSurname" placeholder=" ">
+                            <label for="scannerSurname" class="required">Last name</label>
+                        </div>
+                    </div>
+                </div>
+                  <div class="form-group">
+                    <div class="floating-label">
+                        <input type="email" id="scannerEmail" placeholder=" ">
+                        <label for="scannerEmail" class="required">Email</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <div class="floating-label">
+                        <input type="tel" id="scannerPhone" placeholder=" ">
+                        <label for="scannerPhone" class="required">Phone number</label>
+                    </div>
+                </div><div class="form-group">
+                    <div class="floating-label">
+                        <input type="text" id="howWeMet" placeholder=" ">
+                        <label for="howWeMet" class="required">How we met</label>
+                    </div>
+                </div>                <!-- Company field -->
+                <div class="form-group">
+                    <div class="floating-label">
+                        <input type="text" id="scannerCompany" placeholder=" ">
+                        <label for="scannerCompany">Company</label>
+                    </div>
+                </div>
+                
+                <button class="submit-btn" onclick="handleExchangeSubmit()">
+                    <span class="material-icons">send</span>
+                    Send Contact
+                </button>
+                
+                <button class="app-btn" id="appButton2" onclick="handleAppDownload(event)">
+                    <span class="material-icons" id="appIcon2">android</span>
+                    <span id="appLinkText2">Get XS Card</span>
+                </button>
+                
+                <div class="app-description-text" id="appDescription2">
+                    XS Card is currently in beta testing - Get early access!
+                </div>
+            </div>
+        </div>
+        
+        <div class="app-description-container">
+        </div>
+    </div>
+
+    <!-- Add success overlay -->
+    <div id="successOverlay" class="success-overlay">
+        <div class="success-card">
+            <!-- Enhanced Success Header -->
+            <div class="success-header">
+                <div class="success-icon-container">
+                    <div class="success-checkmark">
+                        <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+                            <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
+                            <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                        </svg>
+                    </div>
+                </div>
+                <h2 class="success-title">Exchange Complete!</h2>
+                <p class="success-subtitle">You've successfully connected with <span class="contact-name" id="contactNameDisplay"></span></p>
+            </div>
+
+            <!-- Exchange Summary -->
+            <div class="exchange-summary">
+                <div class="summary-item">
+                    <div class="summary-icon">📱</div>
+                    <div class="summary-text">
+                        <div class="summary-label">Contact Saved</div>
+                        <div class="summary-value">Added to your phone</div>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-icon">🤝</div>
+                    <div class="summary-text">
+                        <div class="summary-label">Details Shared</div>
+                        <div class="summary-value" id="sharedWithName">Your info sent</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Prevention Message -->
+            <div class="completion-notice">
+                <div class="notice-icon">✨</div>
+                <p>This exchange is now complete. No need to scan again!</p>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button id="saveToPhoneBtn" class="primary-action-btn">
+                    <span class="material-icons">done</span>
+                    <span>Done</span>
+                </button>
+                <button id="downloadAppBtn" class="secondary-action-btn" onclick="handleAppDownload(event)">
+                    <span class="material-icons" id="appIconOverlay">android</span>
+                    <span id="appTextOverlay">Get XS Card</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Session management for duplicate prevention
+        let sessionId = null;
+        let scanTracked = false;
+
+        // Generate unique session ID on page load
+        function generateSessionId() {
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substring(2);
+            return `scan_${timestamp}_${random}`;
+        }
+
+        // Initialize session on page load
+        function initializeSession() {
+            sessionId = generateSessionId();
+            scanTracked = false;
+            
+            // Check if localStorage is available
+            try {
+                localStorage.setItem('test', 'test');
+                localStorage.removeItem('test');
+            } catch (e) {
+                console.warn('⚠️ localStorage not available, scan deduplication disabled');
+                return;
+            }
+            
+            // Clean up old session data (older than 30 minutes)
+            try {
+                const now = Date.now();
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('xscard_scan_')) {
+                        try {
+                            const data = JSON.parse(localStorage.getItem(key));
+                            if (data.timestamp && (now - data.timestamp) > 30 * 60 * 1000) {
+                                localStorage.removeItem(key);
+                            }
+                        } catch (e) {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Error cleaning up old scan data:', e.message);
+            }
+            
+            console.log('Session initialized:', sessionId);
+        }
+
+        // Track scan function - fire and forget
+        async function trackScan(scanType = 'save') {
+            // Prevent duplicate tracking in same session
+            if (scanTracked) {
+                console.log('Scan already tracked in this session');
+                return;
+            }
+
+            if (!userData || !userData.id) {
+                console.warn('Cannot track scan: user data not available');
+                return;
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const cardIndex = parseInt(urlParams.get('cardIndex')) || 0;
+
+            // Check if this scan was already tracked recently
+            const storageKey = `xscard_scan_${userData.id}_${cardIndex}`;
+            let lastScan = null;
+            
+            try {
+                lastScan = localStorage.getItem(storageKey);
+            } catch (e) {
+                console.warn('⚠️ Cannot access localStorage for duplicate check:', e.message);
+                // Continue with tracking - localStorage not critical for functionality
+            }
+            
+            if (lastScan) {
+                try {
+                    const scanData = JSON.parse(lastScan);
+                    const timeDiff = Date.now() - scanData.timestamp;
+                    
+                    // If scanned within last 5 minutes, skip tracking
+                    if (timeDiff < 5 * 60 * 1000) {
+                        console.log('Scan already tracked recently, skipping');
+                        scanTracked = true;
+                        return;
+                    }
+                } catch (e) {
+                    // Invalid data, remove it
+                    try {
+                        localStorage.removeItem(storageKey);
+                    } catch (storageError) {
+                        console.warn('⚠️ Cannot access localStorage:', storageError.message);
+                    }
+                }
+            }
+
+            try {
+                console.log(`Tracking ${scanType} scan for user ${userData.id}, card ${cardIndex}`);
+                
+                const trackingData = {
+                    userId: userData.id,
+                    cardIndex: cardIndex,
+                    scanType: scanType,
+                    sessionId: sessionId,
+                    timestamp: Date.now()
+                };
+
+                // Fire-and-forget API call
+                fetch('/track-scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(trackingData)
+                }).then(response => {
+                    if (response.ok) {
+                        // Store successful tracking to prevent duplicates
+                        try {
+                            localStorage.setItem(storageKey, JSON.stringify({
+                                timestamp: Date.now(),
+                                sessionId: sessionId,
+                                scanType: scanType
+                            }));
+                        } catch (storageError) {
+                            console.warn('⚠️ Cannot store scan data in localStorage:', storageError.message);
+                            // Continue anyway - tracking still worked
+                        }
+                        scanTracked = true;
+                        console.log(`✅ ${scanType} scan tracked successfully`);
+                    } else {
+                        console.warn(`⚠️ Scan tracking failed with status: ${response.status}`);
+                    }
+                }).catch(error => {
+                    console.warn('⚠️ Scan tracking failed:', error.message);
+                    // Don't throw error - this is fire-and-forget
+                });
+
+            } catch (error) {
+                console.warn('⚠️ Error preparing scan tracking:', error.message);
+                // Continue execution - tracking failure shouldn't break UX
+            }
+        }
+
+        // Function to save contact and show form
+        function saveContactAndShowForm(event) {
+            if (!userData) {
+                alert('No contact information available');
+                return;
+            }
+            
+            // Create and download vCard immediately
+            const vCardData = `BEGIN:VCARD
+VERSION:3.0
+FN:${userData.name} ${userData.surname}
+EMAIL:${userData.email}
+TEL;TYPE=CELL:${userData.phone || ''}
+ORG:${userData.company}
+TITLE:${userData.occupation}
+END:VCARD`;
+
+            const blob = new Blob([vCardData.trim()], { type: 'text/vcard' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${userData.name}_${userData.surname}.vcf`;
+            link.click();
+            
+            // Track the scan after successful vCard download
+            trackScan('save');
+            
+            // Show brief success feedback on button
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            const originalColor = btn.style.backgroundColor;
+            btn.innerHTML = '<span class="material-icons">done</span> Saved!';
+            btn.style.backgroundColor = '#4CAF50';
+            
+            // Get both containers for flip-flop effect
+            const saveContainer = btn.closest('.form-container');
+            const exchangeForm = document.getElementById('exchangeForm');
+            
+            // After brief success feedback, start the flip-flop animation
+            setTimeout(() => {
+                // Reset button appearance first
+                btn.innerHTML = originalText;
+                btn.style.backgroundColor = originalColor;
+                
+                // Show modal overlay
+                const modalOverlay = document.getElementById('modalOverlay');
+                modalOverlay.classList.add('active');
+                
+                // Start save container slide out (move main content up)
+                saveContainer.classList.add('sliding-out-up');
+                  // After save container starts sliding out, show exchange form
+                setTimeout(() => {
+                    exchangeForm.classList.remove('hidden');
+                    exchangeForm.classList.add('sliding-in');
+                    
+                    // Reset company field state when form is shown
+                    resetCompanyField();
+                    
+                    // Focus after animation
+                    setTimeout(() => {
+                        document.getElementById('scannerName').focus();
+                    }, 300);
+                }, 200);
+            }, 1000);
+        }
+        
+        // Function to skip/close the form with slide animation and bring back save button
+        function skipForm() {
+            const exchangeForm = document.getElementById('exchangeForm');
+            const saveContainer = document.querySelector('.form-container:not(#exchangeForm)');
+            const modalOverlay = document.getElementById('modalOverlay');
+            
+            // Hide modal overlay
+            modalOverlay.classList.remove('active');
+            
+            // Start exchange form slide out (slide down off screen)
+            exchangeForm.classList.add('sliding-out');
+            
+            // After exchange form starts sliding out, bring back save container
+            setTimeout(() => {
+                saveContainer.classList.remove('sliding-out-up');
+                saveContainer.classList.add('sliding-in-down');
+            }, 200);
+            
+            // Hide exchange form after animation completes and clean up save container classes
+            setTimeout(() => {
+                exchangeForm.classList.remove('sliding-out', 'sliding-in');
+                exchangeForm.classList.add('hidden');
+                
+                // Clean up save container animation classes
+                saveContainer.classList.remove('sliding-in-down');
+            }, 400);
+        }        // Function to handle exchange submit (NO vCard download since already done)
+        async function handleExchangeSubmit() {
+            // Get the submit button and prevent multiple submissions
+            const submitBtn = document.querySelector('#exchangeForm .submit-btn');
+            
+            // Check if already submitting
+            if (submitBtn.disabled) {
+                console.log('Submit already in progress, ignoring duplicate submission');
+                return;
+            }
+            
+            // Disable button immediately and show loading state
+            submitBtn.disabled = true;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Sending...';
+            submitBtn.style.opacity = '0.7';
+            submitBtn.style.pointerEvents = 'none'; // Extra protection
+            
+            try {
+                if (!userData) {
+                    alert('No user data available!');
+                    return;
+                }
+
+                // Save contact to database (mutual exchange)
+                const savedToDb = await saveContactToDatabase();
+                if (!savedToDb) {
+                    // Re-enable button if save failed
+                    resetSubmitButton(submitBtn, originalText);
+                    return;
+                }
+
+                // Track the exchange scan after successful database save
+                trackScan('exchange');
+
+                // Hide modal overlay and show enhanced success overlay
+                const modalOverlay = document.getElementById('modalOverlay');
+                modalOverlay.classList.remove('active');
+                
+                showEnhancedSuccessOverlay();
+                
+            } catch (error) {
+                console.error('Error in handleExchangeSubmit:', error);
+                alert('Failed to send contact. Please try again.');
+                
+                // Re-enable button on error
+                resetSubmitButton(submitBtn, originalText);
+            }
+        }
+        
+        // Helper function to reset submit button state
+        function resetSubmitButton(submitBtn, originalText) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+            submitBtn.style.opacity = '1';
+            submitBtn.style.pointerEvents = 'auto';
+        }
+
+        // Enhanced success overlay function
+        function showEnhancedSuccessOverlay() {
+            const overlay = document.getElementById('successOverlay');
+            
+            // Update contact name in the overlay
+            const contactNameDisplay = document.getElementById('contactNameDisplay');
+            if (contactNameDisplay && userData) {
+                contactNameDisplay.textContent = userData.name;
+            }
+            
+            // Update shared details text
+            const sharedWithName = document.getElementById('sharedWithName');
+            if (sharedWithName && userData) {
+                sharedWithName.textContent = `Your info sent to ${userData.name}`;
+            }
+            
+            // Update app button text for iOS/Android
+            updateAppButtonForPlatform();
+            
+            // Show overlay with animation
+            overlay.style.display = 'flex';
+            
+            // Set up button handlers
+            setupEnhancedSuccessButtons();
+            
+            // Optional: Auto-hide after 15 seconds to prevent window staying open too long
+            setTimeout(() => {
+                if (overlay.style.display === 'flex') {
+                    handleDoneAction();
+                }
+            }, 15000);
+        }
+
+        // Setup button handlers for enhanced success overlay
+        function setupEnhancedSuccessButtons() {
+            const doneBtn = document.getElementById('saveToPhoneBtn');
+            const downloadAppBtn = document.getElementById('downloadAppBtn');
+            
+            if (doneBtn) {
+                doneBtn.onclick = handleDoneAction;
+            }
+            
+            if (downloadAppBtn) {
+                downloadAppBtn.onclick = handleAppDownload;
+            }
+        }
+
+        // Handle done action with smooth exit
+        function handleDoneAction() {
+            const overlay = document.getElementById('successOverlay');
+            
+            // Add exit animation
+            overlay.style.animation = 'overlayFadeOut 0.3s ease-out forwards';
+            
+            setTimeout(() => {
+                window.close();
+            }, 300);
+        }
+
+        // Update app button based on platform
+        function updateAppButtonForPlatform() {
+            const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const appIconOverlay = document.getElementById('appIconOverlay');
+            const appTextOverlay = document.getElementById('appTextOverlay');
+            
+            if (iOS && appIconOverlay && appTextOverlay) {
+                appIconOverlay.textContent = 'apple';
+                appTextOverlay.textContent = 'Get TestFlight';
+            }
+        }
+
+        // Function to show exchange form (keep for backward compatibility)
+        function showExchangeForm() {
+            const exchangeForm = document.getElementById('exchangeForm');
+            const saveContainer = document.querySelector('.form-container:not(#exchangeForm)');
+            const modalOverlay = document.getElementById('modalOverlay');
+            
+            // Show modal overlay
+            modalOverlay.classList.add('active');
+            
+            // Start save container slide out (move main content up)
+            saveContainer.classList.add('sliding-out-up');
+              // After save container starts sliding out, show exchange form
+            setTimeout(() => {
+                exchangeForm.classList.remove('hidden');
+                exchangeForm.classList.add('sliding-in');
+                
+                // Reset company field state when form is shown
+                resetCompanyField();
+                
+                setTimeout(() => {
+                    document.getElementById('scannerName').focus();
+                }, 400);
+            }, 200);
+        }
+
+        // Add this function to properly handle image URLs (both local and Firebase Storage)
+        function getImageUrl(imageUri, apiBaseUrl) {
+            if (!imageUri) {
+                return null;
+            }
+            
+            // If it's already a full URL (Firebase Storage), return as is
+            if (imageUri.startsWith('http')) {
+                return imageUri;
+            }
+            
+            // Otherwise, it's a local path, prepend the API base URL
+            return `${apiBaseUrl}${imageUri}`;
+        }
+
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('userId');
+        const cardIndex = urlParams.get('cardIndex') || 0;
+        let userData = null;
+
+        // Initialize session for scan tracking
+        initializeSession();
+
+        // Updated loadUserData function to use new endpoint
+        async function loadUserData() {
+            try {
+                const response = await fetch(`/public/cards/${userId}?cardIndex=${cardIndex}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch card data');
+                }
+                
+                userData = await response.json();
+                const apiBaseUrl = window.location.origin;
+                
+                // Update user information with styled elements
+                document.getElementById('userData').innerHTML = `
+                    <h2 class="name">${userData.name} ${userData.surname}</h2>
+                    <p class="position">${userData.occupation}</p>
+                    <p class="company">${userData.company}</p>
+                    
+                    <div class="contact-section">
+                        <span class="material-icons contact-icon">email</span>
+                        <span class="contact-text">${userData.email}</span>
+                    </div>
+                    
+                    <div class="contact-section">
+                        <span class="material-icons contact-icon">phone</span>
+                        <span class="contact-text">${userData.phone || 'No phone number available'}</span>
+                    </div>
+                `;
+                
+                // COMPLETELY REWRITTEN: Handle the company logo and profile image separately,
+                // ensuring we preserve the DOM structure
+                
+                // 1. First, handle the company logo
+                const logoContainer = document.querySelector('.logo-container');
+                if (logoContainer) {
+                    // Clear everything inside except the profile-overlay
+                    const profileOverlay = logoContainer.querySelector('.profile-overlay');
+                    const profileOverlayHtml = profileOverlay ? profileOverlay.outerHTML : '';
+                    
+                    // Get zoom level from user data, default to 1.0 if not present
+                    const logoZoomLevel = userData.logoZoomLevel || 1.0;
+                    console.log('Applying logo zoom level:', logoZoomLevel);
+                    
+                    // Create logo frame structure similar to React screens
+                    if (userData.companyLogo) {
+                        const logoUrl = getImageUrl(userData.companyLogo, apiBaseUrl);
+                        console.log('Company logo URL:', logoUrl);
+                        
+                        logoContainer.innerHTML = `
+                            <div class="logo-frame">
+                                <img class="company-logo" 
+                                    src="${logoUrl}" 
+                                    alt="${userData.company} logo"
+                                    style="width: 100%; height: 100%; object-fit: contain; transform: scale(${logoZoomLevel}); opacity: 1; transition: transform 0.3s ease;"
+                                    onerror="this.onerror=null; this.style.display='none'; this.insertAdjacentHTML('afterend', '<div style=\\'background-color: #f5f5f5; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform: scale(${logoZoomLevel});\\'>Logo</div>');">
+                            </div>
+                            ${profileOverlayHtml}
+                        `;
+                    } else {
+                        logoContainer.innerHTML = `
+                            <div class="logo-frame">
+                                <div style="background-color: #f5f5f5; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform: scale(${logoZoomLevel}); font-size: 24px; color: #999;">Logo</div>
+                            </div>
+                            ${profileOverlayHtml}
+                        `;
+                    }
+                }
+                
+                // 2. Then, handle the profile image
+                const profileContainer = document.querySelector('.profile-container');
+                if (profileContainer) {
+                    if (userData.profileImage) {
+                        const profileUrl = getImageUrl(userData.profileImage, apiBaseUrl);
+                        console.log('Profile image URL:', profileUrl);
+                        
+                        profileContainer.innerHTML = `
+                            <img class="profile-image" 
+                                src="${profileUrl}" 
+                                alt="${userData.name}'s profile" 
+                                onerror="this.onerror=null; this.style.display='none'; this.insertAdjacentHTML('afterend', '<div style=\\'background-color: #e0e0e0; height: 100%; width: 100%; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; color: #999;\\'>'+('${userData.name.charAt(0)}${userData.surname.charAt(0)}')+''+'</div>');">
+                        `;
+                    } else {
+                        // Set a default placeholder with initials
+                        profileContainer.innerHTML = `
+                            <div style="background-color: #e0e0e0; height: 100%; width: 100%; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; color: #999;">
+                                ${userData.name.charAt(0)}${userData.surname.charAt(0)}
+                            </div>
+                        `;
+                    }
+                }
+                
+                // Add a check after a short delay to ensure images are still visible
+                setTimeout(() => {
+                    const profileOverlay = document.querySelector('.profile-overlay');
+                    const profileContainer = document.querySelector('.profile-container');
+                    
+                    if (!profileOverlay || !profileContainer) {
+                        console.error('Profile elements missing from DOM after timeout!');
+                        
+                        // Re-add profile overlay if it's missing
+                        if (!profileOverlay) {
+                            const logoContainer = document.querySelector('.logo-container');
+                            if (logoContainer && !logoContainer.querySelector('.profile-overlay')) {
+                                logoContainer.insertAdjacentHTML('beforeend', `
+                                    <div class="profile-overlay">
+                                        <div class="profile-container">
+                                            <div style="background-color: #e0e0e0; height: 100%; width: 100%; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; color: #999;">
+                                                ${userData.name.charAt(0)}${userData.surname.charAt(0)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `);
+                                console.log('Re-added missing profile overlay');
+                            }
+                        }
+                    }
+                }, 1000);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('userData').innerHTML = '<p>Error loading contact details</p>';
+            }
+        }        async function saveContactToDatabase() {
+            const scannerName = document.getElementById('scannerName').value;
+            const scannerSurname = document.getElementById('scannerSurname').value;
+            const scannerPhone = document.getElementById('scannerPhone').value;
+            const scannerEmail = document.getElementById('scannerEmail').value;
+            const scannerCompany = document.getElementById('scannerCompany').value;
+            const howWeMet = document.getElementById('howWeMet').value;
+
+            // Only require name, surname and how we met
+            if (!scannerName || !scannerSurname || !howWeMet) {
+                alert('Please fill in all required details');
+                return false;
+            }
+
+            // Use EXACTLY the same payload structure that works in Postman
+            const payload = {
+                userId: userData.id,
+                contactInfo: {
+                    name: scannerName,
+                    surname: scannerSurname,
+                    phone: scannerPhone,
+                    email: scannerEmail, // Include email exactly as in your working example
+                    company: scannerCompany, // Add company field
+                    howWeMet: howWeMet
+                }
+            };
+
+            try {
+                console.log('Using the working endpoint /AddContact with payload:', payload);
+                
+                // Use EXACTLY the endpoint that works
+                const response = await fetch('/AddContact', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                console.log('Response status:', response.status);
+                const result = await response.json();
+                console.log('Response data:', result);
+
+                if (!response.ok) {
+                    throw new Error(`Failed to save contact: ${response.status}`);
+                }
+
+                return true;
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to save contact: ' + error.message);
+                return false;
+            }
+        }
+
+        // Load user data when page loads
+        if (userId) {
+            loadUserData();
+        } else {
+            document.getElementById('userData').innerHTML = '<p>No contact information provided</p>';
+        }
+
+        // Add debug information on page load
+        window.addEventListener('load', function() {
+            console.log('=== XS Card Scan Tracking Debug ===');
+            console.log('Session ID:', sessionId);
+            console.log('User ID:', userId);
+            console.log('Card Index:', cardIndex);
+            console.log('Scan Tracked:', scanTracked);
+            console.log('====================================');
+        });
+
+        // Helper function to manually test scan tracking (for development)
+        window.testScanTracking = function(scanType = 'save') {
+            console.log('🧪 Testing scan tracking...');
+            trackScan(scanType);
+        };
+
+        // Helper function to clear scan tracking data (for development)
+        window.clearScanData = function() {
+            try {
+                const keys = Object.keys(localStorage).filter(key => key.startsWith('xscard_scan_'));
+                keys.forEach(key => {
+                    try {
+                        localStorage.removeItem(key);
+                    } catch (e) {
+                        console.warn('⚠️ Cannot remove key:', key, e.message);
+                    }
+                });
+                scanTracked = false;
+                console.log(`🧹 Cleared ${keys.length} scan tracking entries`);
+            } catch (e) {
+                console.warn('⚠️ Cannot access localStorage for clearing:', e.message);
+                scanTracked = false;
+                console.log('🧹 Reset scan tracking flag (localStorage not accessible)');
+            }
+        };
+
+        // Function to handle app download
+        function handleAppDownload(event) {
+            const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            
+            if (iOS) {
+                // For iOS users, open TestFlight
+                window.open('https://apps.apple.com/app/testflight/id899247664', '_blank');
+                
+                // Send email request for TestFlight invite
+                try {
+                    const emailData = {
+                        name: 'iOS User',
+                        email: 'ios-invite-request@xscard.temp',
+                        message: `An iOS user has requested access to the XS Card TestFlight beta. They clicked the app download button from a contact save page.
+                        
+Contact Details from scan:
+- Name: ${userData ? userData.name + ' ' + userData.surname : 'Unknown'}
+- Email: ${userData ? userData.email : 'Unknown'}
+- Company: ${userData ? userData.company : 'Unknown'}
+
+Please send them a TestFlight invite.`,
+                        to: 'xscard@xspark.co.za'
+                    };
+
+                    fetch('/submit-query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(emailData)
+                    });
+                    
+                    console.log('TestFlight invite request sent');
+                } catch (error) {
+                    console.error('Error sending TestFlight request:', error);
+                }
+            } else {
+                // For Android users, trigger direct APK download
+                console.log('Initiating APK download for Android user');
+                
+                // Trigger direct download without changing button appearance
+                window.location.href = '/download-apk';
+            }
+        }
+
+        // iOS detection and app button customization
+        document.addEventListener('DOMContentLoaded', function() {
+            const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const appButton = document.getElementById('appButton');
+            const appIcon = document.getElementById('appIcon');
+            const appLinkText = document.getElementById('appLinkText');
+            const appDescription = document.getElementById('appDescription');
+            
+            // Second button in exchange form
+            const appButton2 = document.getElementById('appButton2');
+            const appIcon2 = document.getElementById('appIcon2');
+            const appLinkText2 = document.getElementById('appLinkText2');
+            const appDescription2 = document.getElementById('appDescription2');
+
+            if (iOS) {
+                // Customize for iOS users - first button
+                appIcon.textContent = 'apple';
+                appLinkText.textContent = 'Get TestFlight';
+                appDescription.textContent = 'XS Card is currently in beta testing - Get early access by installing TestFlight, we will send you an invite shortly after.';
+                
+                // Customize for iOS users - second button
+                appIcon2.textContent = 'apple';
+                appLinkText2.textContent = 'Get TestFlight';
+                appDescription2.textContent = 'XS Card is currently in beta testing - Get early access by installing TestFlight, we will send you an invite shortly after.';
+            }        });        // Function to reset company field state
+        function resetCompanyField() {
+            const companyInput = document.getElementById('scannerCompany');
+            const submitBtn = document.querySelector('#exchangeForm .submit-btn');
+            
+            // Clear the input value
+            if (companyInput) {
+                companyInput.value = '';
+            }
+            
+            // Reset submit button state using helper function
+            if (submitBtn) {
+                resetSubmitButton(submitBtn, '<span class="material-icons">send</span> Send Contact');
+            }
+        }        // Check if this is a contact export request from the app
+        function checkContactExportRequest() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const action = urlParams.get('action');
+            
+            console.log('Checking for contact export action:', action);
+            console.log('URL parameters:', Object.fromEntries(urlParams));
+            
+            if (action === 'downloadContact') {
+                // Single contact export
+                const contactData = {
+                    name: urlParams.get('name') || '',
+                    surname: urlParams.get('surname') || '',
+                    phone: urlParams.get('phone') || '',
+                    email: urlParams.get('email') || '',
+                    company: urlParams.get('company') || '',
+                    howWeMet: urlParams.get('howWeMet') || ''
+                };
+                
+                console.log('Contact data:', contactData);
+                
+                // Show enhanced contact preview page and trigger download immediately
+                showContactExportPage(contactData);
+                setTimeout(() => downloadContactFile(contactData), 100);
+                
+            } else if (action === 'downloadMultiple') {
+                // Multiple contacts export
+                try {
+                    const contactsJson = urlParams.get('contacts');
+                    const count = urlParams.get('count') || '0';
+                    
+                    console.log('Multiple contacts count:', count);
+                    
+                    if (contactsJson) {
+                        const contacts = JSON.parse(decodeURIComponent(contactsJson));
+                        console.log('Contacts data:', contacts);
+                        
+                        showMultipleContactsExportPage(contacts, count);
+                        setTimeout(() => downloadMultipleContactsFile(contacts, count), 100);
+                    }
+                } catch (error) {
+                    console.error('Error parsing contacts data:', error);
+                    alert('Error processing contacts data: ' + error.message);
+                }
+            }
+        }
+        
+        // Show enhanced contact export page that matches the main saveContact.html design
+        function showContactExportPage(contact) {
+            document.body.innerHTML = `
+                <div class="container">
+                    <!-- XS Card Logo Header -->
+                    <div class="xs-logo-header">
+                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40'%3E%3Ctext x='50' y='25' font-family='Arial,sans-serif' font-size='16' font-weight='bold' text-anchor='middle' fill='white'%3EXS Card%3C/svg%3E" alt="XS Card" class="xs-logo">
+                    </div>
+
+                    <div class="logo-container">
+                        <div class="logo-frame">
+                            <div style="background: linear-gradient(135deg, var(--primary), var(--secondary)); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 12px;">
+                                <div style="font-size: 48px;">📱</div>
+                            </div>
+                        </div>
+                        <div class="profile-overlay">
+                            <div class="profile-container">
+                                <div style="background-color: var(--secondary); height: 100%; width: 100%; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; color: white; font-weight: bold;">
+                                    ${contact.name.charAt(0)}${contact.surname.charAt(0)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="contact-info">
+                        <h2 class="name">${contact.name} ${contact.surname}</h2>
+                        ${contact.company ? `<p class="company">${contact.company}</p>` : ''}
+                        
+                        ${contact.email ? `
+                        <div class="contact-section">
+                            <span class="material-icons contact-icon">email</span>
+                            <span class="contact-text">${contact.email}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${contact.phone ? `
+                        <div class="contact-section">
+                            <span class="material-icons contact-icon">phone</span>
+                            <span class="contact-text">${contact.phone}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${contact.howWeMet ? `
+                        <div class="contact-section">
+                            <span class="material-icons contact-icon">place</span>
+                            <span class="contact-text">Met at: ${contact.howWeMet}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="form-container" style="text-align: center; padding: 30px 20px;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="
+                                width: 60px;
+                                height: 60px;
+                                border: 3px solid var(--secondary);
+                                border-top-color: var(--primary);
+                                border-radius: 50%;
+                                animation: spin 1s linear infinite;
+                                margin: 0 auto 20px auto;
+                            "></div>
+                        </div>
+                        <h3 style="color: var(--secondary); margin: 0 0 10px 0; font-size: 20px;">Preparing Contact...</h3>
+                        <p style="color: #666; margin: 0; font-size: 16px;">Your contact file will download automatically</p>
+                    </div>
+                </div>
+                
+                <style>
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
+        }
+
+        // Show enhanced multiple contacts export page
+        function showMultipleContactsExportPage(contacts, count) {
+            document.body.innerHTML = `
+                <div class="container">
+                    <!-- XS Card Logo Header -->
+                    <div class="xs-logo-header">
+                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40'%3E%3Ctext x='50' y='25' font-family='Arial,sans-serif' font-size='16' font-weight='bold' text-anchor='middle' fill='white'%3EXS Card%3C/svg%3E" alt="XS Card" class="xs-logo">
+                    </div>
+
+                    <div class="logo-container">
+                        <div class="logo-frame">
+                            <div style="background: linear-gradient(135deg, var(--primary), var(--secondary)); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; border-radius: 12px; color: white; text-align: center;">
+                                <div style="font-size: 48px; margin-bottom: 10px;">👥</div>
+                                <div style="font-size: 24px; font-weight: bold;">${count}</div>
+                                <div style="font-size: 14px;">Contacts</div>
+                            </div>
+                        </div>
+                        <div class="profile-overlay">
+                            <div class="profile-container">
+                                <div style="background-color: var(--secondary); height: 100%; width: 100%; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 20px; color: white; font-weight: bold;">
+                                    XS
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="contact-info">
+                        <h2 class="name">Contact Export</h2>
+                        <p class="position">Exporting ${count} contacts</p>
+                        
+                        <div class="contact-section">
+                            <span class="material-icons contact-icon">people</span>
+                            <span class="contact-text">${count} contacts selected</span>
+                        </div>
+                        
+                        <div class="contact-section">
+                            <span class="material-icons contact-icon">download</span>
+                            <span class="contact-text">Single .vcf file</span>
+                        </div>
+                    </div>
+
+                    <div class="form-container" style="text-align: center; padding: 30px 20px;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="
+                                width: 60px;
+                                height: 60px;
+                                border: 3px solid var(--secondary);
+                                border-top-color: var(--primary);
+                                border-radius: 50%;
+                                animation: spin 1s linear infinite;
+                                margin: 0 auto 20px auto;
+                            "></div>
+                        </div>
+                        <h3 style="color: var(--secondary); margin: 0 0 10px 0; font-size: 20px;">Preparing Contacts...</h3>
+                        <p style="color: #666; margin: 0; font-size: 16px;">Your contacts file will download automatically</p>
+                    </div>
+                </div>
+                
+                <style>
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
+        }
+
+        // Show a download page instead of the main content (LEGACY - kept for backward compatibility)
+        function showDownloadPage() {
+            document.body.innerHTML = `
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    font-family: Arial, sans-serif;
+                    text-align: center;
+                    padding: 20px;
+                ">
+                    <div style="
+                        background: rgba(255,255,255,0.1);
+                        backdrop-filter: blur(10px);
+                        border-radius: 20px;
+                        padding: 40px;
+                        max-width: 400px;
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                    ">
+                        <div style="font-size: 60px; margin-bottom: 20px;">📱</div>
+                        <h2 style="margin: 0 0 20px 0; font-size: 24px;">Downloading Contact...</h2>
+                        <p style="margin: 0; opacity: 0.9; line-height: 1.5;">
+                            Your contact file is being prepared. The download will start automatically.
+                        </p>
+                        <div style="margin-top: 30px;">
+                            <div style="
+                                width: 40px;
+                                height: 40px;
+                                border: 3px solid rgba(255,255,255,0.3);
+                                border-top-color: white;
+                                border-radius: 50%;
+                                animation: spin 1s linear infinite;
+                                margin: 0 auto;
+                            "></div>
+                        </div>
+                    </div>
+                </div>
+                <style>
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
+        }
+
+          // Function to download single contact as vCard file
+        function downloadContactFile(contact) {
+            console.log('Starting download for contact:', contact);
+            
+            const vCardData = `BEGIN:VCARD
+VERSION:3.0
+FN:${contact.name} ${contact.surname}
+N:${contact.surname};${contact.name};;;
+EMAIL:${contact.email}
+TEL;TYPE=CELL:${contact.phone}
+ORG:${contact.company}
+NOTE:Met at: ${contact.howWeMet}
+END:VCARD`;
+
+            console.log('Generated vCard:', vCardData);
+
+            try {
+                const blob = new Blob([vCardData.trim()], { type: 'text/vcard' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                
+                link.href = url;
+                link.download = `${contact.name}_${contact.surname}.vcf`;
+                link.style.display = 'none';
+                
+                console.log('Download filename:', link.download);
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Clean up the URL object
+                URL.revokeObjectURL(url);
+                
+                console.log('Download triggered successfully');
+                
+                // Show success message
+                setTimeout(() => {
+                    showDownloadMessage(`Contact file for ${contact.name} ${contact.surname} downloaded!`);
+                }, 100);
+                
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('Error downloading contact: ' + error.message);
+            }
+        }
+
+        // Function to download multiple contacts as single vCard file
+        function downloadMultipleContactsFile(contacts, count) {
+            console.log('Starting download for multiple contacts:', contacts.length);
+            
+            let vCardData = '';
+            
+            contacts.forEach((contact, index) => {
+                console.log(`Processing contact ${index + 1}:`, contact);
+                vCardData += `BEGIN:VCARD
+VERSION:3.0
+FN:${contact.name} ${contact.surname}
+N:${contact.surname};${contact.name};;;
+EMAIL:${contact.email}
+TEL;TYPE=CELL:${contact.phone}
+ORG:${contact.company}
+NOTE:Met at: ${contact.howWeMet}
+END:VCARD
+
+`;
+            });
+
+            console.log('Generated vCard data length:', vCardData.length);
+
+            try {
+                const blob = new Blob([vCardData.trim()], { type: 'text/vcard' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                
+                const today = new Date().toISOString().split('T')[0];
+                const filename = `XS_Card_Contacts_${count}_${today}.vcf`;
+                
+                link.href = url;
+                link.download = filename;
+                link.style.display = 'none';
+                
+                console.log('Download filename:', filename);
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Clean up the URL object
+                URL.revokeObjectURL(url);
+                
+                console.log('Multiple contacts download triggered successfully');
+                
+                // Show success message
+                setTimeout(() => {
+                    showDownloadMessage(`${count} contacts downloaded as single file!`);
+                }, 100);
+                
+            } catch (error) {
+                console.error('Multiple contacts download error:', error);
+                alert('Error downloading contacts: ' + error.message);
+            }
+        }
+
+        // Show download success message
+        function showDownloadMessage(message) {
+            // Enhanced success overlay that matches the main page design
+            const successOverlay = document.createElement('div');
+            successOverlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(135deg, rgba(255, 75, 110, 0.95), rgba(27, 43, 91, 0.95));
+                backdrop-filter: blur(10px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                z-index: 1000;
+                animation: overlayFadeIn 0.4s ease-out;
+            `;
+            
+            successOverlay.innerHTML = `
+                <div style="
+                    background: white;
+                    border-radius: 24px;
+                    padding: 40px 30px;
+                    max-width: 400px;
+                    width: 100%;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    text-align: center;
+                    animation: cardSlideUp 0.5s ease-out 0.1s both;
+                ">
+                    <!-- Success Header -->
+                    <div style="margin-bottom: 30px;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="width: 80px; height: 80px; margin: 0 auto;">
+                                <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" style="width: 80px; height: 80px;">
+                                    <circle cx="26" cy="26" r="25" fill="none" stroke="#4CAF50" stroke-width="2" stroke-dasharray="166" stroke-dashoffset="166" style="animation: checkmarkCircle 0.6s cubic-bezier(0.65, 0, 0.45, 1) 0.2s both;"/>
+                                    <path fill="none" stroke="#4CAF50" stroke-width="2" d="M14.1 27.2l7.1 7.2 16.7-16.8" stroke-dasharray="48" stroke-dashoffset="48" style="animation: checkmarkCheck 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s both;"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <h2 style="font-size: 28px; font-weight: 700; color: var(--secondary); margin: 0 0 8px 0;">Download Complete!</h2>
+                        <p style="font-size: 16px; color: #666; margin: 0;">${message}</p>
+                    </div>
+
+                    <!-- Instructions -->
+                    <div style="
+                        background: #f8f9fa;
+                        border-radius: 16px;
+                        padding: 20px;
+                        margin: 25px 0;
+                        text-align: left;
+                    ">
+                        <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                            <div style="font-size: 24px; margin-right: 15px; width: 32px; text-align: center;">📱</div>
+                            <div>
+                                <div style="font-size: 14px; color: #666; font-weight: 500; margin: 0;">Next Steps</div>
+                                <div style="font-size: 16px; color: var(--secondary); font-weight: 600; margin: 2px 0 0 0;">Add to your phone</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                            <div style="font-size: 24px; margin-right: 15px; width: 32px; text-align: center;">1️⃣</div>
+                            <div>
+                                <div style="font-size: 14px; color: #666; font-weight: 500; margin: 0;">Step 1</div>
+                                <div style="font-size: 16px; color: var(--secondary); font-weight: 600; margin: 2px 0 0 0;">Open the downloaded .vcf file</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="font-size: 24px; margin-right: 15px; width: 32px; text-align: center;">2️⃣</div>
+                            <div>
+                                <div style="font-size: 14px; color: #666; font-weight: 500; margin: 0;">Step 2</div>
+                                <div style="font-size: 16px; color: var(--secondary); font-weight: 600; margin: 2px 0 0 0;">Choose "Import to Contacts"</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Completion Notice -->
+                    <div style="
+                        background: linear-gradient(135deg, #e8f5e8, #f0f8f0);
+                        border: 1px solid #d4edda;
+                        border-radius: 12px;
+                        padding: 16px;
+                        margin: 20px 0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">
+                        <div style="font-size: 20px; margin-right: 10px;">✨</div>
+                        <p style="margin: 0; font-size: 14px; color: #155724; font-weight: 500;">
+                            Your contact has been successfully exported!
+                        </p>
+                    </div>
+
+                    <!-- Smart close notice -->
+                    <div id="smartCloseNotice" style="
+                        background: #e3f2fd;
+                        border: 1px solid #90caf9;
+                        border-radius: 8px;
+                        padding: 12px;
+                        margin: 15px 0;
+                        font-size: 14px;
+                        color: #0d47a1;
+                        display: none;
+                    ">
+                        <span>👋 Welcome back! Click "Done" when you've finished importing the contact.</span>
+                    </div>
+
+                    <!-- Action Button -->
+                    <div style="margin-top: 25px;">
+                        <button onclick="closePageNow()" style="
+                            background: linear-gradient(135deg, var(--primary), #ff6b8a);
+                            color: white;
+                            border: none;
+                            border-radius: 50px;
+                            padding: 16px 24px;
+                            font-size: 18px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            box-shadow: 0 4px 15px rgba(255, 75, 110, 0.3);
+                            transition: all 0.3s ease;
+                            -webkit-appearance: none;
+                            appearance: none;
+                        " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(255, 75, 110, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(255, 75, 110, 0.3)'">
+                            ✅ Done
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(successOverlay);
+            
+            // Smart close detection using Page Visibility API
+            let hasLeftPage = false;
+            let returnedToPage = false;
+            
+            // Function to handle visibility change
+            const handleVisibilityChange = () => {
+                if (document.hidden) {
+                    // User left the page (likely to import contact)
+                    hasLeftPage = true;
+                    console.log('User left page - likely importing contact');
+                } else if (hasLeftPage && !returnedToPage) {
+                    // User returned to page after leaving
+                    returnedToPage = true;
+                    console.log('User returned to page - may have finished importing');
+                    
+                    // Show the smart notice
+                    const notice = document.getElementById('smartCloseNotice');
+                    if (notice) {
+                        notice.style.display = 'block';
+                        
+                        // Add a subtle pulse animation to the Done button
+                        const doneButton = successOverlay.querySelector('button');
+                        if (doneButton) {
+                            doneButton.style.animation = 'pulse 2s infinite';
+                            doneButton.innerHTML = '✅ Done - Click to Close';
+                        }
+                    }
+                }
+            };
+            
+            // Add CSS for pulse animation
+            if (!document.getElementById('pulseAnimation')) {
+                const style = document.createElement('style');
+                style.id = 'pulseAnimation';
+                style.textContent = `
+                    @keyframes pulse {
+                        0% { box-shadow: 0 4px 15px rgba(255, 75, 110, 0.3); }
+                        50% { box-shadow: 0 4px 25px rgba(255, 75, 110, 0.6); }
+                        100% { box-shadow: 0 4px 15px rgba(255, 75, 110, 0.3); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            // Listen for page visibility changes
+            if (typeof document.hidden !== 'undefined') {
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+                }
+            
+            // Function to close the page/browser
+            window.closePageNow = function() {
+                // Remove the visibility change listener
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+                
+                // Try multiple methods to close the page
+                try {
+                    // Method 1: Close window if it was opened by a script
+                if (window.opener) {
+                        window.close();
+                        return;
+                    }
+                    
+                    // Method 2: Try to close normally
+                    window.close();
+                    
+                    // Method 3: If window.close() doesn't work, redirect to a blank page
+                    setTimeout(() => {
+                        // Check if the window is still open
+                        if (!window.closed) {
+                            // On mobile browsers, redirect to about:blank
+                            window.location.href = 'about:blank';
+                        }
+                    }, 100);
+                    
+                } catch (error) {
+                    console.log('Unable to close window automatically:', error);
+                    // Fallback: Hide the content and show a message
+                    document.body.innerHTML = `
+                        <div style="
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            min-height: 100vh;
+                            background: var(--secondary);
+                            color: white;
+                            font-family: Arial, sans-serif;
+                            text-align: center;
+                            padding: 20px;
+                        ">
+                            <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+                            <h2 style="margin: 0 0 20px 0;">Export Complete!</h2>
+                            <p style="margin: 0; opacity: 0.8;">You can now close this tab</p>
+                        </div>
+                    `;
+                }
+            };
+        }
+
+        // Initialize on page load - run immediately and on DOMContentLoaded
+        checkContactExportRequest();
+        document.addEventListener('DOMContentLoaded', function() {
+            checkContactExportRequest();
+        });
+    </script>
+</body>
+</html>

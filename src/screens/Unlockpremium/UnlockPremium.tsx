@@ -1,0 +1,787 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  Linking,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { CommonActions } from '@react-navigation/native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { COLORS } from '../../constants/colors';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL, ENDPOINTS, getUserId, performServerLogout, authenticatedFetchWithRefresh } from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
+
+type UnlockPremiumStackParamList = {
+  UnlockPremium: undefined;
+  SignIn: undefined;
+};
+
+const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStackParamList, 'UnlockPremium'>) => {
+  const [selectedPlan, setSelectedPlan] = useState('annually');
+  const [userPlan, setUserPlan] = useState<string>('free');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [currency, setCurrency] = useState<'ZAR' | 'USD'>('ZAR');
+  const { logout } = useAuth(); // Use our centralized auth context
+
+  // Define pricing for both currencies
+  const pricing = {
+    ZAR: {
+      annually: { total: 1800, monthly: 150, save: 120 },
+      monthly: { total: 159.99 }
+    },
+    USD: {
+      annually: { total: 99, monthly: 8.25, save: 7 },
+      monthly: { total: 8.99 }
+    }
+  };
+
+  // Currency symbols
+  const currencySymbols = {
+    ZAR: 'R',
+    USD: '$'
+  };
+
+  useEffect(() => {
+    const getUserData = async () => {
+      try {
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const { email, plan } = JSON.parse(userData);
+          setUserEmail(email);
+          setUserPlan(plan);
+        }
+      } catch (error) {
+        console.error('Error getting user data:', error);
+      }
+    };
+
+    getUserData();
+    checkSubscriptionStatus();
+  }, []);
+
+  const checkSubscriptionStatus = async () => {
+    try {
+      const response = await authenticatedFetchWithRefresh(ENDPOINTS.SUBSCRIPTION_STATUS, {
+        method: 'GET',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status && data.data?.isActive) {
+          setUserPlan('premium');
+          
+          // Update local storage with current subscription status
+          const userData = await AsyncStorage.getItem('userData');
+          if (userData) {
+            const parsedUserData = JSON.parse(userData);
+            parsedUserData.plan = 'premium';
+            await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking subscription status:', error);
+    }
+  };
+
+  // Currency Toggle Component
+  const CurrencyToggle = () => (
+    <View style={styles.currencyToggleContainer}>
+      <Text style={styles.currencyToggleLabel}>Currency:</Text>
+      <View style={styles.toggleContainer}>
+        <TouchableOpacity
+          style={[
+            styles.toggleOption,
+            currency === 'ZAR' && styles.toggleOptionActive
+          ]}
+          onPress={() => setCurrency('ZAR')}
+        >
+          <Text style={[
+            styles.toggleText,
+            currency === 'ZAR' && styles.toggleTextActive
+          ]}>
+            ZAR (R)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.toggleOption,
+            currency === 'USD' && styles.toggleOptionActive
+          ]}
+          onPress={() => setCurrency('USD')}
+        >
+          <Text style={[
+            styles.toggleText,
+            currency === 'USD' && styles.toggleTextActive
+          ]}>
+            USD ($)
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  // Updated logout function using centralized AuthContext
+  const logoutUser = async () => {
+    try {
+      console.log('UnlockPremium: Starting logout process...');
+      
+      // Perform server logout first (non-blocking)
+      try {
+        await performServerLogout();
+      } catch (serverError) {
+        console.log('UnlockPremium: Server logout failed, continuing with local logout:', serverError);
+        // Continue with local logout even if server logout fails
+      }
+      
+      // Use our centralized logout from AuthContext
+      await logout();
+      
+      console.log('UnlockPremium: Logout completed, navigating to SignIn');
+      
+      // Use CommonActions to reset navigation to the initial route
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'SignIn' }],
+        })
+      );
+      
+    } catch (error) {
+      console.error('UnlockPremium: Error during logout:', error);
+      
+      Alert.alert(
+        'Logout Error', 
+        'There was an issue logging out. You will be redirected to the sign-in screen.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'SignIn' }],
+                })
+              );
+            }
+          }
+        ]
+      );
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    Alert.alert(
+      'Cancel Subscription',
+      'Are you sure you want to cancel your premium subscription? You will lose access to premium features at the end of your billing period.',
+      [
+        {
+          text: 'No, Keep Premium',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              const response = await authenticatedFetchWithRefresh(ENDPOINTS.CANCEL_SUBSCRIPTION, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (response.ok) {
+                const result = await response.json();
+                console.log('Cancellation result:', result);
+                
+                if (result.status) {
+                  Alert.alert(
+                    'Subscription Cancelled', 
+                    'Your subscription has been cancelled successfully. You will now be logged out.',
+                    [
+                      {
+                        text: 'OK',
+                        onPress: () => logoutUser()
+                      }
+                    ]
+                  );
+                } else {
+                  Alert.alert('Error', result.message || 'Failed to cancel subscription.');
+                }
+              } else {
+                const errorResult = await response.json().catch(() => ({}));
+                Alert.alert('Error', errorResult.message || 'Failed to cancel subscription. Please try again.');
+              }
+            } catch (error) {
+              console.error('Error cancelling subscription:', error);
+              Alert.alert('Error', 'An error occurred while cancelling your subscription. Please try again or contact support.');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handlePaymentInitiation = async () => {
+    try {
+      setIsProcessing(true);
+      const currentPricing = pricing[currency];
+      const amount = selectedPlan === 'annually' ? currentPricing.annually.total : currentPricing.monthly.total;
+
+      const response = await authenticatedFetchWithRefresh(ENDPOINTS.INITIALIZE_PAYMENT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: userEmail,
+          amount: amount,
+          currency: currency,
+          // Add a success URL that will handle returning to the app and logging out
+          // This depends on deep linking configuration in your app
+          callback_url: 'xscard://payment-success'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.status && data.data?.authorization_url) {
+        // Inform user they'll need to log back in after payment
+        Alert.alert(
+          'Payment Processing',
+          'You will be redirected to complete your payment. After successful payment, please log back in to access your premium features.',
+          [
+            {
+              text: 'Continue',
+              onPress: async () => {
+                // Open payment URL in browser
+                await Linking.openURL(data.data.authorization_url);
+              }
+            }
+          ]
+        );
+      } else {
+        throw new Error('Payment initialization failed');
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      Alert.alert('Error', 'Failed to initiate payment. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const renderPremiumUserUI = () => (
+    <View style={styles.premiumContainer}>
+      <MaterialIcons name="verified" size={80} color={COLORS.primary} />
+      <Text style={styles.premiumTitle}>Premium Subscription Active</Text>
+      <Text style={styles.premiumSubtitle}>
+        You have access to all premium features
+      </Text>
+      <TouchableOpacity
+        style={[styles.cancelButton, isLoading && styles.disabledButton]}
+        onPress={handleCancelSubscription}
+        disabled={isLoading}
+      >
+        <Text style={styles.cancelButtonText}>
+          {isLoading ? 'Processing...' : 'Cancel Subscription'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const currentPricing = pricing[currency];
+  const symbol = currencySymbols[currency];
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <TouchableOpacity 
+        style={styles.closeButton} 
+        onPress={() => navigation.goBack()}
+      >
+        <Text style={styles.closeButtonText}>✕</Text>
+      </TouchableOpacity>
+
+      {userPlan === 'premium' ? (
+        renderPremiumUserUI()
+      ) : (
+        <ScrollView style={styles.content}>
+          <Text style={styles.title}>
+            Be a better networker, upgrade to XS Card premium
+          </Text>
+
+          <TouchableOpacity 
+            style={[
+              styles.trialButton, 
+              { marginVertical: 20 },
+              isProcessing && styles.disabledButton
+            ]}
+            onPress={handlePaymentInitiation}
+            disabled={isProcessing}
+          >
+            <Text style={styles.trialButtonText}>
+              {isProcessing ? 'Processing...' : 'Start your 7-day free trial'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Currency Toggle */}
+          <CurrencyToggle />
+
+          {/* Pricing Options */}
+          <View style={styles.pricingContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.planOption,
+                selectedPlan === 'annually' && styles.selectedPlan
+              ]}
+              onPress={() => setSelectedPlan('annually')}
+            >
+              <View style={styles.saveBadge}>
+                <Text style={styles.saveText}>Save {symbol}{currentPricing.annually.save}</Text>
+              </View>
+              <Text style={styles.planType}>Annually</Text>
+              <Text style={styles.price}>{symbol}{currentPricing.annually.total.toFixed(2)}</Text>
+              <Text style={styles.monthlyPrice}>{symbol}{currentPricing.annually.monthly.toFixed(2)}/month</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[
+                styles.planOption,
+                selectedPlan === 'monthly' && styles.selectedPlan
+              ]}
+              onPress={() => setSelectedPlan('monthly')}
+            >
+              <Text style={styles.planType}>Monthly</Text>
+              <Text style={styles.price}>{symbol}{currentPricing.monthly.total.toFixed(2)}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.cancelText}>7-day free trial. Cancel anytime</Text>
+
+          {/* Feature Comparison */}
+          <View style={styles.comparisonContainer}>
+            <View style={styles.comparisonCard}>
+              <View style={styles.headerRow}>
+                <View style={styles.featureHeaderColumn}>
+                  <Text style={styles.headerTitle}>Features</Text>
+                </View>
+                <View style={styles.valueHeaderColumn}>
+                  <Text style={styles.headerText}>Free</Text>
+                </View>
+                <View style={styles.valueHeaderColumn}>
+                  <Text style={styles.headerTextPremium}>Premium</Text>
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>Maximum number of cards</Text>
+                  <Text style={styles.featureSubtitle}>Create up to 5 cards with XSCard</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <Text style={styles.freeValue}>1</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <Text style={styles.premiumValue}>5</Text>
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>Add a custom color to your card</Text>
+                  <Text style={styles.featureSubtitle}>Set your color theme to be any color you like.</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="lock" size={24} color="#9E9E9E" />
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="check-circle" size={24} color="#FF6B6B" />
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>QR code customization</Text>
+                  <Text style={styles.featureSubtitle}>Premium QR code designs with brand colours</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="lock" size={24} color="#9E9E9E" />
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="check-circle" size={24} color="#FF6B6B" />
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>Analytics</Text>
+                  <Text style={styles.featureSubtitle}>Track scans, contacts, and engagement</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="lock" size={24} color="#9E9E9E" />
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="check-circle" size={24} color="#FF6B6B" />
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>Email support</Text>
+                  <Text style={styles.featureSubtitle}>48h response → 12h priority support</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <Text style={styles.freeValue}>48h</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <Text style={styles.premiumValue}>12h</Text>
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>Calendar integration</Text>
+                  <Text style={styles.featureSubtitle}>Direct calendar booking and invites</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="lock" size={24} color="#9E9E9E" />
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="check-circle" size={24} color="#FF6B6B" />
+                </View>
+              </View>
+
+              <View style={styles.featureRow}>
+                <View style={styles.featureColumn}>
+                  <Text style={styles.featureTitle}>Social media integration</Text>
+                  <Text style={styles.featureSubtitle}>Connect all your social profiles</Text>
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="lock" size={24} color="#9E9E9E" />
+                </View>
+                <View style={styles.valueColumn}>
+                  <MaterialIcons name="check-circle" size={24} color="#FF6B6B" />
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity>
+            <Text style={styles.alreadyPaidText}>
+              I have already paid for XSCard Premium.{' '}
+              <Text style={styles.tapHereText}>Tap here</Text>
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[
+              styles.bottomTrialButton,
+              isProcessing && styles.disabledButton
+            ]}
+            onPress={handlePaymentInitiation}
+            disabled={isProcessing}
+          >
+            <Text style={styles.bottomTrialButtonText}>
+              {isProcessing ? 'Processing...' : 'Start 7-day free trial'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'white',
+    paddingBottom: 20,
+  },
+  closeButton: {
+    padding: 15,
+    position: 'absolute',
+    top: 25,
+    left: 10,
+    zIndex: 1,
+  },
+  closeButtonText: {
+    fontSize: 24,
+    color: '#000',
+  },
+  content: {
+    padding: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 40,
+    marginBottom: 20,
+  },
+  trialButton: {
+    backgroundColor: '#FF6B6B',
+    padding: 15,
+    borderRadius: 25,
+    alignItems: 'center',
+  },
+  trialButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  pricingContainer: {
+    marginVertical: 20,
+  },
+  planOption: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 15,
+    padding: 20,
+    marginVertical: 10,
+    position: 'relative',
+  },
+  selectedPlan: {
+    borderColor: '#FF6B6B',
+    borderWidth: 2,
+  },
+  saveBadge: {
+    position: 'absolute',
+    top: -12,
+    right: 20,
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 15,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  saveText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  planType: {
+    fontSize: 16,
+    color: '#666',
+  },
+  price: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 5,
+  },
+  monthlyPrice: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
+  },
+  cancelText: {
+    textAlign: 'center',
+    color: '#666',
+    marginVertical: 20,
+  },
+  comparisonContainer: {
+    marginTop: 20,
+    paddingHorizontal: 0,
+  },
+  comparisonCard: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    paddingVertical: 15,
+    backgroundColor: '#f8f8f8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  featureHeaderColumn: {
+    flex: 2,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    flex: 2,
+    fontSize: 16,
+    color: '#666',
+  },
+  valueHeaderColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  headerTextPremium: {
+    fontSize: 16,
+    color: '#FF6B6B',
+    fontWeight: '600',
+  },
+  featureRow: {
+    flexDirection: 'row',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  featureColumn: {
+    flex: 2,
+    paddingRight: 10,
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  featureSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+  },
+  valueColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freeValue: {
+    fontSize: 16,
+    color: '#666',
+  },
+  premiumValue: {
+    fontSize: 16,
+    color: '#FF6B6B',
+    fontWeight: '600',
+  },
+  bottomTrialButton: {
+    backgroundColor: '#000',
+    padding: 15,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  bottomTrialButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  alreadyPaidText: {
+    textAlign: 'center',
+    color: '#666',
+    marginVertical: 20,
+    fontSize: 14,
+  },
+  tapHereText: {
+    textDecorationLine: 'underline',
+    color: '#666',
+  },
+  premiumContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  premiumTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  premiumSubtitle: {
+    fontSize: 16,
+    color: COLORS.gray,
+    marginTop: 10,
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  cancelButton: {
+    backgroundColor: '#FF4444',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    marginTop: 20,
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  currencyToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 25,
+    marginTop: 10,
+  },
+  currencyToggleLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 15,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 25,
+    padding: 3,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleOptionActive: {
+    backgroundColor: '#FF6B6B',
+    shadowColor: '#FF6B6B',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  toggleTextActive: {
+    color: 'white',
+  },
+});
+
+export default UnlockPremium;

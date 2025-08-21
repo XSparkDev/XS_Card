@@ -1,0 +1,978 @@
+{
+  "info": {
+    "name": "Event Publishing Payment Flow Tests",
+    "description": "Comprehensive test collection for event publishing payment flow including Paystack integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8383",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentReference",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "eventId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup & Authentication",
+      "item": [
+        {
+          "name": "Create Test User",
+          "disabled": true,
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('User created successfully', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.contain('User added successfully');",
+                  "    pm.globals.set('userId', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Free\",\n  \"surname\": \"Test User\",\n  \"email\": \"kirtuzagna@gmail.com\",\n  \"password\": \"123456\",\n  \"status\": \"active\",\n  \"tier\": \"free\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Login Test User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login successful', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.token).to.exist;",
+                  "    pm.globals.set('authToken', response.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"kirtuzagna@gmail.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SignIn",
+              "host": ["{{baseUrl}}"],
+              "path": ["SignIn"]
+            }
+          }
+        },
+        {
+          "name": "Login Premium User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Premium user login successful', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.globals.set('authToken', response.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jirise5201@gmail.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SignIn",
+              "host": ["{{baseUrl}}"],
+              "path": ["SignIn"]
+            }
+          }
+        },
+        {
+          "name": "Login Enterprise User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enterprise user login successful', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.globals.set('authToken', response.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tepsasikne@gmail.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/SignIn",
+              "host": ["{{baseUrl}}"],
+              "path": ["SignIn"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Flow Tests",
+      "item": [
+        {
+          "name": "Create Paid Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Paid event created successfully', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.event.eventType).to.equal('paid');",
+                  "    pm.expect(response.event.publishingCost.price).to.be.greaterThan(0);",
+                  "    const eventId = response.event.id || response.event._id;",
+                  "    pm.collectionVariables.set('eventId', eventId);",
+                  "    pm.globals.set('eventId', eventId);",
+                  "    console.log('Event ID captured:', eventId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Payment Test Event\",\n  \"description\": \"This event requires payment to publish\",\n  \"eventDate\": \"2024-12-31T18:00:00.000Z\",\n  \"eventType\": \"paid\",\n  \"ticketPrice\": 100,\n  \"maxAttendees\": 100,\n  \"visibility\": \"public\",\n  \"category\": \"business\",\n  \"venue\": \"Test Venue\",\n  \"address\": \"123 Test Street\",\n  \"city\": \"Test City\",\n  \"country\": \"South Africa\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"]
+            }
+          }
+        },
+        {
+          "name": "Attempt to Publish Event (Should Require Payment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payment required for event publishing', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.paymentRequired).to.be.true;",
+                  "    pm.expect(response.paymentUrl).to.exist;",
+                  "    pm.expect(response.amount).to.be.greaterThan(0);",
+                  "    pm.expect(response.reference).to.exist;",
+                  "    pm.globals.set('paymentReference', response.reference);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}", "publish"]
+            }
+          }
+        },
+        {
+          "name": "Check Event Status (Should be Pending Payment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Event status is pending payment', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.event.status).to.equal('pending_payment');",
+                  "    pm.expect(response.event.paymentReference).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}"]
+            }
+          }
+        },
+        {
+          "name": "Attempt to Publish Pending Event (Should Fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cannot publish pending payment event', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.false;",
+                  "    pm.expect(response.message).to.contain('pending payment');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}", "publish"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhook Tests",
+      "item": [
+        {
+          "name": "Simulate Successful Payment Webhook",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Webhook processed successfully', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.received).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "{{$randomUUID}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"id\": {{$randomInt}},\n    \"domain\": \"test\",\n    \"status\": \"success\",\n    \"reference\": \"{{paymentReference}}\",\n    \"amount\": 5000,\n    \"message\": \"Payment successful\",\n    \"gateway_response\": \"Approved\",\n    \"paid_at\": \"2024-01-01T12:00:00.000Z\",\n    \"created_at\": \"2024-01-01T12:00:00.000Z\",\n    \"channel\": \"card\",\n    \"currency\": \"ZAR\",\n    \"ip_address\": \"127.0.0.1\",\n    \"metadata\": {\n      \"eventId\": \"{{eventId}}\",\n      \"userId\": \"{{userId}}\",\n      \"eventTitle\": \"Payment Test Event\",\n      \"publishingFee\": true\n    },\n    \"customer\": {\n      \"id\": {{$randomInt}},\n      \"first_name\": \"Free\",\n      \"last_name\": \"User\",\n      \"email\": \"kirtuzagna@gmail.com\",\n      \"phone\": null,\n      \"metadata\": null\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events/payment/webhook",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "payment", "webhook"]
+            }
+          }
+        },
+        {
+          "name": "Check Event Status After Payment (Should be Published)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Event is now published after payment', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.event.status).to.equal('published');",
+                  "    pm.expect(response.event.publishedAt).to.exist;",
+                  "    pm.expect(response.event.listingFee).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}"]
+            }
+          }
+        },
+        {
+          "name": "Test Invalid Webhook (Wrong Signature)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid webhook signature rejected', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.error).to.equal('Invalid signature');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "invalid_signature"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"invalid_reference\",\n    \"amount\": 5000,\n    \"status\": \"success\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events/payment/webhook",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "payment", "webhook"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Callback Tests",
+      "item": [
+        {
+          "name": "Create Another Paid Event for Callback Test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Second paid event created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.globals.set('eventId2', response.event.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Callback Test Event\",\n  \"description\": \"This event tests payment callback\",\n  \"eventDate\": \"2024-12-31T20:00:00.000Z\",\n  \"eventType\": \"paid\",\n  \"ticketPrice\": 150,\n  \"maxAttendees\": 75,\n  \"visibility\": \"public\",\n  \"category\": \"entertainment\",\n  \"venue\": \"Callback Venue\",\n  \"address\": \"456 Callback Street\",\n  \"city\": \"Callback City\",\n  \"country\": \"South Africa\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"]
+            }
+          }
+        },
+        {
+          "name": "Initiate Payment for Second Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payment initiated for second event', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.paymentRequired).to.be.true;",
+                  "    pm.globals.set('paymentReference2', response.reference);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId2}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId2}}", "publish"]
+            }
+          }
+        },
+        {
+          "name": "Test Payment Callback (Missing Reference)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Callback redirects to failed payment', function () {",
+                  "    pm.response.to.have.status(302);",
+                  "    const location = pm.response.headers.get('Location');",
+                  "    pm.expect(location).to.contain('payment=failed');",
+                  "    pm.expect(location).to.contain('reason=missing_reference');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/payment/callback",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "payment", "callback"]
+            }
+          }
+        },
+        {
+          "name": "Test Payment Callback (Invalid Reference)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Callback redirects to verification failed', function () {",
+                  "    pm.response.to.have.status(302);",
+                  "    const location = pm.response.headers.get('Location');",
+                  "    pm.expect(location).to.contain('payment=failed');",
+                  "    pm.expect(location).to.contain('reason=verification_failed');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/payment/callback?reference=invalid_reference",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "payment", "callback"],
+              "query": [
+                {
+                  "key": "reference",
+                  "value": "invalid_reference"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edge Cases & Error Handling",
+      "item": [
+        {
+          "name": "Try to Publish Non-existent Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Non-existent event returns 404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.false;",
+                  "    pm.expect(response.message).to.equal('Event not found');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/non_existent_event_id/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "non_existent_event_id", "publish"]
+            }
+          }
+        },
+        {
+          "name": "Try to Publish Already Published Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Already published event returns 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.false;",
+                  "    pm.expect(response.message).to.equal('Event is already published');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}", "publish"]
+            }
+          }
+        },
+        {
+          "name": "Get Credits for Non-existent User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid auth token returns 401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid_token"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/credits",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "credits"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Premium User Payment Tests",
+      "item": [
+        {
+          "name": "Create Premium User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Premium user created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.globals.set('premiumUserId', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Premium\",\n  \"surname\": \"Payment User\",\n  \"email\": \"jirise5201@gmail.com\",\n  \"password\": \"123456\",\n  \"status\": \"active\",\n  \"tier\": \"premium\",\n  \"welcomeCreditUsed\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Use All Premium Monthly Credits",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Credits bucket updated', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creditsUsed\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/creditBuckets/{{premiumUserId}}_{{$isoTimestamp}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["creditBuckets", "{{premiumUserId}}_{{$isoTimestamp}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Premium Event (Should Require Discounted Payment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Premium event requires discounted payment', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.event.publishingCost.price).to.equal(1000);",
+                  "    pm.expect(response.event.publishingCost.creditType).to.be.null;",
+                  "    pm.globals.set('premiumEventId', response.event.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Premium Discounted Event\",\n  \"description\": \"This event should have discounted payment\",\n  \"eventDate\": \"2024-12-31T21:00:00.000Z\",\n  \"eventType\": \"paid\",\n  \"ticketPrice\": 200,\n  \"maxAttendees\": 100,\n  \"visibility\": \"public\",\n  \"category\": \"networking\",\n  \"venue\": \"Premium Venue\",\n  \"address\": \"789 Premium Street\",\n  \"city\": \"Premium City\",\n  \"country\": \"South Africa\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"]
+            }
+          }
+        },
+        {
+          "name": "Publish Premium Event (Should Require Discounted Payment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Premium event requires discounted payment', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.paymentRequired).to.be.true;",
+                  "    pm.expect(response.amount).to.equal(1000);",
+                  "    pm.globals.set('premiumPaymentRef', response.reference);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{premiumEventId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{premiumEventId}}", "publish"]
+            }
+          }
+        },
+        {
+          "name": "Create Enterprise User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enterprise user created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.globals.set('enterpriseUserId', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Enterprise\",\n  \"surname\": \"Payment User\",\n  \"email\": \"tepsasikne@gmail.com\",\n  \"password\": \"123456\",\n  \"status\": \"active\",\n  \"tier\": \"enterprise\",\n  \"welcomeCreditUsed\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Create Enterprise Event (Should Use Monthly Credits)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enterprise event should use monthly credits', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.event.publishingCost.price).to.equal(0);",
+                  "    pm.expect(response.event.publishingCost.creditType).to.equal('monthly');",
+                  "    pm.globals.set('enterpriseEventId', response.event.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Enterprise Free Event\",\n  \"description\": \"This event should use enterprise monthly credits\",\n  \"eventDate\": \"2024-12-31T22:00:00.000Z\",\n  \"eventType\": \"paid\",\n  \"ticketPrice\": 300,\n  \"maxAttendees\": 200,\n  \"visibility\": \"public\",\n  \"category\": \"business\",\n  \"venue\": \"Enterprise Venue\",\n  \"address\": \"999 Enterprise Street\",\n  \"city\": \"Enterprise City\",\n  \"country\": \"South Africa\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"]
+            }
+          }
+        },
+        {
+          "name": "Publish Enterprise Event (Should Use Monthly Credits)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enterprise event published with monthly credits', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.success).to.be.true;",
+                  "    pm.expect(response.message).to.contain('monthly credit');",
+                  "    pm.expect(response.creditInfo.creditUsed).to.equal('monthly');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{enterpriseEventId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{enterpriseEventId}}", "publish"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

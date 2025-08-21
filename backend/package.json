@@ -1,0 +1,40 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate-images": "node scripts/migrateImages.js",
+    "migrate-images:dry": "node scripts/migrateImages.js --dry-run",
+    "migrate-user": "node scripts/migrateImages.js --userId",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.4",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "expo": "~52.0.46",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.2",
+    "ical-generator": "^8.1.1",
+    "ics": "^3.8.1",
+    "mssql": "^11.0.1",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.10.0",
+    "pdfkit": "^0.15.0",
+    "qrcode": "^1.5.4",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-modal": "^13.0.1",
+    "socket.io": "^4.8.1",
+    "twilio": "^5.8.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}

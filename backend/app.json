@@ -1,0 +1,7 @@
+{
+  "expo": {
+    "ios": {
+      "bundleIdentifier": "com.p.zzles.backend"
+    }
+  }
+}

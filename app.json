@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "XSCard App",
+    "slug": "xscard",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icons/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/icons/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.p.zzles.xscard",
+      "buildNumber": "1.0.2",
+      "icon": "./assets/icons/icon.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icons/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.p.zzles.xscard",
+      "permissions": [
+        "INTERNET",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icons/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "75e89bdc-a27b-4ca7-bce8-f76c910d1d47"
+      }
+    },
+    "owner": "p.zzles",
+    "id": "a84f7923-57e3-41c8-a3dc-3c07fb9013dc",
+    "plugins": [
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+                  "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
+        "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
+        }
+      ]
+    ]
+  }
+}

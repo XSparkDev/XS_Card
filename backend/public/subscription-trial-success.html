@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trial Subscription Activated - XSCard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #FF4B6E;
+            --secondary-color: #1B2B5B;
+            --success-color: #28a745;
+            --dark-text: #333;
+            --light-text: #666;
+            --lighter-text: #888;
+            --border-color: #e9e9e9;
+            --background-light: var(--white);
+            --white: #FFFFFF;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #FF4B6E, #1B2B5B, #FF4B6E);
+            background-size: 400% 400%;
+            animation: dramaticGradient 8s ease infinite;
+            color: var(--dark-text);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        @keyframes dramaticGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(255, 75, 110, 0.3) 0%, transparent 60%),
+                radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.15) 0%, transparent 60%),
+                radial-gradient(circle at 40% 80%, rgba(255, 193, 7, 0.2) 0%, transparent 60%);
+            animation: dramaticFloat 12s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes dramaticFloat {
+            0%, 100% { 
+                transform: rotate(0deg) scale(1);
+                filter: hue-rotate(0deg);
+            }
+            33% { 
+                transform: rotate(120deg) scale(1.1);
+                filter: hue-rotate(60deg);
+            }
+            66% { 
+                transform: rotate(240deg) scale(0.9);
+                filter: hue-rotate(120deg);
+            }
+        }
+
+        @keyframes backgroundFloat {
+            0%, 100% { transform: rotate(0deg) scale(1); }
+            33% { transform: rotate(1deg) scale(1.02); }
+            66% { transform: rotate(-1deg) scale(0.98); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 2;
+        }
+        
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }        .card {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.85));
+            border-radius: 25px;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.3),
+                0 0 0 1px rgba(255, 255, 255, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            padding: 40px;
+            text-align: center;
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(40, 167, 69, 0.3);
+            transform: perspective(1000px) rotateX(5deg);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: cardEntrance 1.5s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        @keyframes cardEntrance {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateX(25deg) translateY(100px) scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateX(5deg) translateY(0) scale(1);
+            }
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(40, 167, 69, 0.1), transparent);
+            transform: rotate(45deg);
+            animation: cardShimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes cardShimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            50% { transform: translateX(100%) rotate(45deg); }
+            100% { transform: translateX(-100%) rotate(45deg); }
+        }
+
+        .card:hover {
+            transform: perspective(1000px) rotateX(0deg) translateY(-10px) scale(1.05);
+            box-shadow: 
+                0 30px 80px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(40, 167, 69, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            border-color: var(--success-color);
+        }        .icon-container {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(40, 167, 69, 0.2), rgba(40, 167, 69, 0.1));
+            border-radius: 50%;
+            position: relative;
+            animation: dramaticPulse 2s ease-in-out infinite;
+            box-shadow: 
+                0 0 0 0 rgba(40, 167, 69, 0.4),
+                0 0 0 10px rgba(40, 167, 69, 0.1),
+                0 0 0 20px rgba(40, 167, 69, 0.05);
+        }
+
+        @keyframes dramaticPulse {
+            0% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 0 0 rgba(40, 167, 69, 0.4),
+                    0 0 0 10px rgba(40, 167, 69, 0.1),
+                    0 0 0 20px rgba(40, 167, 69, 0.05);
+            }
+            50% { 
+                transform: scale(1.1);
+                box-shadow: 
+                    0 0 0 10px rgba(40, 167, 69, 0.2),
+                    0 0 0 25px rgba(40, 167, 69, 0.1),
+                    0 0 0 40px rgba(40, 167, 69, 0.05);
+            }
+            100% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 0 0 rgba(40, 167, 69, 0.4),
+                    0 0 0 10px rgba(40, 167, 69, 0.1),
+                    0 0 0 20px rgba(40, 167, 69, 0.05);
+            }
+        }
+
+        .icon-container::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: -20px;
+            right: -20px;
+            bottom: -20px;
+            border: 2px solid transparent;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--success-color), transparent, var(--success-color)) border-box;
+            mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+            mask-composite: subtract;
+            animation: rotateBorder 4s linear infinite;
+        }
+
+        @keyframes rotateBorder {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .success-icon {
+            color: var(--success-color);
+            font-size: 60px;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            animation: iconBounce 3s ease-in-out infinite;
+            text-shadow: 0 0 20px rgba(40, 167, 69, 0.5);
+        }
+
+        @keyframes iconBounce {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            25% { transform: scale(1.2) rotate(-10deg); }
+            75% { transform: scale(1.1) rotate(10deg); }
+        }
+
+        .icon-container:hover .success-icon {
+            transform: scale(1.3) rotate(360deg);
+            color: #20c997;
+            text-shadow: 0 0 30px rgba(32, 201, 151, 0.8);
+        }
+          h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--success-color);
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        p {
+            margin-bottom: 20px;
+            color: var(--light-text);
+            font-size: 16px;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
+        }
+          .trial-info {
+            background-color: rgba(27, 43, 91, 0.05);
+            border: 1px solid rgba(27, 43, 91, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            animation: fadeInUp 0.8s ease-out 0.4s both;
+            backdrop-filter: blur(5px);
+        }
+        
+        .trial-info h3 {
+            color: var(--secondary-color);
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .trial-info p {
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+        
+        .trial-info ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+        
+        .trial-info li {
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+          .button-container {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            animation: fadeInUp 0.8s ease-out 0.6s both;
+        }        .button {
+            display: inline-block;
+            padding: 18px 32px;
+            border-radius: 50px;
+            font-weight: 600;
+            text-decoration: none;
+            font-size: 16px;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+            text-align: center;
+            min-width: 220px;
+            position: relative;
+            overflow: hidden;
+            transform: perspective(1000px) rotateX(0deg);
+            animation: buttonFloat 6s ease-in-out infinite;
+        }
+
+        @keyframes buttonFloat {
+            0%, 100% { 
+                transform: perspective(1000px) rotateX(0deg) translateY(0px);
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            }
+            50% { 
+                transform: perspective(1000px) rotateX(5deg) translateY(-5px);
+                box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            }
+        }
+
+        .button::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transform: rotate(45deg);
+            transition: all 0.6s ease;
+            opacity: 0;
+        }
+
+        .button::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+            transition: all 0.6s ease;
+            transform: translate(-50%, -50%);
+        }
+
+        .button:hover::before {
+            opacity: 1;
+            animation: buttonShimmer 1.5s ease-in-out;
+        }
+
+        .button:hover::after {
+            width: 300px;
+            height: 300px;
+        }
+
+        @keyframes buttonShimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
+        }
+          .primary-button {
+            background: linear-gradient(135deg, var(--success-color), #20c997, #17a2b8, var(--success-color));
+            background-size: 300% 300%;
+            color: var(--white);
+            border: none;
+            box-shadow: 
+                0 8px 30px rgba(40, 167, 69, 0.4),
+                0 0 0 1px rgba(255, 255, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            animation: buttonGradient 4s ease infinite;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        @keyframes buttonGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .primary-button:hover {
+            transform: perspective(1000px) rotateX(-5deg) translateY(-8px) scale(1.05);
+            box-shadow: 
+                0 15px 45px rgba(40, 167, 69, 0.6),
+                0 0 0 1px rgba(255, 255, 255, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            animation: buttonGradient 2s ease infinite, buttonPulseGlow 1.5s ease infinite;
+        }
+
+        @keyframes buttonPulseGlow {
+            0%, 100% { 
+                box-shadow: 
+                    0 15px 45px rgba(40, 167, 69, 0.6),
+                    0 0 20px rgba(40, 167, 69, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            }
+            50% { 
+                box-shadow: 
+                    0 15px 45px rgba(40, 167, 69, 0.8),
+                    0 0 40px rgba(40, 167, 69, 0.8),
+                    0 0 0 1px rgba(255, 255, 255, 0.5),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+            }
+        }
+          .secondary-button {
+            background-color: transparent;
+            color: var(--secondary-color);
+            border: 2px solid var(--secondary-color);
+        }
+        
+        .secondary-button:hover {
+            background-color: var(--secondary-color);
+            color: var(--white);
+            transform: translateY(-1px);
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 14px;
+            color: var(--lighter-text);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 15px;
+            }
+            
+            .card {
+                padding: 20px 15px;
+            }
+            
+            .button {
+                width: 100%;
+                padding: 12px;
+                font-size: 15px;
+            }
+        }
+        
+        /* Tooltip styles */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 250px;
+            background-color: var(--secondary-color);
+            color: var(--white);
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 14px;
+            font-weight: normal;
+        }
+        
+        .tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: var(--secondary-color) transparent transparent transparent;
+        }
+        
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 0.95;
+        }
+        
+        .download-section {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            background-color: rgba(27, 43, 91, 0.05);
+            text-align: center;
+        }
+        
+        .download-section p {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card" id="mainContent">
+            <div class="icon-container">
+                <span class="success-icon">✓</span>
+            </div>
+            
+            <h1>Trial Subscription Activated!</h1>
+            
+            <p>Your free trial has been successfully set up. Welcome to XSCard Premium!</p>
+            
+            <div class="trial-info">
+                <h3>Your Trial Details</h3>
+                <p>You now have access to all premium features for the duration of your trial period.</p>
+                <p><strong>What's included:</strong></p>
+                <ul>
+                    <li>Unlimited card creations</li>
+                    <li>Advanced design templates</li>
+                    <li>Priority customer support</li>
+                    <li>Analytics dashboard</li>
+                    <li>Integration with third-party apps</li>
+                </ul>
+                <p><strong>Important:</strong> At the end of your trial period, your subscription will automatically continue at the regular price. You can cancel anytime from your account settings.</p>
+            </div>
+            
+            <div id="trialTimerSection">
+                <p>Your trial will be active for the next <span id="trialDays">7</span> days.</p>
+                <p>First payment will be processed after your trial ends.</p>
+            </div>
+            
+            <div class="download-section">
+                <p><strong>To access all premium features:</strong></p>
+                <p>Download our mobile app where all features are available now!</p>
+            </div>
+            
+            <div class="button-container">
+                <div class="tooltip">
+                    <a href="#" class="button primary-button">Go to Dashboard</a>
+                    <span class="tooltip-text">Web dashboard coming soon! Access all features on our mobile app.</span>
+                </div>
+                
+                <div class="tooltip">
+                    <a href="#" class="button secondary-button">Manage Subscription</a>
+                    <span class="tooltip-text">Web subscription management coming soon! Use our mobile app for now.</span>
+                </div>
+                
+                <a href="/queries.html" class="button secondary-button">Contact Support</a>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>&copy; <span id="currentYear"></span> XSCard. All Rights Reserved.</p>
+    </footer>
+    
+    <script>
+        // Set current year in footer
+        document.getElementById('currentYear').textContent = new Date().getFullYear();
+        
+        // Parse URL params to get trial days if provided
+        const urlParams = new URLSearchParams(window.location.search);
+        const trialDays = urlParams.get('days');
+        if (trialDays) {
+            document.getElementById('trialDays').textContent = trialDays;
+        }
+        
+        // Check if this was a duplicate subscription scenario
+        const isDuplicate = urlParams.get('duplicate') === 'true';
+        if (isDuplicate) {
+            // Add a note that we detected an existing subscription
+            const infoSection = document.createElement('div');
+            infoSection.className = 'trial-info';
+            infoSection.innerHTML = `
+                <h3>Existing Subscription Detected</h3>
+                <p>We noticed you already have an active subscription. Your existing subscription has been maintained, and your trial benefits have been applied.</p>
+                <p>You will not be double-billed.</p>
+            `;
+            
+            // Insert after the trial timer section
+            const timerSection = document.getElementById('trialTimerSection');
+            timerSection.parentNode.insertBefore(infoSection, timerSection.nextSibling);
+        }
+    </script>
+</body>
+</html>
