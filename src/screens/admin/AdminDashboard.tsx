@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, Platform, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
-import { LineChart } from 'react-native-chart-kit';
+// Chart components temporarily disabled due to compatibility issues
 import { API_BASE_URL, ENDPOINTS, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
