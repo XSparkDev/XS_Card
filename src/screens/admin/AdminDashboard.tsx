@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, Platform, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
-// Chart components temporarily disabled due to compatibility issues
+import { LineChart } from 'react-native-chart-kit';
 import { API_BASE_URL, ENDPOINTS, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -731,5 +731,23 @@ const styles = StyleSheet.create({
   },
   activeTimeRangeText: {
     color: 'white',
+  },
+  chartPlaceholder: {
+    height: 220,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  chartPlaceholderText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 5,
+  },
+  chartPlaceholderSubtext: {
+    fontSize: 14,
+    color: '#999',
   },
 });

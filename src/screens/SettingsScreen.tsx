@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -53,7 +54,57 @@ export default function SettingsScreen() {
   };
 
   const handleBecomeOrganiser = () => {
-    navigation.navigate('OrganiserRegistration');
+    console.log('Become Organiser button pressed');
+    try {
+      navigation.navigate('OrganiserRegistration');
+    } catch (error) {
+      console.error('Error navigating to OrganiserRegistration:', error);
+    }
+  };
+
+  const handleTermsOfService = async () => {
+    console.log('Terms of Service button pressed');
+    try {
+      const supported = await Linking.canOpenURL('https://xscard.co.za/terms');
+      if (supported) {
+        await Linking.openURL('https://xscard.co.za/terms');
+      } else {
+        Alert.alert('Error', 'Cannot open Terms of Service link');
+      }
+    } catch (error) {
+      console.error('Error opening Terms of Service:', error);
+      Alert.alert('Error', 'Failed to open Terms of Service');
+    }
+  };
+
+  const handlePrivacyPolicy = async () => {
+    console.log('Privacy Policy button pressed');
+    try {
+      const supported = await Linking.canOpenURL('https://xscard.co.za/privacy');
+      if (supported) {
+        await Linking.openURL('https://xscard.co.za/privacy');
+      } else {
+        Alert.alert('Error', 'Cannot open Privacy Policy link');
+      }
+    } catch (error) {
+      console.error('Error opening Privacy Policy:', error);
+      Alert.alert('Error', 'Failed to open Privacy Policy');
+    }
+  };
+
+  const handleHelpAndSupport = async () => {
+    console.log('Help & Support button pressed');
+    try {
+      const supported = await Linking.canOpenURL('https://xscard.co.za/support');
+      if (supported) {
+        await Linking.openURL('https://xscard.co.za/support');
+      } else {
+        Alert.alert('Error', 'Cannot open Help & Support link');
+      }
+    } catch (error) {
+      console.error('Error opening Help & Support:', error);
+      Alert.alert('Error', 'Failed to open Help & Support');
+    }
   };
 
   const handleDeactivateAccount = () => {
@@ -120,7 +171,9 @@ export default function SettingsScreen() {
     onPress?: () => void,
     showArrow: boolean = true,
     destructive: boolean = false
-  ) => (
+  ) => {
+    console.log(`Rendering setting item: ${title}, onPress: ${!!onPress}, showArrow: ${showArrow}`);
+    return (
     <TouchableOpacity
       style={[styles.settingItem, destructive && styles.destructiveItem]}
       onPress={onPress}
@@ -152,6 +205,7 @@ export default function SettingsScreen() {
       )}
     </TouchableOpacity>
   );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -269,24 +323,24 @@ export default function SettingsScreen() {
             'help',
             'Help & Support',
             'Get help with your account',
-            undefined,
-            false
+            handleHelpAndSupport,
+            true
           )}
 
           {renderSettingItem(
             'description',
             'Terms of Service',
             'Read our terms and conditions',
-            undefined,
-            false
+            handleTermsOfService,
+            true
           )}
 
           {renderSettingItem(
             'privacy-tip',
             'Privacy Policy',
             'Read our privacy policy',
-            undefined,
-            false
+            handlePrivacyPolicy,
+            true
           )}
         </View>
 
