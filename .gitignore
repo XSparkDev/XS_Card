@@ -9,6 +9,24 @@ dist/
 web-build/
 expo-env.d.ts
 
+# Build artifacts and cache
+*.log
+*.tgz
+build/
+.cache/
+
+# Large backup files
+*_old.jpg
+*_old.png
+backend/
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
 # Native
 *.orig.*
 *.jks
