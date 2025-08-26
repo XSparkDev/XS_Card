@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandler, ERROR_CODES, handleAuthError, handleNetworkError, createAppError } from './errorHandler';
 // Firebase integration for enhanced token refresh
 import { auth } from '../config/firebaseConfig';
-import { Auth, User as FirebaseUser } from 'firebase/auth';
 // Import for keepLoggedIn preference check
 import { getKeepLoggedInPreference } from './authStorage';
 
