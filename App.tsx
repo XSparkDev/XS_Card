@@ -10,11 +10,14 @@ import { EventNotificationProvider } from './src/context/EventNotificationContex
 import ToastProvider from './src/components/ToastProvider';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
   'Text strings must be rendered within a <Text> component',
   'Warning: Text strings must be rendered within a <Text> component',
+  'Non-serializable values were found in the navigation state',
+  'AsyncStorage has been extracted from react-native core',
 ]);
 
 const Stack = createStackNavigator();
@@ -49,19 +52,21 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <EventNotificationProvider>
-        <ToastProvider>
-          <NavigationContainer ref={navigationRef}>
-            <StatusBar style="auto" />
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Auth" component={AuthNavigator} />
-              <Stack.Screen name="MainApp" component={TabNavigator} />
-            </Stack.Navigator>
-          </NavigationContainer>
-        </ToastProvider>
-      </EventNotificationProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <EventNotificationProvider>
+          <ToastProvider>
+            <NavigationContainer ref={navigationRef}>
+              <StatusBar style="auto" />
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Auth" component={AuthNavigator} />
+                <Stack.Screen name="MainApp" component={TabNavigator} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </ToastProvider>
+        </EventNotificationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
