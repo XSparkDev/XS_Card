@@ -828,7 +828,7 @@ setInterval(async () => {
 const checkExpiredTrials = async () => {
     try {
         const now = new Date();
-        console.log(`Checking for expired trials: ${now.toISOString()}`);
+        console.log(`Checking for any expired trials: ${now.toISOString()}`);
         
         // Get all trial users first, then filter in memory
         // This avoids the need for a composite index
@@ -968,8 +968,8 @@ const verifySubscriptionStatus = async (subscriptionCode) => {
     });
 };
 
-// Run the check every minute
-setInterval(checkExpiredTrials, 60 * 1000);
+// Run the check every 12 hours
+setInterval(checkExpiredTrials, 12 * 60 * 60 * 1000);
 
 // Error handler
 app.use((error, req, res, next) => {
