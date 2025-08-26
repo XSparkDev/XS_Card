@@ -7,17 +7,15 @@ import AuthNavigator from './src/navigation/AuthNavigator';
 import TabNavigator from './src/navigation/TabNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { EventNotificationProvider } from './src/context/EventNotificationContext';
+import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
-import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
   'Text strings must be rendered within a <Text> component',
   'Warning: Text strings must be rendered within a <Text> component',
-  'Non-serializable values were found in the navigation state',
-  'AsyncStorage has been extracted from react-native core',
 ]);
 
 const Stack = createStackNavigator();
@@ -52,9 +50,9 @@ export default function App() {
   }, []);
 
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <EventNotificationProvider>
+    <AuthProvider>
+      <EventNotificationProvider>
+        <ColorSchemeProvider>
           <ToastProvider>
             <NavigationContainer ref={navigationRef}>
               <StatusBar style="auto" />
@@ -64,9 +62,9 @@ export default function App() {
               </Stack.Navigator>
             </NavigationContainer>
           </ToastProvider>
-        </EventNotificationProvider>
-      </AuthProvider>
-    </ErrorBoundary>
+        </ColorSchemeProvider>
+      </EventNotificationProvider>
+    </AuthProvider>
   );
 }
 

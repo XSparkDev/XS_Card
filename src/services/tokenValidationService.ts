@@ -29,47 +29,46 @@ export class TokenValidationService {
           }
         }
         
-              if (!firebaseUser) {
-        console.log('TokenValidationService: No Firebase user found after waiting');
+        if (!firebaseUser) {
+          console.log('TokenValidationService: No Firebase user found after waiting');
+          
+          // 🔥 CRITICAL FIX: Try backend validation as fallback when no Firebase user
+          console.log('TokenValidationService: Attempting backend validation as fallback');
+          try {
+            const isValid = await validateAuthToken();
+            console.log('TokenValidationService: Backend validation result:', isValid);
+            return isValid;
+          } catch (backendError) {
+            console.error('TokenValidationService: Backend validation failed:', backendError);
+            return false;
+          }
+        }
         
-        // 🔥 CRITICAL FIX: Try backend validation as fallback when no Firebase user
-        console.log('TokenValidationService: Attempting backend validation as fallback');
+        // Check if we have stored token
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) {
+          console.log('TokenValidationService: No stored token found');
+          return false;
+        }
+
+        // With Firebase integration, try to get a fresh token to validate
         try {
+          const freshToken = await firebaseUser.getIdToken(false); // Don't force refresh
+          if (freshToken) {
+            console.log('TokenValidationService: Firebase token validation successful');
+            return true;
+          }
+        } catch (firebaseError) {
+          console.error('TokenValidationService: Firebase token validation failed:', firebaseError);
+          
+          // Try backend validation as fallback
+          console.log('TokenValidationService: Falling back to backend validation');
           const isValid = await validateAuthToken();
           console.log('TokenValidationService: Backend validation result:', isValid);
           return isValid;
-        } catch (backendError) {
-          console.error('TokenValidationService: Backend validation failed:', backendError);
-          return false;
         }
-      }
-      }
-      
-      // Check if we have stored token
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        console.log('TokenValidationService: No stored token found');
-        return false;
-      }
-
-      // With Firebase integration, try to get a fresh token to validate
-      try {
-        const freshToken = await firebaseUser.getIdToken(false); // Don't force refresh
-        if (freshToken) {
-          console.log('TokenValidationService: Firebase token validation successful');
-          return true;
-        }
-      } catch (firebaseError) {
-        console.error('TokenValidationService: Firebase token validation failed:', firebaseError);
         
-        // Try backend validation as fallback
-        console.log('TokenValidationService: Falling back to backend validation');
-        const isValid = await validateAuthToken();
-        console.log('TokenValidationService: Backend validation result:', isValid);
-        return isValid;
-      }
-      
-      return false;
+        return false;
     } catch (error) {
       console.error('TokenValidationService: Error validating current token:', error);
       return false;
