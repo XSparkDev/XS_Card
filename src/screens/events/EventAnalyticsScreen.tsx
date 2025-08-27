@@ -282,7 +282,7 @@ export default function EventAnalyticsScreen() {
         {analytics.registrationTrend.length > 0 && (
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Registration Trend</Text>
-            <LineChart
+            {/* <LineChart
               data={{
                 labels: analytics.registrationTrend.map(item => item.date.split(' ')[0]),
                 datasets: [{
@@ -295,14 +295,14 @@ export default function EventAnalyticsScreen() {
               chartConfig={chartConfig}
               bezier
               style={styles.chart}
-            />
+            /> */}
           </View>
         )}
 
         {/* Attendance Overview */}
         <View style={styles.chartContainer}>
           <Text style={styles.chartTitle}>Attendance Overview</Text>
-          <PieChart
+          {/* <PieChart
             data={[
               {
                 name: 'Checked In',
@@ -327,7 +327,15 @@ export default function EventAnalyticsScreen() {
             paddingLeft="0"
             center={[-10, 0]}
             style={styles.chart}
-          />
+          /> */}
+          <View style={styles.chartPlaceholder}>
+            <Text style={styles.chartPlaceholderText}>
+              Attendance Chart
+            </Text>
+            <Text style={styles.chartPlaceholderSubtext}>
+              {analytics.checkedInCount} / {analytics.totalRegistrations} checked in
+            </Text>
+          </View>
         </View>
 
         {/* Registrations by Day */}
