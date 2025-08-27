@@ -9,7 +9,7 @@ import { AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, buildUrl } from '../../utils/api';
 // ErrorPopup import removed - no popups on signup page
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Error handler imports removed - no popups on signup page
+import { ErrorHandler, ERROR_CODES, createAppError, handleStorageError } from '../../utils/errorHandler';
 
 type SignUpScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignUp'>;
 
@@ -21,6 +21,8 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showError, setShowError] = useState(false);
   const [errors, setErrors] = useState({
     firstName: '',
     lastName: '',

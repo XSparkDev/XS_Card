@@ -25,6 +25,7 @@ import QRScannerScreen from '../screens/events/QRScannerScreen';
 import CheckInDashboard from '../screens/events/CheckInDashboard';
 import EventAnalyticsScreen from '../screens/events/EventAnalyticsScreen';
 import OrganiserRegistrationScreen from '../screens/events/OrganiserRegistrationScreen';
+import PaymentPendingScreen from '../screens/events/PaymentPendingScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -157,7 +158,7 @@ export default function AppNavigator() {
       <Stack.Screen name="CreateEvent" component={CreateEventScreen} />
       <Stack.Screen name="EditEvent" component={EditEventScreen} />
       <Stack.Screen name="MyEvents" component={MyEventsScreen} />
-      <Stack.Screen name="PaymentPending" component={require('../screens/events/PaymentPendingScreen').default} />
+      <Stack.Screen name="PaymentPending" component={PaymentPendingScreen} />
       <Stack.Screen name="EventTicket" component={EventTicketScreen} />
       <Stack.Screen name="QRScanner" component={QRScannerScreen} />
       <Stack.Screen name="CheckInDashboard" component={CheckInDashboard} />

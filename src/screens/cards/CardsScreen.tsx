@@ -687,13 +687,13 @@ export default function CardsScreen() {
 
                 {/* Basic Info */}
                 <Text style={[styles.name, styles.leftAligned]}>
-                  {`${card.name} ${card.surname}`}
+                  {`${card.name || ''} ${card.surname || ''}`}
                 </Text>
                 <Text style={[styles.position, styles.leftAligned]}>
-                  {card.occupation}
+                  {card.occupation || 'No occupation'}
                 </Text>
                 <Text style={[styles.company, styles.leftAligned]}>
-                  {card.company}
+                  {card.company || 'No company'}
                 </Text>
 
                 {/* Contact Info */}
@@ -702,7 +702,7 @@ export default function CardsScreen() {
                   onPress={() => handleEmailPress(card.email)}
                 >
                   <MaterialCommunityIcons name="email-outline" size={30} color={card.colorScheme} />
-                  <Text style={styles.contactText}>{card.email}</Text>
+                  <Text style={styles.contactText}>{card.email || 'No email address'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -710,7 +710,7 @@ export default function CardsScreen() {
                   onPress={() => handlePhonePress(card.phone)}
                 >
                   <MaterialCommunityIcons name="phone-outline" size={30} color={card.colorScheme} />
-                  <Text style={styles.contactText}>{card.phone}</Text>
+                  <Text style={styles.contactText}>{card.phone || 'No phone number'}</Text>
                 </TouchableOpacity>
 
                 {/* Social Links */}
@@ -730,7 +730,7 @@ export default function CardsScreen() {
                           size={30} 
                           color={card.colorScheme} 
                         />
-                        <Text style={styles.contactText}>{textValue}</Text>
+                        <Text style={styles.contactText}>{textValue || ''}</Text>
                       </TouchableOpacity>
                     );
                   }

@@ -1,5 +1,7 @@
 import { Event } from './events';
 
+export { Event };
+
 export interface AttendeeDetail {
   name: string;
   email: string;
