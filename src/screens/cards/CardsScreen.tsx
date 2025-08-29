@@ -205,6 +205,14 @@ export default function CardsScreen() {
         // Log the first card's data to check if scans and logoZoomLevel are included
         console.log('Card data received:', JSON.stringify(cardsArray[0], null, 2));
         
+        // Debug profile image and company logo specifically
+        cardsArray.forEach((card, index) => {
+          console.log(`Card ${index} - Profile Image:`, card.profileImage);
+          console.log(`Card ${index} - Company Logo:`, card.companyLogo);
+          console.log(`Card ${index} - Profile Image URL processed:`, getImageUrl(card.profileImage));
+          console.log(`Card ${index} - Company Logo URL processed:`, getImageUrl(card.companyLogo));
+        });
+        
         setUserData({
           id: userId,
           cards: cardsArray,
@@ -666,6 +674,11 @@ export default function CardsScreen() {
                       fadeDuration={300} // Smooth fade-in animation when loading
                       onError={(error) => {
                         console.warn('Failed to load company logo:', error.nativeEvent.error);
+                        console.log('Company logo URL that failed:', card.companyLogo);
+                        console.log('Processed logo URL:', getImageUrl(card.companyLogo));
+                      }}
+                      onLoad={() => {
+                        console.log('Company logo loaded successfully:', card.companyLogo);
                       }}
                   />
                   </View>
@@ -679,6 +692,11 @@ export default function CardsScreen() {
                         }
                         onError={(error) => {
                           console.warn('Failed to load profile image:', error.nativeEvent.error);
+                          console.log('Profile image URL that failed:', card.profileImage);
+                          console.log('Processed URL:', getImageUrl(card.profileImage));
+                        }}
+                        onLoad={() => {
+                          console.log('Profile image loaded successfully:', card.profileImage);
                         }}
                       />
                     </Animated.View>
@@ -687,13 +705,13 @@ export default function CardsScreen() {
 
                 {/* Basic Info */}
                 <Text style={[styles.name, styles.leftAligned]}>
-                  {`${card.name} ${card.surname}`}
+                  {`${card.name || ''} ${card.surname || ''}`}
                 </Text>
                 <Text style={[styles.position, styles.leftAligned]}>
-                  {card.occupation}
+                  {card.occupation || 'No occupation'}
                 </Text>
                 <Text style={[styles.company, styles.leftAligned]}>
-                  {card.company}
+                  {card.company || 'No company'}
                 </Text>
 
                 {/* Contact Info */}
@@ -702,7 +720,7 @@ export default function CardsScreen() {
                   onPress={() => handleEmailPress(card.email)}
                 >
                   <MaterialCommunityIcons name="email-outline" size={30} color={card.colorScheme} />
-                  <Text style={styles.contactText}>{card.email}</Text>
+                  <Text style={styles.contactText}>{card.email || 'No email address'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -710,7 +728,7 @@ export default function CardsScreen() {
                   onPress={() => handlePhonePress(card.phone)}
                 >
                   <MaterialCommunityIcons name="phone-outline" size={30} color={card.colorScheme} />
-                  <Text style={styles.contactText}>{card.phone}</Text>
+                  <Text style={styles.contactText}>{card.phone || 'No phone number'}</Text>
                 </TouchableOpacity>
 
                 {/* Social Links */}
@@ -730,7 +748,7 @@ export default function CardsScreen() {
                           size={30} 
                           color={card.colorScheme} 
                         />
-                        <Text style={styles.contactText}>{textValue}</Text>
+                        <Text style={styles.contactText}>{textValue || ''}</Text>
                       </TouchableOpacity>
                     );
                   }

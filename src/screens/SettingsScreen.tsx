@@ -65,9 +65,9 @@ export default function SettingsScreen() {
   const handleTermsOfService = async () => {
     console.log('Terms of Service button pressed');
     try {
-      const supported = await Linking.canOpenURL('https://downloads.xscard.co.za/terms');
+      const supported = await Linking.canOpenURL('https://xscard.co.za/terms');
       if (supported) {
-        await Linking.openURL('https://downloads.xscard.co.za/terms');
+        await Linking.openURL('https://xscard.co.za/terms');
       } else {
         Alert.alert('Error', 'Cannot open Terms of Service link');
       }
@@ -80,9 +80,9 @@ export default function SettingsScreen() {
   const handlePrivacyPolicy = async () => {
     console.log('Privacy Policy button pressed');
     try {
-      const supported = await Linking.canOpenURL('https://downloads.xscard.co.za/privacy');
+      const supported = await Linking.canOpenURL('https://xscard.co.za/privacy');
       if (supported) {
-        await Linking.openURL('https://downloads.xscard.co.za/privacy');
+        await Linking.openURL('https://xscard.co.za/privacy');
       } else {
         Alert.alert('Error', 'Cannot open Privacy Policy link');
       }
@@ -95,9 +95,9 @@ export default function SettingsScreen() {
   const handleHelpAndSupport = async () => {
     console.log('Help & Support button pressed');
     try {
-      const supported = await Linking.canOpenURL('https://downloads.xscard.co.za/support');
+      const supported = await Linking.canOpenURL('https://xscard.co.za/support');
       if (supported) {
-        await Linking.openURL('https://downloads.xscard.co.za/support');
+        await Linking.openURL('https://xscard.co.za/support');
       } else {
         Alert.alert('Error', 'Cannot open Help & Support link');
       }

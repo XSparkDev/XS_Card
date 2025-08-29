@@ -14,61 +14,19 @@ export default function SplashScreen() {
   const [authCheckStatus, setAuthCheckStatus] = useState<string>('Checking authentication...');
   const [minDisplayTimeElapsed, setMinDisplayTimeElapsed] = useState(false);
 
-  // Ensure minimum display time for smooth UX and add timeout fallback
+  // Ensure minimum display time for smooth UX
   useEffect(() => {
     const timer = setTimeout(() => {
       setMinDisplayTimeElapsed(true);
     }, 1500);
 
-    // 🔥 CRITICAL FIX: Add timeout fallback to prevent getting stuck
-    const timeoutFallback = setTimeout(() => {
-      console.log('SplashScreen: Timeout fallback triggered - forcing navigation to SignIn');
-      if (!isLoading && firebaseReady) {
-        try {
-          navigation.replace('SignIn');
-        } catch (error) {
-          console.error('SplashScreen: Timeout fallback navigation failed:', error);
-        }
-      }
-    }, 10000); // 10 second timeout
-
-    return () => {
-      clearTimeout(timer);
-      clearTimeout(timeoutFallback);
-    };
-  }, [isLoading, firebaseReady, navigation]);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Handle navigation when auth state is determined and minimum time has elapsed
   useEffect(() => {
     if (!isLoading && firebaseReady && minDisplayTimeElapsed) {
       console.log('SplashScreen: Auth state determined:', { isAuthenticated, keepLoggedIn });
-      
-      // 🔥 CRITICAL FIX: Add navigation state tracking to prevent multiple navigations
-      let hasNavigated = false;
-      
-      const safeNavigate = (routeName: string) => {
-        if (hasNavigated) {
-          console.log('SplashScreen: Navigation already attempted, skipping');
-          return;
-        }
-        hasNavigated = true;
-        console.log(`SplashScreen: Navigating to ${routeName}`);
-        
-        try {
-          navigation.replace(routeName);
-        } catch (navigationError) {
-          console.error('SplashScreen: Navigation error:', navigationError);
-          // Fallback: try reset instead of replace
-          try {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: routeName }],
-            });
-          } catch (resetError) {
-            console.error('SplashScreen: Navigation reset also failed:', resetError);
-          }
-        }
-      };
       
       if (isAuthenticated) {
         console.log('SplashScreen: User is authenticated');
@@ -77,36 +35,44 @@ export default function SplashScreen() {
           console.log('SplashScreen: User authenticated with keepLoggedIn enabled');
           setAuthCheckStatus('Validating session...');
           
-          // 🔥 CRITICAL FIX: Simplified validation with better error handling
+          // 🔥 CRITICAL FIX: Wait for Firebase auth state to be ready before validating
           const validateWithRetry = async (retryCount = 0) => {
             try {
-              console.log(`SplashScreen: Token validation attempt ${retryCount + 1}`);
               const isValid = await validateCurrentToken();
-              
               if (isValid) {
                 console.log('SplashScreen: Token validation successful');
                 setAuthCheckStatus('Welcome back!');
-                setTimeout(() => safeNavigate('MainApp'), 500);
+                setTimeout(() => {
+                  console.log('SplashScreen: Navigating to MainApp');
+                  navigation.replace('MainApp');
+                }, 500);
               } else {
-                if (retryCount < 2) { // Reduced retries
+                // If validation fails and we haven't retried too many times, wait and retry
+                if (retryCount < 3) {
                   console.log(`SplashScreen: Token validation failed, retrying in 1 second (attempt ${retryCount + 1}/3)`);
                   setAuthCheckStatus('Checking session...');
                   setTimeout(() => validateWithRetry(retryCount + 1), 1000);
                 } else {
                   console.log('SplashScreen: Token validation failed after retries - forcing logout');
                   setAuthCheckStatus('Session expired');
-                  setTimeout(() => safeNavigate('SignIn'), 500);
+                  setTimeout(() => {
+                    console.log('SplashScreen: Navigating to SignIn due to invalid token');
+                    navigation.replace('SignIn');
+                  }, 500);
                 }
               }
             } catch (error) {
               console.log('SplashScreen: Token validation error:', error);
-              if (retryCount < 2) {
+              if (retryCount < 3) {
                 console.log(`SplashScreen: Validation error, retrying in 1 second (attempt ${retryCount + 1}/3)`);
                 setAuthCheckStatus('Checking session...');
                 setTimeout(() => validateWithRetry(retryCount + 1), 1000);
               } else {
                 setAuthCheckStatus('Session error');
-                setTimeout(() => safeNavigate('SignIn'), 500);
+                setTimeout(() => {
+                  console.log('SplashScreen: Navigating to SignIn due to validation error');
+                  navigation.replace('SignIn');
+                }, 500);
               }
             }
           };
@@ -116,12 +82,18 @@ export default function SplashScreen() {
         } else {
           console.log('SplashScreen: User authenticated but keepLoggedIn is disabled - treating as new session');
           setAuthCheckStatus('Please sign in again');
-          setTimeout(() => safeNavigate('SignIn'), 500);
+          setTimeout(() => {
+            console.log('SplashScreen: Navigating to SignIn due to keepLoggedIn disabled');
+            navigation.replace('SignIn');
+          }, 500);
         }
       } else {
         console.log('SplashScreen: User not authenticated, keepLoggedIn:', keepLoggedIn);
         setAuthCheckStatus('Loading...');
-        setTimeout(() => safeNavigate('SignIn'), 500);
+        setTimeout(() => {
+          console.log('SplashScreen: Navigating to SignIn');
+          navigation.replace('SignIn');
+        }, 500);
       }
     } else if (!isLoading && !minDisplayTimeElapsed) {
       // Auth is ready but still showing splash for UX

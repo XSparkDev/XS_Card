@@ -62,15 +62,5 @@ target 'XSCardApp' do
         end
       end
     end
-
-    # Fix Hermes dSYM generation
-    installer.pods_project.targets.each do |target|
-      if target.name == 'hermes-engine'
-        target.build_configurations.each do |config|
-          config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf-with-dsym'
-          config.build_settings['STRIP_INSTALLED_PRODUCT'] = 'NO'
-        end
-      end
-    end
   end
 end

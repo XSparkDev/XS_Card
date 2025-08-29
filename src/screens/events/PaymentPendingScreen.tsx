@@ -62,11 +62,11 @@ const PaymentPendingScreen = () => {
         // Navigate back after short delay
         setTimeout(() => {
           if (paymentType === 'event_registration') {
-                        navigation.navigate('EventDetails', {
+                        navigation.navigate('EventDetailsScreen', {
               eventId
             });
           } else {
-            navigation.navigate('EventDetails', { eventId });
+            navigation.navigate('EventDetailsScreen', { eventId });
           }
         }, 1500);
       } else if (result.verification?.pending) {
@@ -143,7 +143,7 @@ const PaymentPendingScreen = () => {
           // Navigate back to event details after short delay
           setTimeout(() => {
             // Pass a flag to indicate payment was completed
-            navigation.navigate('EventDetails', { 
+            navigation.navigate('EventDetailsScreen', { 
               eventId
             });
           }, 1500);
@@ -156,7 +156,7 @@ const PaymentPendingScreen = () => {
           
           // Navigate back to event details after short delay
           setTimeout(() => {
-            navigation.navigate('EventDetails', { eventId });
+            navigation.navigate('EventDetailsScreen', { eventId });
           }, 2000);
           return;
         } else if (response.paymentStatus === 'failed' || response.registration?.paymentStatus === 'failed') {
@@ -167,7 +167,7 @@ const PaymentPendingScreen = () => {
           
           // Navigate back to event details after short delay
           setTimeout(() => {
-            navigation.navigate('EventDetails', { eventId });
+            navigation.navigate('EventDetailsScreen', { eventId });
           }, 2000);
           return;
         }
@@ -202,7 +202,7 @@ const PaymentPendingScreen = () => {
           
           // Navigate back to event details after short delay
           setTimeout(() => {
-            navigation.navigate('EventDetails', { eventId });
+            navigation.navigate('EventDetailsScreen', { eventId });
           }, 1500);
           return;
         } else if (response.paymentStatus === 'abandoned') {
@@ -353,9 +353,9 @@ const PaymentPendingScreen = () => {
           style: 'destructive',
           onPress: () => {
             if (paymentType === 'event_registration') {
-              navigation.navigate('EventDetails', { eventId });
+              navigation.navigate('EventDetailsScreen', { eventId });
             } else {
-              navigation.navigate('MyEvents');
+              navigation.navigate('MyEventsScreen');
             }
           }
         }
