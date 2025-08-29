@@ -70,7 +70,7 @@ const getAllContactRequests = async (req, res) => {
         }
 
         const contactRequests = [];
-        snapshot.forEach(doc => {
+        for (const doc of snapshot.docs) {
             const data = doc.data();
             
             // Transform to simplified format
@@ -82,8 +82,41 @@ const getAllContactRequests = async (req, res) => {
                 company: data.company || null,
                 message: data.message,
                 date: data.submittedAt ? data.submittedAt.toDate().toISOString().split('T')[0] : null, // YYYY-MM-DD format
-                status: data.status || 'pending'
+                status: data.status || 'pending',
+                statusHistory: data.statusHistory || []
             };
+
+            // Add admin information to each status history entry
+            if (request.statusHistory && request.statusHistory.length > 0) {
+                request.statusHistory = await Promise.all(
+                    request.statusHistory.map(async (entry) => {
+                        if (entry.updatedBy) {
+                            try {
+                                const adminDoc = await db.collection('users').doc(entry.updatedBy).get();
+                                if (adminDoc.exists) {
+                                    const adminData = adminDoc.data();
+                                    return {
+                                        ...entry,
+                                        admin: {
+                                            id: entry.updatedBy,
+                                            email: adminData.email || 'Unknown'
+                                        }
+                                    };
+                                }
+                            } catch (error) {
+                                console.error('Error fetching admin info:', error);
+                            }
+                        }
+                        return {
+                            ...entry,
+                            admin: {
+                                id: entry.updatedBy || 'Unknown',
+                                email: 'Unknown'
+                            }
+                        };
+                    })
+                );
+            }
 
             // Map different types to your format
             if (data.type === 'inquiry') {
@@ -101,11 +134,11 @@ const getAllContactRequests = async (req, res) => {
 
             // Apply status filter if specified
             if (status && request.status !== status) {
-                return; // Skip this request if it doesn't match the status filter
+                continue; // Skip this request if it doesn't match the status filter
             }
 
             contactRequests.push(request);
-        });
+        }
 
         res.status(200).json({
             success: true,
@@ -155,8 +188,41 @@ const getContactRequestById = async (req, res) => {
             company: data.company || null,
             message: data.message,
             date: data.submittedAt ? data.submittedAt.toDate().toISOString().split('T')[0] : null, // YYYY-MM-DD format
-            status: data.status || 'pending'
+            status: data.status || 'pending',
+            statusHistory: data.statusHistory || []
         };
+
+        // Add admin information to each status history entry
+        if (contactRequest.statusHistory && contactRequest.statusHistory.length > 0) {
+            contactRequest.statusHistory = await Promise.all(
+                contactRequest.statusHistory.map(async (entry) => {
+                    if (entry.updatedBy) {
+                        try {
+                            const adminDoc = await db.collection('users').doc(entry.updatedBy).get();
+                            if (adminDoc.exists) {
+                                const adminData = adminDoc.data();
+                                return {
+                                    ...entry,
+                                    admin: {
+                                        id: entry.updatedBy,
+                                        email: adminData.email || 'Unknown'
+                                    }
+                                };
+                            }
+                        } catch (error) {
+                            console.error('Error fetching admin info:', error);
+                        }
+                    }
+                    return {
+                        ...entry,
+                        admin: {
+                            id: entry.updatedBy || 'Unknown',
+                            email: 'Unknown'
+                        }
+                    };
+                })
+            );
+        }
 
         // Map different types to your format
         if (data.type === 'inquiry') {
@@ -232,10 +298,6 @@ const updateContactRequest = async (req, res) => {
             updatedAt: admin.firestore.Timestamp.now()
         };
 
-        if (response !== undefined) {
-            updateData.response = response;
-        }
-
         if (notes !== undefined) {
             updateData.notes = notes;
         }
@@ -244,15 +306,21 @@ const updateContactRequest = async (req, res) => {
             updateData.assignedTo = assignedTo;
         }
 
-        // Add to status history
+        // Add to status history with response included
         const statusHistory = currentData.statusHistory || [];
-        statusHistory.push({
+        const historyEntry = {
             status,
             timestamp: admin.firestore.Timestamp.now(),
             updatedBy,
             notes: notes || null
-        });
+        };
 
+        // Include response in history entry if provided
+        if (response !== undefined) {
+            historyEntry.response = response;
+        }
+
+        statusHistory.push(historyEntry);
         updateData.statusHistory = statusHistory;
 
         // Update the document
@@ -458,7 +526,7 @@ const getFrontendContactRequests = async (req, res) => {
         }
 
         const requests = [];
-        snapshot.forEach(doc => {
+        for (const doc of snapshot.docs) {
             const data = doc.data();
             
             // Transform to your exact format
@@ -470,8 +538,41 @@ const getFrontendContactRequests = async (req, res) => {
                 company: data.company || null,
                 message: data.message,
                 date: data.submittedAt ? data.submittedAt.toDate().toISOString().split('T')[0] : null,
-                status: (!data.status || data.status === 'open' || data.status === 'pending') ? 'pending' : 'responded'
+                status: (!data.status || data.status === 'open' || data.status === 'pending') ? 'pending' : 'responded',
+                statusHistory: data.statusHistory || []
             };
+
+            // Add admin information to each status history entry
+            if (request.statusHistory && request.statusHistory.length > 0) {
+                request.statusHistory = await Promise.all(
+                    request.statusHistory.map(async (entry) => {
+                        if (entry.updatedBy) {
+                            try {
+                                const adminDoc = await db.collection('users').doc(entry.updatedBy).get();
+                                if (adminDoc.exists) {
+                                    const adminData = adminDoc.data();
+                                    return {
+                                        ...entry,
+                                        admin: {
+                                            id: entry.updatedBy,
+                                            email: adminData.email || 'Unknown'
+                                        }
+                                    };
+                                }
+                            } catch (error) {
+                                console.error('Error fetching admin info:', error);
+                            }
+                        }
+                        return {
+                            ...entry,
+                            admin: {
+                                id: entry.updatedBy || 'Unknown',
+                                email: 'Unknown'
+                            }
+                        };
+                    })
+                );
+            }
 
             // Apply status filter if specified
             if (status && request.status !== status) {
@@ -479,7 +580,7 @@ const getFrontendContactRequests = async (req, res) => {
             }
 
             requests.push(request);
-        });
+        }
 
         res.status(200).json({
             success: true,
@@ -627,7 +728,7 @@ const deleteContactRequest = async (req, res) => {
  */
 const bulkUpdateContactRequests = async (req, res) => {
     try {
-        const { ids, status, assignedTo, notes } = req.body;
+        const { ids, status, assignedTo, notes, response } = req.body;
         const updatedBy = req.user.uid;
 
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -678,6 +779,14 @@ const bulkUpdateContactRequests = async (req, res) => {
 
                 if (assignedTo !== undefined) {
                     updateData.assignedTo = assignedTo;
+                }
+
+                // Include response in history entry if provided
+                if (response !== undefined) {
+                    // Add response to the latest history entry
+                    if (statusHistory.length > 0) {
+                        statusHistory[statusHistory.length - 1].response = response;
+                    }
                 }
 
                 batch.update(docRef, updateData);
