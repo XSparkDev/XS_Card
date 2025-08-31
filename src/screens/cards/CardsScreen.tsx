@@ -139,38 +139,6 @@ export default function CardsScreen() {
     }, [])
   );
 
-  useFocusEffect(
-    React.useCallback(() => {
-      setIsLoading(true);
-      
-      // Add a direct API check when screen gets focus to verify server data
-      const verifyServerData = async () => {
-        try {
-          const userId = await getUserId();
-          if (userId) {
-            const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
-            const cardsData = await response.json();
-            console.log('FOCUS CHECK - Cards API response:', JSON.stringify(cardsData, null, 2));
-            
-            // Check if logoZoomLevel exists in the data
-            if (cardsData && cardsData.length > 0) {
-              cardsData.forEach((card: any, index: number) => {
-                console.log(`Card ${index} zoom level:`, card.logoZoomLevel);
-              });
-            }
-          }
-        } catch (error) {
-          console.error('Error in verification check:', error);
-        }
-      };
-      
-      verifyServerData();
-      loadUserData().finally(() => {
-        setIsLoading(false);
-      });
-    }, [])
-  );
-
   const loadUserData = async () => {
     try {
       const userId = await getUserId(); // Gets userId stored during login
@@ -231,6 +199,38 @@ export default function CardsScreen() {
       console.error('Error loading data:', error);
     }
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setIsLoading(true);
+      
+      // Add a direct API check when screen gets focus to verify server data
+      const verifyServerData = async () => {
+        try {
+          const userId = await getUserId();
+          if (userId) {
+            const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+            const cardsData = await response.json();
+            console.log('FOCUS CHECK - Cards API response:', JSON.stringify(cardsData, null, 2));
+            
+            // Check if logoZoomLevel exists in the data
+            if (cardsData && cardsData.length > 0) {
+              cardsData.forEach((card: any, index: number) => {
+                console.log(`Card ${index} zoom level:`, card.logoZoomLevel);
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error in verification check:', error);
+        }
+      };
+      
+      verifyServerData();
+      loadUserData().finally(() => {
+        setIsLoading(false);
+      });
+    }, [])
+  );
 
   // Add this effect to update card color when page changes
   useEffect(() => {
