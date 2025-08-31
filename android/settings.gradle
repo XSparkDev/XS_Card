@@ -21,7 +21,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
   }
 }
 
-rootProject.name = 'XSCard App'
+rootProject.name = 'XS Card'
 
 dependencyResolutionManagement {
   versionCatalogs {
