@@ -27,6 +27,7 @@ import EventAnalyticsScreen from '../screens/events/EventAnalyticsScreen';
 import OrganiserRegistrationScreen from '../screens/events/OrganiserRegistrationScreen';
 import PaymentPendingScreen from '../screens/events/PaymentPendingScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DashboardNavigator from './DashboardNavigator';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createStackNavigator<RootStackParamList>();
@@ -165,6 +166,7 @@ export default function AppNavigator() {
       <Stack.Screen name="EventAnalytics" component={EventAnalyticsScreen} />
       <Stack.Screen name="OrganiserRegistration" component={OrganiserRegistrationScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="AdminDashboard" component={DashboardNavigator} />
     </Stack.Navigator>
   );
 }

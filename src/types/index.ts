@@ -59,6 +59,7 @@ export type RootStackParamList = {
   EventAnalytics: { event: any };
   OrganiserRegistration: undefined;
   Settings: undefined;
+  AdminDashboard: undefined;
 };
 
 export type RootTabParamList = {
