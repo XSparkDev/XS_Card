@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     paddingTop: 52,
     position: 'absolute',
     left: '55%',
-    transform: [{ translateX: '-50%' }],
+    transform: [{ translateX: -50 }],
   },
   title: {
     fontSize: 18,
