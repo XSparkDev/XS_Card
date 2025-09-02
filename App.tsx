@@ -46,7 +46,7 @@ class AppErrorBoundary extends Component<{children: ReactNode}, AppErrorBoundary
     if (this.state.hasError) {
       return (
         <View style={errorStyles.container}>
-          <Text style={errorStyles.title}>XSCard App Crashed</Text>
+          <Text style={errorStyles.title}>XS Card Crashed</Text>
           <Text style={errorStyles.subtitle}>Something went wrong, but don't worry!</Text>
           <Text style={errorStyles.error}>{this.state.error?.message}</Text>
           <TouchableOpacity 

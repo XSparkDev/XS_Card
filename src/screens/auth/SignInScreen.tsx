@@ -153,7 +153,8 @@ export default function SignInScreen() {
         console.log('SignIn: Data stored successfully, keepLoggedIn:', keepLoggedIn);
         console.log('SignIn: Firebase auth state listener will now handle automatic token refresh');
         
-        navigation.replace('MainApp');
+        // Navigate to root navigator's MainApp screen
+        navigation.getParent()?.navigate('MainApp');
       } else {
         // Handle backend data retrieval failures
         console.warn('SignIn: Backend user data retrieval failed, using Firebase user data');
@@ -182,7 +183,8 @@ export default function SignInScreen() {
 
         console.log('SignIn: Data stored successfully with fallback data, keepLoggedIn:', keepLoggedIn);
         
-        navigation.replace('MainApp');
+        // Navigate to root navigator's MainApp screen
+        navigation.getParent()?.navigate('MainApp');
       }
     } catch (error: any) {
       console.error('SignIn: Authentication error:', error);
