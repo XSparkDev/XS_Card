@@ -18,6 +18,7 @@ import { authenticatedFetchWithRefresh, ENDPOINTS } from '../utils/api';
 import { useToast } from '../hooks/useToast';
 import Header from '../components/Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getWidgetPreferences, toggleWidgetPreference } from '../utils/widgetUtils';
 
 type NavigationProp = NativeStackNavigationProp<any>;
 
@@ -293,6 +294,13 @@ export default function SettingsScreen() {
               false
             )
           )}
+
+          {renderSettingItem(
+            'widgets',
+            'Manage Widgets',
+            'Configure home screen widgets for your cards',
+            () => navigation.navigate('WidgetSettings')
+          )}
         </View>
 
         {/* Preferences Section */}
@@ -314,6 +322,8 @@ export default function SettingsScreen() {
             false
           )}
         </View>
+
+
 
         {/* Support Section */}
         <View style={styles.section}>
@@ -374,7 +384,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 100,
+    paddingTop: 20,
   },
   section: {
     marginBottom: 24,
@@ -455,6 +465,6 @@ const styles = StyleSheet.create({
     color: COLORS.error,
   },
   bottomSpacing: {
-    height: 40,
+    height: 100,
   },
 }); 

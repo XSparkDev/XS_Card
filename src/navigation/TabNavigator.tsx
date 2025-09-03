@@ -27,6 +27,8 @@ import EventAnalyticsScreen from '../screens/events/EventAnalyticsScreen';
 import OrganiserRegistrationScreen from '../screens/events/OrganiserRegistrationScreen';
 import PaymentPendingScreen from '../screens/events/PaymentPendingScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import WidgetSettingsScreen from '../screens/WidgetSettingsScreen';
+import WidgetPreviewScreen from '../screens/WidgetPreviewScreen';
 import DashboardNavigator from './DashboardNavigator';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -165,8 +167,10 @@ export default function AppNavigator() {
       <Stack.Screen name="CheckInDashboard" component={CheckInDashboard} />
       <Stack.Screen name="EventAnalytics" component={EventAnalyticsScreen} />
       <Stack.Screen name="OrganiserRegistration" component={OrganiserRegistrationScreen} />
-      <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="AdminDashboard" component={DashboardNavigator} />
+                  <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="WidgetSettings" component={WidgetSettingsScreen} />
+            <Stack.Screen name="WidgetPreview" component={WidgetPreviewScreen} />
+            <Stack.Screen name="AdminDashboard" component={DashboardNavigator} />
     </Stack.Navigator>
   );
 }
