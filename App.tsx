@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import { StyleSheet, Text, View, AppState, Platform, LogBox, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, AppState, Platform, LogBox, TouchableOpacity, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import TabNavigator from './src/navigation/TabNavigator';
 import { AuthProvider } from './src/context/AuthContext';
@@ -12,6 +12,7 @@ import ToastProvider from './src/components/ToastProvider';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
+import { useSystemUI } from './src/hooks/useSystemUI';
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
@@ -67,6 +68,9 @@ function AppContent() {
   const appState = useRef(AppState.currentState);
   const navigationRef = useRef<any>(null);
 
+  // Handle system UI visibility
+  useSystemUI();
+
   useEffect(() => {
     // Set up global navigation reference for automatic logout
     if (navigationRef.current) {
@@ -98,7 +102,7 @@ function AppContent() {
         <ColorSchemeProvider>
           <ToastProvider>
             <NavigationContainer ref={navigationRef}>
-              <StatusBar style="auto" />
+              <ExpoStatusBar style="auto" translucent={true} />
               <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Auth" component={AuthNavigator} />
                 <Stack.Screen name="MainApp" component={TabNavigator} />

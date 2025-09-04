@@ -6,7 +6,6 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, buildUrl } from '../../utils/api';
-import * as ImagePicker from 'expo-image-picker';
 import { pickImage, requestPermissions } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

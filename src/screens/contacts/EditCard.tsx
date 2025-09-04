@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, KeyboardAvoidingView, BackHandler, PanResponder, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, PanResponder, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
@@ -8,11 +9,10 @@ import Header from '../../components/Header';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
-import { getImageUrl } from '../../utils/imageUtils';
+import { getImageUrl, pickImage, requestPermissions } from '../../utils/imageUtils';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -42,17 +42,6 @@ interface FormData {
   [key: string]: string | number | undefined;
 }
 
-interface CustomModalProps {
-  isVisible: boolean;
-  onClose: () => void;
-  title: string;
-  message: string;
-  buttons: Array<{
-    text: string;
-    type?: 'cancel' | 'confirm';
-    onPress: () => void;
-  }>;
-}
 
 export default function EditCard() {
   const route = useRoute<EditCardScreenRouteProp>();
@@ -80,13 +69,11 @@ export default function EditCard() {
   });
   const [selectedColor, setSelectedColor] = useState('#1B2B5B'); // Default color
   const [selectedSocials, setSelectedSocials] = useState<string[]>([]);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
-  const [isImageSourceModalVisible, setIsImageSourceModalVisible] = useState(false);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
-  const [modalType, setModalType] = useState<'profile' | 'logo' | null>(null);
   const [modalMessage, setModalMessage] = useState('');
   const [userPlan, setUserPlan] = useState<string>('free');
   const [zoomLevel, setZoomLevel] = useState(1.0);
@@ -281,12 +268,8 @@ export default function EditCard() {
       setIsSocialRemoveModalVisible(true);
     } else {
       setSelectedSocials([...selectedSocials, socialId]);
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({
-          y: 500,
-          animated: true
-        });
-      }, 100);
+      // KeyboardAwareScrollView will automatically scroll to the new input when it's focused
+      // No need for manual scrolling
     }
   };
 
@@ -296,97 +279,111 @@ export default function EditCard() {
     setIsSocialRemoveModalVisible(false);
   };
 
-  const handleProfileImageEdit = () => {
-    setModalType('profile');
-    setIsImageSourceModalVisible(true);
+  const handleProfileImageEdit = async () => {
+    const { cameraGranted, galleryGranted } = await requestPermissions();
+    
+    if (!cameraGranted || !galleryGranted) {
+      Alert.alert(
+        'Permission Required', 
+        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Settings', 
+            onPress: () => {
+              Alert.alert(
+                'Enable Permissions',
+                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
+              );
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Select Profile Picture',
+      'Choose where you want to get your profile picture from. This will be displayed on your digital business card.',
+      [
+        {
+          text: 'Camera',
+          onPress: async () => {
+            await pickImageFromSource('camera');
+          },
+        },
+        {
+          text: 'Gallery',
+          onPress: async () => {
+            await pickImageFromSource('gallery');
+          },
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
-  const handleLogoEdit = () => {
-    setModalType('logo');
-    setIsImageSourceModalVisible(true);
+  const handleLogoEdit = async () => {
+    const { cameraGranted, galleryGranted } = await requestPermissions();
+    
+    if (!cameraGranted || !galleryGranted) {
+      Alert.alert(
+        'Permission Required', 
+        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Settings', 
+            onPress: () => {
+              Alert.alert(
+                'Enable Permissions',
+                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
+              );
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Select Company Logo',
+      'Choose where you want to get your company logo from. This will be displayed on your digital business card.',
+      [
+        {
+          text: 'Camera',
+          onPress: async () => {
+            await pickLogo('camera');
+          },
+        },
+        {
+          text: 'Gallery',
+          onPress: async () => {
+            await pickLogo('gallery');
+          },
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
-  // Improved implementation for iOS compatibility
-  const pickImage = async (source: 'camera' | 'gallery') => {
+  // Profile image picker function (simplified like logo picker)
+  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
       
-      // First, check and request permissions with more detailed handling
-      let permissionStatus;
+      console.log('[Image Picker] Permissions already checked, launching picker...');
       
-      if (source === 'camera') {
-        console.log('[Image Picker] Requesting camera permissions...');
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Image Picker] Camera permission status:', status);
-        
-        if (status !== 'granted') {
-          Alert.alert(
-            'Camera Permission Required', 
-            'Please enable camera access in your device settings to use this feature.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
-                  Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
-              }}
-            ]
-          );
-          return;
-        }
-      } else {
-        console.log('[Image Picker] Requesting media library permissions...');
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Image Picker] Media library permission status:', status);
-        
-        if (status !== 'granted') {
-          Alert.alert(
-            'Photo Library Permission Required', 
-            'Please enable photo library access in your device settings to use this feature.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
-                  Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
-              }}
-            ]
-          );
-          return;
-        }
-      }
-
-      // Add a small delay to ensure permissions are properly set
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // More robust configuration options
-      const options: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1] as [number, number],
-        quality: 0.8,
-        allowsMultipleSelection: false,
-      };
-
-      console.log(`[Image Picker] Launching ${source} picker with options:`, options);
-
-      let result: ImagePicker.ImagePickerResult;
+      // Use our utility function to pick image
+      const imageUri = await pickImage(source === 'camera');
       
-      if (source === 'camera') {
-        result = await ImagePicker.launchCameraAsync(options);
-      } else {
-        result = await ImagePicker.launchImageLibraryAsync(options);
-      }
-
-      console.log('[Image Picker] Result received:', result.canceled ? 'User canceled' : 'Image selected');
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
+      if (imageUri) {
         console.log('[Image Picker] Processing selected image...');
         const userId = await getUserId();
         if (!userId) {
@@ -398,7 +395,7 @@ export default function EditCard() {
         // Create form data for upload
         const formData = new FormData();
         formData.append('image', {
-          uri: result.assets[0].uri,
+          uri: imageUri,
           type: 'image/jpeg',
           name: 'profile-image.jpg',
         } as any);
@@ -460,16 +457,10 @@ export default function EditCard() {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
       
-      // First, check and request permissions with more detailed handling
-      let permissionStatus;
+      // Check permissions using our utility function
+      const { cameraGranted, galleryGranted } = await requestPermissions();
       
-      if (source === 'camera') {
-        console.log('[Logo Picker] Requesting camera permissions...');
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Logo Picker] Camera permission status:', status);
-        
-        if (status !== 'granted') {
+      if (source === 'camera' && !cameraGranted) {
           Alert.alert(
             'Camera Permission Required', 
             'Please enable camera access in your device settings to use this feature.',
@@ -486,13 +477,8 @@ export default function EditCard() {
           );
           return;
         }
-      } else {
-        console.log('[Logo Picker] Requesting media library permissions...');
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Logo Picker] Media library permission status:', status);
         
-        if (status !== 'granted') {
+      if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
             'Photo Library Permission Required', 
             'Please enable photo library access in your device settings to use this feature.',
@@ -508,34 +494,14 @@ export default function EditCard() {
             ]
           );
           return;
-        }
       }
 
-      // Add a small delay to ensure permissions are properly set
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // More robust configuration options
-      const options: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 2] as [number, number],
-        quality: 0.8,
-        allowsMultipleSelection: false,
-      };
-
-      console.log(`[Logo Picker] Launching ${source} picker with options:`, options);
-
-      let result: ImagePicker.ImagePickerResult;
+      console.log('[Logo Picker] Permissions granted, launching picker...');
       
-      if (source === 'camera') {
-        result = await ImagePicker.launchCameraAsync(options);
-      } else {
-        result = await ImagePicker.launchImageLibraryAsync(options);
-      }
-
-      console.log('[Logo Picker] Result received:', result.canceled ? 'User canceled' : 'Logo selected');
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
+      // Use our utility function to pick image
+      const imageUri = await pickImage(source === 'camera');
+      
+      if (imageUri) {
         console.log('[Logo Picker] Processing selected logo...');
         const userId = await getUserId();
         if (!userId) {
@@ -547,7 +513,7 @@ export default function EditCard() {
         // Create form data for upload
         const formData = new FormData();
         formData.append('image', {
-          uri: result.assets[0].uri,
+          uri: imageUri,
           type: 'image/jpeg',
           name: 'company-logo.jpg',
         } as any);
@@ -605,8 +571,8 @@ export default function EditCard() {
     }
   };
 
-  // Update the CustomModal component to use the correct Modal type
-  const CustomModal = ({ isVisible, onClose, title, message, buttons }: CustomModalProps) => {
+  // CustomModal component for other modals (not image selection)
+  const CustomModal = ({ isVisible, onClose, title, message, buttons }: any) => {
     useEffect(() => {
       const backAction = () => {
         if (isVisible) {
@@ -638,7 +604,7 @@ export default function EditCard() {
           <Text style={styles.modalTitle}>{title}</Text>
           <Text style={styles.modalMessage}>{message}</Text>
           <View style={styles.modalButtonsContainer}>
-            {buttons.map((button, index) => (
+            {buttons.map((button: any, index: number) => (
               <TouchableOpacity
                 key={index}
                 style={[
@@ -705,21 +671,19 @@ export default function EditCard() {
         </View>
       </View>
 
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 30 : 0} //check this
+      <KeyboardAwareScrollView 
+        ref={scrollViewRef}
+        style={styles.content}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 100 } // Add extra padding for delete button
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid={true}
+        extraScrollHeight={20}
+        extraHeight={20}
       >
-        <ScrollView 
-          ref={scrollViewRef}
-          style={styles.content}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: 100 } // Add extra padding for delete button
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
           {/* Warning Message */}
           <View style={styles.colorSection}>
             <Text style={styles.sectionTitle}>Card color</Text>
@@ -982,8 +946,7 @@ export default function EditCard() {
               </Text>
             </TouchableOpacity>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       <CustomModal
         isVisible={isSocialRemoveModalVisible}
@@ -1059,35 +1022,6 @@ export default function EditCard() {
         ]}
       />
 
-      <CustomModal
-        isVisible={isImageSourceModalVisible}
-        onClose={() => setIsImageSourceModalVisible(false)}
-        title={`Select ${modalType === 'profile' ? 'Profile Picture' : 'Logo'} Source`}
-        message="Choose where you want to pick your image from"
-        buttons={[
-          {
-            text: 'Camera',
-            type: 'confirm',
-            onPress: () => {
-              setIsImageSourceModalVisible(false);
-              modalType === 'profile' ? pickImage('camera') : pickLogo('camera');
-            }
-          },
-          {
-            text: 'Gallery',
-            type: 'confirm',
-            onPress: () => {
-              setIsImageSourceModalVisible(false);
-              modalType === 'profile' ? pickImage('gallery') : pickLogo('gallery');
-            }
-          },
-          {
-            text: 'Cancel',
-            type: 'cancel',
-            onPress: () => setIsImageSourceModalVisible(false)
-          }
-        ]}
-      />
 
       <CustomModal
         isVisible={isSuccessModalVisible}

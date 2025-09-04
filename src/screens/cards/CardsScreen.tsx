@@ -174,7 +174,7 @@ export default function CardsScreen() {
         console.log('Card data received:', JSON.stringify(cardsArray[0], null, 2));
         
         // Debug profile image and company logo specifically
-        cardsArray.forEach((card, index) => {
+        cardsArray.forEach((card: any, index: number) => {
           console.log(`Card ${index} - Profile Image:`, card.profileImage);
           console.log(`Card ${index} - Company Logo:`, card.companyLogo);
           console.log(`Card ${index} - Profile Image URL processed:`, getImageUrl(card.profileImage));
@@ -495,6 +495,62 @@ export default function CardsScreen() {
     setIsOptionsModalVisible(true);
   };
 
+  const handleSocialPress = (platform: string, value: string) => {
+    try {
+      let url = '';
+      
+      switch (platform) {
+        case 'whatsapp':
+          // WhatsApp expects phone number without + or spaces
+          const cleanPhone = value.replace(/[^\d]/g, '');
+          url = `https://wa.me/${cleanPhone}`;
+          break;
+        case 'x':
+          // X (Twitter) - remove @ if present
+          const twitterHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://x.com/${twitterHandle}`;
+          break;
+        case 'facebook':
+          // Facebook - remove @ if present
+          const facebookHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://facebook.com/${facebookHandle}`;
+          break;
+        case 'linkedin':
+          // LinkedIn - remove @ if present
+          const linkedinHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://linkedin.com/in/${linkedinHandle}`;
+          break;
+        case 'website':
+          // Website - add https:// if not present
+          url = value.startsWith('http') ? value : `https://${value}`;
+          break;
+        case 'tiktok':
+          // TikTok - remove @ if present
+          const tiktokHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://tiktok.com/@${tiktokHandle}`;
+          break;
+        case 'instagram':
+          // Instagram - remove @ if present
+          const instagramHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://instagram.com/${instagramHandle}`;
+          break;
+        default:
+          console.warn('Unknown social platform:', platform);
+          return;
+      }
+      
+      // Open the URL
+      Linking.openURL(url).catch((error) => {
+        console.error('Failed to open social link:', error);
+        Alert.alert('Error', `Could not open ${platform}. Please check if the app is installed.`);
+      });
+      
+    } catch (error) {
+      console.error('Error handling social press:', error);
+      Alert.alert('Error', 'Failed to open social media link');
+    }
+  };
+
   const handleEditCard = () => {
     navigation.navigate('EditCard', { 
       cardIndex: currentPage // Ensure currentPage is passed
@@ -739,9 +795,7 @@ export default function CardsScreen() {
                       <TouchableOpacity 
                         key={platform}
                         style={[styles.contactSection, styles.leftAligned]}
-                        onPress={() => {
-                          // ...existing social link handling code...
-                        }}
+                        onPress={() => handleSocialPress(platform, textValue)}
                       >
                         <MaterialCommunityIcons 
                           name={socialIcons[platform]} 

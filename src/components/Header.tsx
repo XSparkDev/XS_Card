@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useNavigation } from '@react-navigation/native';
@@ -15,6 +15,7 @@ type RootStackParamList = {
   AddCards: undefined;
   EditCard: undefined;
   SignIn: undefined;
+  Auth: undefined;
   UnlockPremium: undefined;
   Cards: undefined;
   Events: undefined;
@@ -150,10 +151,10 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
       
       console.log('Header: Logout completed, navigating to SignIn');
       
-      // Navigate to SignIn
+      // Navigate to Auth
       navigation.reset({
         index: 0,
-        routes: [{ name: 'SignIn' }],
+        routes: [{ name: 'Auth' }],
       });
       
     } catch (error) {
@@ -169,7 +170,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             onPress: () => {
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'SignIn' }],
+                routes: [{ name: 'Auth' }],
               });
             }
           }
@@ -300,7 +301,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: 55,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 20 : 55,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

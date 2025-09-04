@@ -2,6 +2,8 @@ package com.p.zzles.xscard
 
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -17,6 +19,22 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    
+    // Hide system navigation bar
+    hideSystemNavigationBar()
+  }
+  
+  private fun hideSystemNavigationBar() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+      // Hide only the navigation bar, keep status bar visible
+      window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+      )
+    }
   }
 
   /**
