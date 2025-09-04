@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, KeyboardAvoidingView, BackHandler, PanResponder, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, PanResponder, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
@@ -68,7 +69,7 @@ export default function EditCard() {
   });
   const [selectedColor, setSelectedColor] = useState('#1B2B5B'); // Default color
   const [selectedSocials, setSelectedSocials] = useState<string[]>([]);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
@@ -267,12 +268,8 @@ export default function EditCard() {
       setIsSocialRemoveModalVisible(true);
     } else {
       setSelectedSocials([...selectedSocials, socialId]);
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({
-          y: 500,
-          animated: true
-        });
-      }, 100);
+      // KeyboardAwareScrollView will automatically scroll to the new input when it's focused
+      // No need for manual scrolling
     }
   };
 
@@ -674,21 +671,19 @@ export default function EditCard() {
         </View>
       </View>
 
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 30 : 0} //check this
+      <KeyboardAwareScrollView 
+        ref={scrollViewRef}
+        style={styles.content}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 100 } // Add extra padding for delete button
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid={true}
+        extraScrollHeight={20}
+        extraHeight={20}
       >
-        <ScrollView 
-          ref={scrollViewRef}
-          style={styles.content}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: 100 } // Add extra padding for delete button
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
           {/* Warning Message */}
           <View style={styles.colorSection}>
             <Text style={styles.sectionTitle}>Card color</Text>
@@ -951,8 +946,7 @@ export default function EditCard() {
               </Text>
             </TouchableOpacity>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       <CustomModal
         isVisible={isSocialRemoveModalVisible}
