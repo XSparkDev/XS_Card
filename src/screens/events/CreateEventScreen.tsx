@@ -15,7 +15,6 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useCallback } from 'react';
 
@@ -23,6 +22,7 @@ import { COLORS } from '../../constants/colors';
 import EventHeader from '../../components/EventHeader';
 import { authenticatedFetchWithRefresh, ENDPOINTS } from '../../utils/api';
 import { useToast } from '../../hooks/useToast';
+import { pickImage, requestPermissions } from '../../utils/imageUtils';
 import {
   CreateEventData,
   EVENT_CATEGORIES,
@@ -284,29 +284,23 @@ export default function CreateEventScreen() {
         return;
       }
 
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
+      const { galleryGranted } = await requestPermissions();
+      if (!galleryGranted) {
         toast.warning('Permission needed', 'Please grant permission to access your photo library.');
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: userPlan !== 'free', // Only allow multiple selection for non-free users
-        quality: 0.8,
-        aspect: [16, 9],
-      });
-
-      if (!result.canceled && result.assets) {
-        const newImages = result.assets.map(asset => asset.uri);
+      // For now, we'll use single image selection since react-native-image-picker
+      // doesn't support multiple selection in the same way
+      const imageUri = await pickImage(false);
+      if (imageUri) {
         const availableSlots = maxImages - selectedImages.length;
-        const imagesToAdd = newImages.slice(0, availableSlots);
         
-        if (newImages.length > availableSlots) {
-          toast.warning('Image Limit', `Only ${availableSlots} more images can be added with your current plan.`);
+        if (availableSlots > 0) {
+          setSelectedImages(prev => [...prev, imageUri]);
+        } else {
+          toast.warning('Image Limit', `Only ${maxImages} images allowed with your current plan.`);
         }
-        
-        setSelectedImages(prev => [...prev, ...imagesToAdd]);
       }
     } catch (error) {
       console.error('Error picking images:', error);

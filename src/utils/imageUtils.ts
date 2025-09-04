@@ -1,16 +1,45 @@
-import { ImagePickerAsset, launchCameraAsync, launchImageLibraryAsync, MediaTypeOptions, requestCameraPermissionsAsync, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType } from 'react-native-image-picker';
 import { API_BASE_URL } from './api';
+import { Platform, PermissionsAndroid, Alert } from 'react-native';
 
 export const requestPermissions = async () => {
   try {
-    const cameraPermission = await requestCameraPermissionsAsync();
-    const galleryPermission = await requestMediaLibraryPermissionsAsync();
-    
-    return {
-      cameraGranted: cameraPermission.status === 'granted',
-      galleryGranted: galleryPermission.status === 'granted',
-    };
+    if (Platform.OS === 'android') {
+      // Request camera permission
+      const cameraPermission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        {
+          title: 'Camera Permission',
+          message: 'XSCard needs camera access to take profile pictures and company logos.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+
+      // Request storage permission (for Android 13+)
+      const storagePermission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+        {
+          title: 'Photo Library Permission',
+          message: 'XSCard needs photo library access to select profile pictures and company logos.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+
+      return {
+        cameraGranted: cameraPermission === PermissionsAndroid.RESULTS.GRANTED,
+        galleryGranted: storagePermission === PermissionsAndroid.RESULTS.GRANTED,
+      };
+    } else {
+      // iOS permissions are handled automatically by react-native-image-picker
+      return {
+        cameraGranted: true,
+        galleryGranted: true,
+      };
+    }
   } catch (error) {
     console.error('Error requesting permissions:', error);
     return {
@@ -20,27 +49,45 @@ export const requestPermissions = async () => {
   }
 };
 
-export const pickImage = async (useCamera: boolean = false) => {
-  const options = {
-    mediaTypes: MediaTypeOptions.Images,
-    allowsEditing: true,
-    aspect: [1, 1] as [number, number],
-    quality: 0.8,
-  };
+export const pickImage = async (useCamera: boolean = false): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const options = {
+      mediaType: 'photo' as MediaType, // Images only, no video
+      includeBase64: false,
+      maxHeight: 2000,
+      maxWidth: 2000,
+      quality: 0.8,
+      allowsEditing: true,
+      aspect: [1, 1] as [number, number], // Square aspect ratio
+    };
 
-  try {
-    const result = useCamera 
-      ? await launchCameraAsync(options)
-      : await launchImageLibraryAsync(options);
+    const callback = (response: ImagePickerResponse) => {
+      if (response.didCancel || response.errorMessage) {
+        console.log('Image picker cancelled or error:', response.errorMessage);
+        resolve(null);
+        return;
+      }
 
-    if (!result.canceled) {
-      return result.assets[0].uri;
+      if (response.assets && response.assets[0]) {
+        const asset = response.assets[0];
+        if (asset.uri) {
+          resolve(asset.uri);
+        } else {
+          console.error('No URI in selected asset');
+          resolve(null);
+        }
+      } else {
+        console.error('No assets in response');
+        resolve(null);
+      }
+    };
+
+    if (useCamera) {
+      launchCamera(options, callback);
+    } else {
+      launchImageLibrary(options, callback);
     }
-    return null;
-  } catch (error) {
-    console.error('Error picking image:', error);
-    throw error;
-  }
+  });
 };
 
 /**
