@@ -1354,6 +1354,7 @@
             const vCardData = `BEGIN:VCARD
 VERSION:3.0
 FN:${userData.name} ${userData.surname}
+N:${userData.surname};${userData.name};;;
 EMAIL:${userData.email}
 TEL;TYPE=CELL:${userData.phone || ''}
 ORG:${userData.company}
