@@ -1351,14 +1351,25 @@
             }
             
             // Create and download vCard immediately
+            // Escape special characters for vCard format
+            const escapeVCardValue = (value) => {
+                if (!value) return '';
+                return value.toString()
+                    .replace(/\\/g, '\\\\')
+                    .replace(/;/g, '\\;')
+                    .replace(/,/g, '\\,')
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '');
+            };
+            
             const vCardData = `BEGIN:VCARD
 VERSION:3.0
-FN:${userData.name} ${userData.surname}
-N:${userData.surname};${userData.name};;;
-EMAIL:${userData.email}
-TEL;TYPE=CELL:${userData.phone || ''}
-ORG:${userData.company}
-TITLE:${userData.occupation}
+FN:${escapeVCardValue(userData.name)} ${escapeVCardValue(userData.surname)}
+N:${escapeVCardValue(userData.surname)};${escapeVCardValue(userData.name)};;;
+EMAIL:${escapeVCardValue(userData.email)}
+TEL;TYPE=CELL:${escapeVCardValue(userData.phone || '')}
+ORG:${escapeVCardValue(userData.company)}
+TITLE:${escapeVCardValue(userData.occupation)}
 END:VCARD`;
 
             const blob = new Blob([vCardData.trim()], { type: 'text/vcard' });
@@ -2155,14 +2166,25 @@ Please send them a TestFlight invite.`,
         function downloadContactFile(contact) {
             console.log('Starting download for contact:', contact);
             
+            // Escape special characters for vCard format
+            const escapeVCardValue = (value) => {
+                if (!value) return '';
+                return value.toString()
+                    .replace(/\\/g, '\\\\')
+                    .replace(/;/g, '\\;')
+                    .replace(/,/g, '\\,')
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '');
+            };
+            
             const vCardData = `BEGIN:VCARD
 VERSION:3.0
-FN:${contact.name} ${contact.surname}
-N:${contact.surname};${contact.name};;;
-EMAIL:${contact.email}
-TEL;TYPE=CELL:${contact.phone}
-ORG:${contact.company}
-NOTE:Met at: ${contact.howWeMet}
+FN:${escapeVCardValue(contact.name)} ${escapeVCardValue(contact.surname)}
+N:${escapeVCardValue(contact.surname)};${escapeVCardValue(contact.name)};;;
+EMAIL:${escapeVCardValue(contact.email)}
+TEL;TYPE=CELL:${escapeVCardValue(contact.phone)}
+ORG:${escapeVCardValue(contact.company)}
+NOTE:Met at: ${escapeVCardValue(contact.howWeMet)}
 END:VCARD`;
 
             console.log('Generated vCard:', vCardData);
@@ -2202,18 +2224,29 @@ END:VCARD`;
         function downloadMultipleContactsFile(contacts, count) {
             console.log('Starting download for multiple contacts:', contacts.length);
             
+            // Escape special characters for vCard format
+            const escapeVCardValue = (value) => {
+                if (!value) return '';
+                return value.toString()
+                    .replace(/\\/g, '\\\\')
+                    .replace(/;/g, '\\;')
+                    .replace(/,/g, '\\,')
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '');
+            };
+            
             let vCardData = '';
             
             contacts.forEach((contact, index) => {
                 console.log(`Processing contact ${index + 1}:`, contact);
                 vCardData += `BEGIN:VCARD
 VERSION:3.0
-FN:${contact.name} ${contact.surname}
-N:${contact.surname};${contact.name};;;
-EMAIL:${contact.email}
-TEL;TYPE=CELL:${contact.phone}
-ORG:${contact.company}
-NOTE:Met at: ${contact.howWeMet}
+FN:${escapeVCardValue(contact.name)} ${escapeVCardValue(contact.surname)}
+N:${escapeVCardValue(contact.surname)};${escapeVCardValue(contact.name)};;;
+EMAIL:${escapeVCardValue(contact.email)}
+TEL;TYPE=CELL:${escapeVCardValue(contact.phone)}
+ORG:${escapeVCardValue(contact.company)}
+NOTE:Met at: ${escapeVCardValue(contact.howWeMet)}
 END:VCARD
 
 `;
