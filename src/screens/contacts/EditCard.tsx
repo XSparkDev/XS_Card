@@ -280,117 +280,117 @@ export default function EditCard() {
   };
 
   const handleProfileImageEdit = async () => {
-    // First check if permissions are already granted
-    const currentPermissions = await checkPermissions();
-    
-    if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
-      // Permissions already granted, proceed directly to image selection
-      console.log('Permissions already granted, showing image picker options');
+    if (Platform.OS === 'android') {
+      // Android: NO custom permission modals, just direct picker
+      Alert.alert(
+        'Select Profile Picture',
+        'Choose where you want to get your profile picture from.',
+        [
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
     } else {
-      // Need to request permissions
-      const { cameraGranted, galleryGranted } = await requestPermissions();
+      // iOS: Keep the existing custom permission flow (Apple requires it)
+      const currentPermissions = await checkPermissions();
       
-      if (!cameraGranted || !galleryGranted) {
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        Alert.alert(
+          'Select Profile Picture',
+          'Choose where you want to get your profile picture from.',
+          [
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Show permission request modal for iOS only
         Alert.alert(
           'Permission Required', 
           'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
-              text: 'Settings', 
-              onPress: () => {
-                if (Platform.OS === 'ios') {
-                  Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
+              text: 'Grant Permission', 
+              onPress: async () => {
+                const permissions = await requestPermissions();
+                if (permissions.cameraGranted && permissions.galleryGranted) {
+                  // Show picker after permissions granted
+                  Alert.alert(
+                    'Select Profile Picture',
+                    'Choose where you want to get your profile picture from.',
+                    [
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ]
+                  );
                 }
               }
             }
           ]
         );
-        return;
       }
     }
-
-    Alert.alert(
-      'Select Profile Picture',
-      'Choose where you want to get your profile picture from. This will be displayed on your digital business card.',
-      [
-        {
-          text: 'Camera',
-          onPress: async () => {
-            await pickImageFromSource('camera');
-          },
-        },
-        {
-          text: 'Gallery',
-          onPress: async () => {
-            await pickImageFromSource('gallery');
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
   };
 
   const handleLogoEdit = async () => {
-    // First check if permissions are already granted
-    const currentPermissions = await checkPermissions();
-    
-    if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
-      // Permissions already granted, proceed directly to image selection
-      console.log('Permissions already granted, showing image picker options');
+    if (Platform.OS === 'android') {
+      // Android: NO custom permission modals, just direct picker
+      Alert.alert(
+        'Select Company Logo',
+        'Choose where you want to get your company logo from.',
+        [
+          { text: 'Camera', onPress: () => pickLogo('camera') },
+          { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
     } else {
-      // Need to request permissions
-      const { cameraGranted, galleryGranted } = await requestPermissions();
+      // iOS: Keep the existing custom permission flow (Apple requires it)
+      const currentPermissions = await checkPermissions();
       
-      if (!cameraGranted || !galleryGranted) {
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        Alert.alert(
+          'Select Company Logo',
+          'Choose where you want to get your company logo from.',
+          [
+            { text: 'Camera', onPress: () => pickLogo('camera') },
+            { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Show permission request modal for iOS only
         Alert.alert(
           'Permission Required', 
           'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
-              text: 'Settings', 
-              onPress: () => {
-                if (Platform.OS === 'ios') {
-                  Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
+              text: 'Grant Permission', 
+              onPress: async () => {
+                const permissions = await requestPermissions();
+                if (permissions.cameraGranted && permissions.galleryGranted) {
+                  // Show picker after permissions granted
+                  Alert.alert(
+                    'Select Company Logo',
+                    'Choose where you want to get your company logo from.',
+                    [
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
+                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ]
+                  );
                 }
               }
             }
           ]
         );
-        return;
       }
     }
-
-    Alert.alert(
-      'Select Company Logo',
-      'Choose where you want to get your company logo from. This will be displayed on your digital business card.',
-      [
-        {
-          text: 'Camera',
-          onPress: async () => {
-            await pickLogo('camera');
-          },
-        },
-        {
-          text: 'Gallery',
-          onPress: async () => {
-            await pickLogo('gallery');
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
   };
 
   // Profile image picker function (simplified like logo picker)
