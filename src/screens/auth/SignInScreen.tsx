@@ -251,7 +251,10 @@ export default function SignInScreen() {
         value={email}
         onChangeText={(text) => {
           setEmail(text);
-          setErrors(prev => ({ ...prev, email: '' }));
+          // Only clear error if there's actually an error to clear
+          if (errors.email) {
+            setErrors(prev => ({ ...prev, email: '' }));
+          }
         }}
         keyboardType="email-address"
         autoCapitalize="none"
@@ -266,7 +269,10 @@ export default function SignInScreen() {
           value={password}
           onChangeText={(text) => {
             setPassword(text);
-            setErrors(prev => ({ ...prev, password: '' }));
+            // Only clear error if there's actually an error to clear
+            if (errors.password) {
+              setErrors(prev => ({ ...prev, password: '' }));
+            }
           }}
           secureTextEntry={!showPassword}
           placeholderTextColor="#999"
