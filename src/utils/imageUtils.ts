@@ -2,36 +2,78 @@ import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType } from
 import { API_BASE_URL } from './api';
 import { Platform, PermissionsAndroid, Alert } from 'react-native';
 
+export const checkPermissions = async () => {
+  try {
+    if (Platform.OS === 'android') {
+      // Check current permission status first
+      const cameraStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+      const storageStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
+
+      return {
+        cameraGranted: cameraStatus,
+        galleryGranted: storageStatus,
+      };
+    } else {
+      // iOS permissions are handled automatically by react-native-image-picker
+      return {
+        cameraGranted: true,
+        galleryGranted: true,
+      };
+    }
+  } catch (error) {
+    console.error('Error checking permissions:', error);
+    return {
+      cameraGranted: false,
+      galleryGranted: false,
+    };
+  }
+};
+
 export const requestPermissions = async () => {
   try {
     if (Platform.OS === 'android') {
-      // Request camera permission
-      const cameraPermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.CAMERA,
-        {
-          title: 'Camera Permission',
-          message: 'XSCard needs camera access to take profile pictures and company logos.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        }
-      );
+      // First check if permissions are already granted
+      const currentPermissions = await checkPermissions();
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        return currentPermissions;
+      }
 
-      // Request storage permission (for Android 13+)
-      const storagePermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-        {
-          title: 'Photo Library Permission',
-          message: 'XSCard needs photo library access to select profile pictures and company logos.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        }
-      );
+      let cameraGranted = currentPermissions.cameraGranted;
+      let galleryGranted = currentPermissions.galleryGranted;
+
+      // Only request camera permission if not already granted
+      if (!cameraGranted) {
+        const cameraPermission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Camera Permission',
+            message: 'XSCard needs camera access to take profile pictures and company logos.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        cameraGranted = cameraPermission === PermissionsAndroid.RESULTS.GRANTED;
+      }
+
+      // Only request storage permission if not already granted
+      if (!galleryGranted) {
+        const storagePermission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+          {
+            title: 'Photo Library Permission',
+            message: 'XSCard needs photo library access to select profile pictures and company logos.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        galleryGranted = storagePermission === PermissionsAndroid.RESULTS.GRANTED;
+      }
 
       return {
-        cameraGranted: cameraPermission === PermissionsAndroid.RESULTS.GRANTED,
-        galleryGranted: storagePermission === PermissionsAndroid.RESULTS.GRANTED,
+        cameraGranted,
+        galleryGranted,
       };
     } else {
       // iOS permissions are handled automatically by react-native-image-picker

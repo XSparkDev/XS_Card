@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Image, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, buildUrl } from '../../utils/api';
-import { pickImage, requestPermissions } from '../../utils/imageUtils';
+import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type CompleteProfileRouteProp = RouteProp<AuthStackParamList, 'CompleteProfile'>;
@@ -84,27 +84,33 @@ export default function CompleteProfile() {
       return;
     }
 
-    const { cameraGranted, galleryGranted } = await requestPermissions();
+    // First check if permissions are already granted
+    const currentPermissions = await checkPermissions();
     
-    if (!cameraGranted || !galleryGranted) {
-      Alert.alert(
-        'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Settings', 
-            onPress: () => {
-              // This would typically open app settings, but we'll just show the alert
-              Alert.alert(
-                'Enable Permissions',
-                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
-              );
+    if (!currentPermissions.cameraGranted || !currentPermissions.galleryGranted) {
+      // Need to request permissions
+      const { cameraGranted, galleryGranted } = await requestPermissions();
+      
+      if (!cameraGranted || !galleryGranted) {
+        Alert.alert(
+          'Permission Required', 
+          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Settings', 
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
             }
-          }
-        ]
-      );
-      return;
+          ]
+        );
+        return;
+      }
     }
 
     Alert.alert(
@@ -140,27 +146,33 @@ export default function CompleteProfile() {
       return;
     }
 
-    const { cameraGranted, galleryGranted } = await requestPermissions();
+    // First check if permissions are already granted
+    const currentPermissions = await checkPermissions();
     
-    if (!cameraGranted || !galleryGranted) {
-      Alert.alert(
-        'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Settings', 
-            onPress: () => {
-              // This would typically open app settings, but we'll just show the alert
-              Alert.alert(
-                'Enable Permissions',
-                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
-              );
+    if (!currentPermissions.cameraGranted || !currentPermissions.galleryGranted) {
+      // Need to request permissions
+      const { cameraGranted, galleryGranted } = await requestPermissions();
+      
+      if (!cameraGranted || !galleryGranted) {
+        Alert.alert(
+          'Permission Required', 
+          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Settings', 
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
             }
-          }
-        ]
-      );
-      return;
+          ]
+        );
+        return;
+      }
     }
 
     Alert.alert(
