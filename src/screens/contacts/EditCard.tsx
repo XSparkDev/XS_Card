@@ -12,7 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
-import { getImageUrl, pickImage, requestPermissions } from '../../utils/imageUtils';
+import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -280,26 +280,36 @@ export default function EditCard() {
   };
 
   const handleProfileImageEdit = async () => {
-    const { cameraGranted, galleryGranted } = await requestPermissions();
+    // First check if permissions are already granted
+    const currentPermissions = await checkPermissions();
     
-    if (!cameraGranted || !galleryGranted) {
-      Alert.alert(
-        'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Settings', 
-            onPress: () => {
-              Alert.alert(
-                'Enable Permissions',
-                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
-              );
+    if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+      // Permissions already granted, proceed directly to image selection
+      console.log('Permissions already granted, showing image picker options');
+    } else {
+      // Need to request permissions
+      const { cameraGranted, galleryGranted } = await requestPermissions();
+      
+      if (!cameraGranted || !galleryGranted) {
+        Alert.alert(
+          'Permission Required', 
+          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Settings', 
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
             }
-          }
-        ]
-      );
-      return;
+          ]
+        );
+        return;
+      }
     }
 
     Alert.alert(
@@ -327,26 +337,36 @@ export default function EditCard() {
   };
 
   const handleLogoEdit = async () => {
-    const { cameraGranted, galleryGranted } = await requestPermissions();
+    // First check if permissions are already granted
+    const currentPermissions = await checkPermissions();
     
-    if (!cameraGranted || !galleryGranted) {
-      Alert.alert(
-        'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Settings', 
-            onPress: () => {
-              Alert.alert(
-                'Enable Permissions',
-                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
-              );
+    if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+      // Permissions already granted, proceed directly to image selection
+      console.log('Permissions already granted, showing image picker options');
+    } else {
+      // Need to request permissions
+      const { cameraGranted, galleryGranted } = await requestPermissions();
+      
+      if (!cameraGranted || !galleryGranted) {
+        Alert.alert(
+          'Permission Required', 
+          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Settings', 
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
             }
-          }
-        ]
-      );
-      return;
+          ]
+        );
+        return;
+      }
     }
 
     Alert.alert(
