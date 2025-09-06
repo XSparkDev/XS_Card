@@ -398,10 +398,48 @@ export default function EditCard() {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
       
-      console.log('[Image Picker] Permissions already checked, launching picker...');
+      let imageUri: string | null = null;
       
-      // Use our utility function to pick image
-      const imageUri = await pickImage(source === 'camera');
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Image Picker] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(source === 'camera');
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Image Picker] iOS: Permission check then pick');
+        const { cameraGranted, galleryGranted } = await requestPermissions();
+        
+        if (source === 'camera' && !cameraGranted) {
+            Alert.alert(
+              'Camera Permission Required', 
+              'Please enable camera access in your device settings to use this feature.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => {
+                  Linking.openURL('app-settings:');
+                }}
+              ]
+            );
+            return;
+        }
+        
+        if (source === 'gallery' && !galleryGranted) {
+            Alert.alert(
+              'Photo Library Permission Required', 
+              'Please enable photo library access in your device settings to use this feature.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => {
+                  Linking.openURL('app-settings:');
+                }}
+              ]
+            );
+            return;
+        }
+
+        console.log('[Image Picker] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(source === 'camera');
+      }
       
       if (imageUri) {
         console.log('[Image Picker] Processing selected image...');
@@ -477,49 +515,48 @@ export default function EditCard() {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
       
-      // Check permissions using our utility function
-      const { cameraGranted, galleryGranted } = await requestPermissions();
+      let imageUri: string | null = null;
       
-      if (source === 'camera' && !cameraGranted) {
-          Alert.alert(
-            'Camera Permission Required', 
-            'Please enable camera access in your device settings to use this feature.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Logo Picker] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(source === 'camera');
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Logo Picker] iOS: Permission check then pick');
+        const { cameraGranted, galleryGranted } = await requestPermissions();
+        
+        if (source === 'camera' && !cameraGranted) {
+            Alert.alert(
+              'Camera Permission Required', 
+              'Please enable camera access in your device settings to use this feature.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => {
                   Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
-              }}
-            ]
-          );
-          return;
+                }}
+              ]
+            );
+            return;
         }
         
-      if (source === 'gallery' && !galleryGranted) {
-          Alert.alert(
-            'Photo Library Permission Required', 
-            'Please enable photo library access in your device settings to use this feature.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
+        if (source === 'gallery' && !galleryGranted) {
+            Alert.alert(
+              'Photo Library Permission Required', 
+              'Please enable photo library access in your device settings to use this feature.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => {
                   Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
-              }}
-            ]
-          );
-          return;
-      }
+                }}
+              ]
+            );
+            return;
+        }
 
-      console.log('[Logo Picker] Permissions granted, launching picker...');
-      
-      // Use our utility function to pick image
-      const imageUri = await pickImage(source === 'camera');
+        console.log('[Logo Picker] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(source === 'camera');
+      }
       
       if (imageUri) {
         console.log('[Logo Picker] Processing selected logo...');

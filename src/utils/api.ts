@@ -53,8 +53,8 @@ const getBaseUrl = () => {
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-   //return 'http://localhost:8384';
-  // return 'http://192.168.8.253:8383';
+ // return 'http://localhost:8383';
+ // return 'http://192.168.32.93:8383';
   
 };
 
