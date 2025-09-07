@@ -295,8 +295,9 @@ const NoteModal = ({
     <Modal
       visible={visible}
       transparent={true}
-      animationType="none"
+      animationType="slide"
       onRequestClose={onRequestClose}
+      presentationStyle="formSheet"
     >
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -613,8 +614,16 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
   console.log('📱 ContactsModal rendered with:', {
     visible,
     contactsCount: contacts?.length || 0,
-    contacts: contacts
+    selectedContactsCount: selectedContacts.length
   });
+
+  // Reset selected contacts when modal becomes visible
+  React.useEffect(() => {
+    if (visible) {
+      setSelectedContacts([]);
+      setShowError(false);
+    }
+  }, [visible]);
 
   const handleContactPress = (contact: Contact) => {
     setSelectedContacts(prev => {
@@ -631,14 +640,14 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
       <Modal
         visible={visible}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={onClose}
-        presentationStyle="overFullScreen"
+        presentationStyle="pageSheet"
         statusBarTranslucent={false}
       >
         <TouchableWithoutFeedback onPress={onClose}>
           <View style={styles.modalContainer}>
-            <TouchableWithoutFeedback onPress={() => {}}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
               <View style={[styles.modalContent, { maxHeight: '80%' }]}>
                 <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Contacts</Text>
@@ -703,9 +712,12 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
                     setShowError(true);
                     return;
                   }
+                  // Pass the selected contacts and close modal
                   onSelectContacts(selectedContacts);
-                  setSelectedContacts([]);
-                  onClose();
+                  // Reset after a brief delay to ensure the callback processes first
+                  setTimeout(() => {
+                    setSelectedContacts([]);
+                  }, 100);
                 }}
               >
                 <Text style={styles.modalButtonText}>
@@ -798,8 +810,19 @@ export default function Calendar() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [pendingNoteModal, setPendingNoteModal] = useState(false);
   const navigation = useNavigation<CalendarScreenNavigationProp>();
   const [userInfo, setUserInfo] = useState<{ name: string; surname: string; email: string } | null>(null);
+
+  // Safety function to reset all modal states
+  const resetAllModals = () => {
+    console.log('🔄 Resetting all modal states');
+    setIsTimeModalVisible(false);
+    setIsContactsModalVisible(false);
+    setIsNoteModalVisible(false);
+    setIsTransitioning(false);
+    setPendingNoteModal(false);
+  };
   const [meetingDetails, setMeetingDetails] = useState<MeetingDetails>({
     title: '',
     duration: 30,
@@ -856,6 +879,16 @@ export default function Calendar() {
       loadContacts();
     }
   }, [isContactsModalVisible]);
+
+  // Handle pending note modal when contacts modal is closed
+  useEffect(() => {
+    if (pendingNoteModal && !isContactsModalVisible) {
+      console.log('🗒️ Opening note modal from pending state');
+      setPendingNoteModal(false);
+      setIsTransitioning(false);
+      setIsNoteModalVisible(true);
+    }
+  }, [pendingNoteModal, isContactsModalVisible]);
 
   const loadEvents = async () => {
     try {
@@ -1155,10 +1188,13 @@ const renderEventDate = (dateStr: string) => {
     console.log('📝 handleContactSelect called with:', selectedContacts);
     
     if (selectedContacts.length === 0) {
+      console.log('❌ No contacts selected, closing modal');
       setIsContactsModalVisible(false);
       setIsTransitioning(false); // Reset transition state
       return;
     }
+    
+    console.log('✅ Processing', selectedContacts.length, 'selected contacts');
     
     // Calculate end time based on default duration (30 minutes)
     const endTime = calculateEndTime(selectedTime, 30);
@@ -1172,13 +1208,9 @@ const renderEventDate = (dateStr: string) => {
       endTime: endTime
     }));
     
+    console.log('📋 Meeting details updated, closing contacts modal');
     setIsContactsModalVisible(false);
-    setIsTransitioning(false); // Reset transition state
-    
-    // Small delay before showing note modal to ensure contacts modal is fully closed
-    setTimeout(() => {
-      setIsNoteModalVisible(true);
-    }, Platform.OS === 'ios' ? 300 : 100);
+    setPendingNoteModal(true); // Set flag to open note modal when contacts modal is fully closed
   };
 
   const renderEventCard = (event: Event, index: number) => (
@@ -1411,6 +1443,7 @@ const renderEventDate = (dateStr: string) => {
       <ContactsModal
         visible={isContactsModalVisible}
         onClose={() => {
+          console.log('🚪 ContactsModal onClose called');
           setIsContactsModalVisible(false);
           setIsTransitioning(false); // Reset transition state when modal is closed
         }}
@@ -1491,6 +1524,7 @@ const renderEventDate = (dateStr: string) => {
           setMeetingDetails(prev => ({ ...prev, ...details }))
         }
         onBack={() => {
+          console.log('⬅️ Note modal back button pressed');
           setIsNoteModalVisible(false);
           setSelectedContact(null);
           setEventNote('');
@@ -1503,7 +1537,9 @@ const renderEventDate = (dateStr: string) => {
             endTime: '',
           });
           // Go back to time selection instead of contacts
-          setIsTimeModalVisible(true);
+          setTimeout(() => {
+            setIsTimeModalVisible(true);
+          }, Platform.OS === 'ios' ? 300 : 100);
         }}
         onSave={handleSaveEvent}
         onRequestClose={() => setIsNoteModalVisible(false)}
