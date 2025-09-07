@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback } from 'react-native';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
@@ -262,6 +262,15 @@ const NoteModal = ({
   const scrollViewRef = useRef<ScrollView>(null);
   const [selectedAttendees, setSelectedAttendees] = useState<Contact[]>(meetingDetails.attendees || []);
   const [showAttendeePicker, setShowAttendeePicker] = useState(false);
+
+  // Debug logging
+  console.log('📝 NoteModal rendered with:', {
+    visible,
+    selectedContact: selectedContact?.name,
+    selectedTime,
+    meetingDetails,
+    attendeesCount: meetingDetails.attendees?.length || 0
+  });
 
   // Calculate end time based on duration
   const calculateEndTime = (startTime: string, duration: number) => {
@@ -600,6 +609,13 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [showError, setShowError] = useState(false);
 
+  // Debug logging
+  console.log('📱 ContactsModal rendered with:', {
+    visible,
+    contactsCount: contacts?.length || 0,
+    contacts: contacts
+  });
+
   const handleContactPress = (contact: Contact) => {
     setSelectedContacts(prev => {
       const isSelected = prev.some(c => c.id === contact.id);
@@ -617,10 +633,14 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
         transparent={true}
         animationType="fade"
         onRequestClose={onClose}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={false}
       >
-        <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
-            <View style={styles.modalHeader}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.modalContainer}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Contacts</Text>
               <TouchableOpacity onPress={onClose}>
                 <MaterialCommunityIcons name="close" size={24} color="#666" />
@@ -628,33 +648,42 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
             </View>
 
             <ScrollView style={styles.contactsList}>
-              {contacts.map((contact, index) => {
-                const isSelected = selectedContacts.some(c => c.id === contact.id);
-                return (
-                  <TouchableOpacity
-                    key={`contact-${index}`}
-                    style={[
-                      styles.contactItem,
-                      isSelected && styles.contactItemSelected
-                    ]}
-                    onPress={() => handleContactPress(contact)}
-                  >
-                    <View style={styles.contactInfo}>
-                      <Text style={styles.contactName}>
-                        {contact.name} {contact.surname}
-                      </Text>
-                      <Text style={styles.contactEmail}>{contact.email}</Text>
-                    </View>
-                    {isSelected && (
-                      <MaterialCommunityIcons 
-                        name="check-circle" 
-                        size={24} 
-                        color={COLORS.primary} 
-                      />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+              {contacts.length === 0 ? (
+                <View style={styles.emptyContactsContainer}>
+                  <Text style={styles.emptyContactsText}>No contacts found</Text>
+                  <Text style={styles.emptyContactsSubtext}>
+                    You need to have contacts saved to create meetings
+                  </Text>
+                </View>
+              ) : (
+                contacts.map((contact, index) => {
+                  const isSelected = selectedContacts.some(c => c.id === contact.id);
+                  return (
+                    <TouchableOpacity
+                      key={`contact-${index}`}
+                      style={[
+                        styles.contactItem,
+                        isSelected && styles.contactItemSelected
+                      ]}
+                      onPress={() => handleContactPress(contact)}
+                    >
+                      <View style={styles.contactInfo}>
+                        <Text style={styles.contactName}>
+                          {contact.name} {contact.surname}
+                        </Text>
+                        <Text style={styles.contactEmail}>{contact.email}</Text>
+                      </View>
+                      {isSelected && (
+                        <MaterialCommunityIcons 
+                          name="check-circle" 
+                          size={24} 
+                          color={COLORS.primary} 
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -684,8 +713,10 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
                 </Text>
               </TouchableOpacity>
             </View>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       <ErrorModal
@@ -766,6 +797,7 @@ export default function Calendar() {
   const [meetingToDelete, setMeetingToDelete] = useState<number | null>(null);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const navigation = useNavigation<CalendarScreenNavigationProp>();
   const [userInfo, setUserInfo] = useState<{ name: string; surname: string; email: string } | null>(null);
   const [meetingDetails, setMeetingDetails] = useState<MeetingDetails>({
@@ -785,30 +817,33 @@ export default function Calendar() {
 
   const loadContacts = async () => {
     try {
+      console.log('🔄 Starting loadContacts...');
       const userId = await getUserId();
       if (!userId) {
-        console.log('No userId found');
+        console.log('❌ No userId found');
         return;
       }
 
-      console.log('Fetching contacts with userId:', userId);
+      console.log('📞 Fetching contacts with userId:', userId);
       const contactsResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CONTACTS + `/${userId}`);
+      console.log('📡 Contacts response status:', contactsResponse.status);
+      
       const data = await contactsResponse.json();
-      console.log('Raw contacts data:', data);
+      console.log('📋 Raw contacts data:', data);
 
       if (data && Array.isArray(data.contactList)) {
         const contactsWithIds = data.contactList.map((contact: Contact, index: number) => ({
           ...contact,
           id: contact.id || `contact-${index}`
         }));
-        console.log('Setting contacts:', contactsWithIds.length, 'contacts found');
+        console.log('✅ Setting contacts:', contactsWithIds.length, 'contacts found');
         setContacts(contactsWithIds);
       } else {
-        console.log('Invalid contacts data format:', data);
+        console.log('⚠️ Invalid contacts data format:', data);
         setContacts([]);
       }
     } catch (error) {
-      console.error('Error in loadContacts:', error);
+      console.error('❌ Error in loadContacts:', error);
     }
   };
 
@@ -1117,18 +1152,33 @@ const renderEventDate = (dateStr: string) => {
   };
 
   const handleContactSelect = (selectedContacts: Contact[]) => {
+    console.log('📝 handleContactSelect called with:', selectedContacts);
+    
     if (selectedContacts.length === 0) {
-      return; // Don't proceed if no contacts selected
+      setIsContactsModalVisible(false);
+      setIsTransitioning(false); // Reset transition state
+      return;
     }
+    
+    // Calculate end time based on default duration (30 minutes)
+    const endTime = calculateEndTime(selectedTime, 30);
     
     // Update both selectedContact and meetingDetails.attendees
     setSelectedContact(selectedContacts[0]);
     setMeetingDetails(prev => ({
       ...prev,
-      attendees: selectedContacts // Store all selected contacts as attendees
+      attendees: selectedContacts, // Store all selected contacts as attendees
+      startTime: selectedTime,
+      endTime: endTime
     }));
+    
     setIsContactsModalVisible(false);
-    setIsNoteModalVisible(true);
+    setIsTransitioning(false); // Reset transition state
+    
+    // Small delay before showing note modal to ensure contacts modal is fully closed
+    setTimeout(() => {
+      setIsNoteModalVisible(true);
+    }, Platform.OS === 'ios' ? 300 : 100);
   };
 
   const renderEventCard = (event: Event, index: number) => (
@@ -1360,7 +1410,10 @@ const renderEventDate = (dateStr: string) => {
 
       <ContactsModal
         visible={isContactsModalVisible}
-        onClose={() => setIsContactsModalVisible(false)}
+        onClose={() => {
+          setIsContactsModalVisible(false);
+          setIsTransitioning(false); // Reset transition state when modal is closed
+        }}
         contacts={contacts}
         onSelectContacts={handleContactSelect}
       />
@@ -1370,6 +1423,8 @@ const renderEventDate = (dateStr: string) => {
         transparent={true}
         animationType="slide"
         onRequestClose={() => setIsTimeModalVisible(false)}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={false}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -1382,11 +1437,25 @@ const renderEventDate = (dateStr: string) => {
                     styles.timeItem,
                     selectedTime === time && styles.selectedTimeItem
                   ]}
-                  onPress={() => {
+                  onPress={async () => {
+                    if (isTransitioning) return; // Prevent rapid taps
+                    
+                    setIsTransitioning(true);
                     setSelectedTime(time);
                     setIsTimeModalVisible(false);
-                    loadContacts();
-                    setIsContactsModalVisible(true);
+                    
+                    // Add delay for iOS modal transition
+                    setTimeout(async () => {
+                      try {
+                        await loadContacts();
+                        setIsContactsModalVisible(true);
+                      } catch (error) {
+                        console.error('❌ Error loading contacts:', error);
+                        Alert.alert('Error', 'Failed to load contacts. Please try again.');
+                      } finally {
+                        setIsTransitioning(false);
+                      }
+                    }, Platform.OS === 'ios' ? 500 : 100);
                   }}
                 >
                   <Text style={[
@@ -1433,7 +1502,8 @@ const renderEventDate = (dateStr: string) => {
             startTime: '',
             endTime: '',
           });
-          setIsContactsModalVisible(true);
+          // Go back to time selection instead of contacts
+          setIsTimeModalVisible(true);
         }}
         onSave={handleSaveEvent}
         onRequestClose={() => setIsNoteModalVisible(false)}
@@ -1582,6 +1652,24 @@ const styles = StyleSheet.create({
   },
   contactsList: {
     maxHeight: '80%',
+  },
+  emptyContactsContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContactsText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  emptyContactsSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   contactItem: {
     padding: 15,
