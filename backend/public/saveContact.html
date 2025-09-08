@@ -577,7 +577,6 @@
             transition: all 0.3s ease;
             -webkit-appearance: none;
             appearance: none;
-            width: 100%;
         }
 
         .secondary-action-btn:hover {
@@ -1947,8 +1946,9 @@ Please send them a TestFlight invite.`,
                 
                 console.log('Contact data:', contactData);
                 
-            // Show enhanced contact preview page with Complete Export button
-            showContactExportPage(contactData);
+                // Show enhanced contact preview page and trigger download immediately
+                showContactExportPage(contactData);
+                setTimeout(() => downloadContactFile(contactData), 100);
                 
             } else if (action === 'downloadMultiple') {
                 // Multiple contacts export
@@ -1983,7 +1983,8 @@ Please send them a TestFlight invite.`,
 
                     <div class="logo-container">
                         <div class="logo-frame">
-                            <div style="background: linear-gradient(135deg, var(--primary), var(--secondary)); width: 100%; height: 100%; border-radius: 12px;">
+                            <div style="background: linear-gradient(135deg, var(--primary), var(--secondary)); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 12px;">
+                                <div style="font-size: 48px;">📱</div>
                             </div>
                         </div>
                         <div class="profile-overlay">
@@ -2021,27 +2022,20 @@ Please send them a TestFlight invite.`,
                         ` : ''}
                     </div>
 
-                    <div class="form-container" style="text-align: center; padding: 20px 20px 40px 20px; margin-top: 20px;">
-                        <h3 style="color: var(--secondary); margin: 0 0 10px 0; font-size: 20px;">Ready to Export</h3>
-                        <p style="color: #666; margin: 0 0 20px 0; font-size: 16px;">Click below to download the contact file</p>
-                        
-                        <!-- Complete Export button -->
-                        <button onclick="completeExport(${JSON.stringify(contact).replace(/"/g, '&quot;')})" style="
-                            background: linear-gradient(135deg, var(--primary), #ff6b8a);
-                            color: white;
-                            border: none;
-                            border-radius: 25px;
-                            padding: 16px 32px;
-                            font-size: 18px;
-                            font-weight: 600;
-                            cursor: pointer;
-                            box-shadow: 0 4px 15px rgba(255, 75, 110, 0.3);
-                            transition: all 0.3s ease;
-                            margin-top: 10px;
-                            width: 100%;
-                        " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(255, 75, 110, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(255, 75, 110, 0.3)'">
-                            📥 Complete Export
-                        </button>
+                    <div class="form-container" style="text-align: center; padding: 30px 20px;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="
+                                width: 60px;
+                                height: 60px;
+                                border: 3px solid var(--secondary);
+                                border-top-color: var(--primary);
+                                border-radius: 50%;
+                                animation: spin 1s linear infinite;
+                                margin: 0 auto 20px auto;
+                            "></div>
+                        </div>
+                        <h3 style="color: var(--secondary); margin: 0 0 10px 0; font-size: 20px;">Preparing Contact...</h3>
+                        <p style="color: #666; margin: 0; font-size: 16px;">Your contact file will download automatically</p>
                     </div>
                 </div>
                 
@@ -2168,19 +2162,6 @@ Please send them a TestFlight invite.`,
             `;
         }
 
-        // Function to complete export - download file and show confirmation
-        function completeExport(contact) {
-            console.log('Completing export for contact:', contact);
-            
-            // Trigger the download
-            downloadContactFile(contact);
-            
-            // Show success message after download
-            setTimeout(() => {
-                showDownloadMessage(`Contact file for ${contact.name} ${contact.surname} downloaded!`);
-            }, 500);
-        }
-
           // Function to download single contact as vCard file
         function downloadContactFile(contact) {
             console.log('Starting download for contact:', contact);
@@ -2219,15 +2200,12 @@ END:VCARD`;
                 
                 console.log('Download filename:', link.download);
                 
-                // Single download method to avoid duplicates
                 document.body.appendChild(link);
                 link.click();
+                document.body.removeChild(link);
                 
-                // Clean up immediately
-                setTimeout(() => {
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                }, 100);
+                // Clean up the URL object
+                URL.revokeObjectURL(url);
                 
                 console.log('Download triggered successfully');
                 
@@ -2432,7 +2410,6 @@ END:VCARD
                             transition: all 0.3s ease;
                             -webkit-appearance: none;
                             appearance: none;
-                            width: 100%;
                         " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(255, 75, 110, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(255, 75, 110, 0.3)'">
                             ✅ Done
                         </button>

@@ -284,15 +284,24 @@ export default function CreateEventScreen() {
         return;
       }
 
-      const { galleryGranted } = await requestPermissions();
-      if (!galleryGranted) {
-        toast.warning('Permission needed', 'Please grant permission to access your photo library.');
-        return;
+      let imageUri: string | null = null;
+      
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Event Images] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(false);
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Event Images] iOS: Permission check then pick');
+        const { galleryGranted } = await requestPermissions();
+        if (!galleryGranted) {
+          toast.warning('Permission needed', 'Please grant permission to access your photo library.');
+          return;
+        }
+        
+        console.log('[Event Images] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(false);
       }
-
-      // For now, we'll use single image selection since react-native-image-picker
-      // doesn't support multiple selection in the same way
-      const imageUri = await pickImage(false);
       if (imageUri) {
         const availableSlots = maxImages - selectedImages.length;
         
