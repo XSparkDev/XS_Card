@@ -410,31 +410,31 @@ export default function EditCard() {
         const { cameraGranted, galleryGranted } = await requestPermissions();
         
         if (source === 'camera' && !cameraGranted) {
-            Alert.alert(
-              'Camera Permission Required', 
-              'Please enable camera access in your device settings to use this feature.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => {
+          Alert.alert(
+            'Camera Permission Required', 
+            'Please enable camera access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
                   Linking.openURL('app-settings:');
-                }}
-              ]
-            );
-            return;
+              }}
+            ]
+          );
+          return;
         }
         
         if (source === 'gallery' && !galleryGranted) {
-            Alert.alert(
-              'Photo Library Permission Required', 
-              'Please enable photo library access in your device settings to use this feature.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => {
+          Alert.alert(
+            'Photo Library Permission Required', 
+            'Please enable photo library access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
                   Linking.openURL('app-settings:');
-                }}
-              ]
-            );
-            return;
+              }}
+            ]
+          );
+          return;
         }
 
         console.log('[Image Picker] iOS: Permissions checked, launching picker...');
@@ -527,31 +527,31 @@ export default function EditCard() {
         const { cameraGranted, galleryGranted } = await requestPermissions();
         
         if (source === 'camera' && !cameraGranted) {
-            Alert.alert(
-              'Camera Permission Required', 
-              'Please enable camera access in your device settings to use this feature.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => {
+          Alert.alert(
+            'Camera Permission Required', 
+            'Please enable camera access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
                   Linking.openURL('app-settings:');
-                }}
-              ]
-            );
-            return;
+              }}
+            ]
+          );
+          return;
         }
         
         if (source === 'gallery' && !galleryGranted) {
-            Alert.alert(
-              'Photo Library Permission Required', 
-              'Please enable photo library access in your device settings to use this feature.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => {
+          Alert.alert(
+            'Photo Library Permission Required', 
+            'Please enable photo library access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
                   Linking.openURL('app-settings:');
-                }}
-              ]
-            );
-            return;
+              }}
+            ]
+          );
+          return;
         }
 
         console.log('[Logo Picker] iOS: Permissions checked, launching picker...');
@@ -729,18 +729,18 @@ export default function EditCard() {
       </View>
 
       <KeyboardAwareScrollView 
-        ref={scrollViewRef}
-        style={styles.content}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: 100 } // Add extra padding for delete button
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+          ref={scrollViewRef}
+          style={styles.content}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 100 } // Add extra padding for delete button
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         enableOnAndroid={true}
         extraScrollHeight={20}
         extraHeight={20}
-      >
+        >
           {/* Warning Message */}
           <View style={styles.colorSection}>
             <Text style={styles.sectionTitle}>Card color</Text>
