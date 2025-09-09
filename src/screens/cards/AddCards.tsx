@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
@@ -15,6 +15,7 @@ type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 export default function AddCards() {
   const navigation = useNavigation<AddCardsNavigationProp>();
   const [error, setError] = useState('');
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -25,6 +26,21 @@ export default function AddCards() {
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+
+  // Keyboard event listeners
+  React.useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, []);
 
   const handleCancel = () => {
     navigation.goBack();
@@ -219,15 +235,19 @@ export default function AddCards() {
       </View>
 
       <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 30 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <ScrollView 
-          style={styles.content}
-          contentContainerStyle={{ paddingBottom: Platform.OS === 'ios' ? 20 : 20 }}
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isKeyboardVisible && styles.scrollContentKeyboard
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={false}
         >
           {/* Warning Message */}
           <View style={styles.warningBox}>
@@ -346,15 +366,15 @@ export default function AddCards() {
                 keyboardType="phone-pad"
               />
             </View>
-                      </View>
-          </ScrollView>
+          </View>
 
-          {/* Add Button */}
+          {/* Add Button - Now inside ScrollView */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
               <Text style={styles.addButtonText}>Add Card</Text>
             </TouchableOpacity>
           </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
@@ -365,10 +385,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
-  content: { 
+  scrollView: {
     flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: 16,
-    marginTop: 150,
+    paddingTop: 150,
+    paddingBottom: 20,
+  },
+  scrollContentKeyboard: {
+    paddingBottom: 40,
   },
   warningBox: {
     flexDirection: 'row',
@@ -471,6 +497,7 @@ const styles = StyleSheet.create({
   buttonContainer: {
     padding: 16,
     paddingBottom: 32,
+    marginTop: 20,
   },
   addButton: {
     backgroundColor: COLORS.primary,

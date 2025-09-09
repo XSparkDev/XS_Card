@@ -54,7 +54,7 @@ const getBaseUrl = () => {
   
   // Common localhost addresses
  // return 'http://localhost:8383';
-  return 'http://192.168.234.93:8383';
+  return 'http://192.168.68.100:8383';
   
 };
 
