@@ -112,6 +112,30 @@ export default function CompleteProfile() {
     return phoneRegex.test(cleanPhone);
   };
 
+  // Real-time phone validation
+  const handlePhoneChange = (text: string) => {
+    // Only allow digits, spaces, hyphens, and parentheses
+    const cleanedText = text.replace(/[^\d\s\-\(\)]/g, '');
+    setPhone(cleanedText);
+    
+    // Clear error when user starts typing
+    if (errors.phone) {
+      setErrors(prev => ({ ...prev, phone: '' }));
+    }
+    
+    // Real-time validation feedback
+    if (cleanedText.length > 0 && !validatePhone(cleanedText)) {
+      const cleanPhone = cleanedText.replace(/\D/g, '');
+      if (cleanPhone.length < 7) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number must be at least 7 digits' }));
+      } else if (cleanPhone.length > 15) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number must be no more than 15 digits' }));
+      } else {
+        setErrors(prev => ({ ...prev, phone: 'Please enter a valid phone number (7-15 digits)' }));
+      }
+    }
+  };
+
   // Show account created toast when component mounts
   useEffect(() => {
     toast.success('Account Created!', 'Welcome! Please complete your profile to get started.');
@@ -300,7 +324,14 @@ export default function CompleteProfile() {
       newErrors.phone = 'Phone number is required';
       isValid = false;
     } else if (!validatePhone(phone)) {
-      newErrors.phone = 'Please enter a valid phone number (7-15 digits)';
+      const cleanPhone = phone.replace(/\D/g, '');
+      if (cleanPhone.length < 7) {
+        newErrors.phone = 'Phone number must be at least 7 digits';
+      } else if (cleanPhone.length > 15) {
+        newErrors.phone = 'Phone number must be no more than 15 digits';
+      } else {
+        newErrors.phone = 'Please enter a valid phone number (7-15 digits)';
+      }
       isValid = false;
     }
 
@@ -617,12 +648,10 @@ export default function CompleteProfile() {
               style={[styles.phoneInput, errors.phone ? styles.inputError : null]}
               placeholder="Phone number"
               value={phone}
-              onChangeText={(text) => {
-                setPhone(text);
-                setErrors(prev => ({ ...prev, phone: '' }));
-              }}
+              onChangeText={handlePhoneChange}
               keyboardType="phone-pad"
               placeholderTextColor="#999"
+              maxLength={15}
             />
           </View>
           {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
