@@ -30,6 +30,7 @@ router.get('/reset-password', (req, res) => {
     res.redirect(`/templates/passwordReset.html?token=${token}&uid=${uid}`);
 });
 router.get('/reset-user-info', userController.getResetUserInfo);
+router.post('/public/resend-verification', userController.resendVerificationPublic);
 
 // All routes below this middleware will require authentication
 router.use(authenticateUser);

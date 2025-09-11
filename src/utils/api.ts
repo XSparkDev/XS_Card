@@ -5,6 +5,8 @@ import { ErrorHandler, ERROR_CODES, handleAuthError, handleNetworkError, createA
 import { auth } from '../config/firebaseConfig';
 // Import for keepLoggedIn preference check
 import { getKeepLoggedInPreference } from './authStorage';
+// Toast service for centralized imports
+import { toastService, useToast } from '../hooks/useToast';
 
 // Add these types near the top of the file
 export interface PasscreatorResponse {
@@ -54,7 +56,7 @@ const getBaseUrl = () => {
   
   // Common localhost addresses
  // return 'http://localhost:8383';
-  return 'http://192.168.234.93:8383';
+  return 'http://192.168.3.12:8383';
   
 };
 
@@ -88,6 +90,8 @@ export const ENDPOINTS = {
     CANCEL_SUBSCRIPTION: '/subscription/cancel',
     FORGOT_PASSWORD: '/forgot-password',
     RESET_PASSWORD: '/reset-password',
+    RESEND_VERIFICATION: '/resend-verification',
+    RESEND_VERIFICATION_PUBLIC: '/public/resend-verification',
     // New authentication endpoints for Phase 4
     REFRESH_TOKEN: '/refresh-token',
     VALIDATE_TOKEN: '/validate-token',
@@ -634,3 +638,6 @@ export const manuallyExpireToken = async (): Promise<void> => {
     console.error('[Test] Error manually expiring token:', error);
   }
 };
+
+// Re-export toast service and hook for centralized imports
+export { toastService, useToast };
