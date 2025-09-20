@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions, Share } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
@@ -49,7 +49,7 @@ interface CardData {
 interface ShareOption {
   id: string;
   name: string;
-  icon: 'whatsapp' | 'send' | 'email';
+  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
   color: string;
   action: () => void;
 }
@@ -352,6 +352,52 @@ export default function CardsScreen() {
         Linking.openURL(emailUrl).catch(() => {
           Alert.alert('Error', 'Could not open email client');
         });
+      }
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      icon: 'linkedin',
+      color: '#0077B5',
+      action: async () => {
+        if (!userData?.id) {
+          Alert.alert('Error', 'User data not available');
+          return;
+        }
+        
+        const saveContactUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+        const message = `Check out my digital business card!`;
+        
+        const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(saveContactUrl)}&summary=${encodeURIComponent(message)}`;
+        
+        Linking.openURL(linkedinUrl).catch(() => {
+          Alert.alert('Error', 'Could not open LinkedIn');
+        });
+      }
+    },
+    {
+      id: 'more',
+      name: 'More',
+      icon: 'more-horiz',
+      color: '#6B7280',
+      action: async () => {
+        if (!userData?.id) {
+          Alert.alert('Error', 'User data not available');
+          return;
+        }
+        
+        const saveContactUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+        const message = `Check out my digital business card!`;
+        
+        try {
+          await Share.share({
+            message: `${message}\n\n${saveContactUrl}`,
+            url: saveContactUrl,
+            title: 'My Digital Business Card'
+          });
+        } catch (error) {
+          Alert.alert('Error', 'Could not open share options');
+        }
       }
     }
   ];
@@ -886,11 +932,14 @@ export default function CardsScreen() {
                 >
                   <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
                     {option.id === 'whatsapp' ? (
-                      <MaterialCommunityIcons name="whatsapp" size={24} color={COLORS.white} />
+                      <MaterialCommunityIcons name="whatsapp" size={22} color={COLORS.white} />
+                    ) : option.id === 'linkedin' ? (
+                      <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
                     ) : (
-                      <MaterialIcons name={option.icon as 'send' | 'email'} size={24} color={COLORS.white} />
+                      <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
                     )}
                   </View>
+                  <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1081,11 +1130,16 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: COLORS.white,
-    padding: 20,
-    borderRadius: 20,
-    width: '80%',
-    maxWidth: 300,
+    padding: 30,
+    borderRadius: 24,
+    width: '90%',
+    maxWidth: 400,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 60,
+    elevation: 20,
   },
   closeButton: {
     position: 'absolute',
@@ -1099,17 +1153,27 @@ const styles = StyleSheet.create({
   },
   shareOptions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-evenly',
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: 5,
   },
   shareOption: {
-    padding: 10,
+    alignItems: 'center',
+    padding: 4,
+    flex: 1,
+    maxWidth: 60,
+  },
+  shareOptionText: {
+    fontSize: 10,
+    color: COLORS.black,
+    marginTop: 4,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     justifyContent: 'center',
     alignItems: 'center',
   },

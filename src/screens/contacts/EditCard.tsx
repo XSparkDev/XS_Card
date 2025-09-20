@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, PanResponder, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
+import ColorPicker from 'react-native-wheel-color-picker';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -78,11 +79,16 @@ export default function EditCard() {
   const [userPlan, setUserPlan] = useState<string>('free');
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [socialNotification, setSocialNotification] = useState<string | null>(null);
+  const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
+  const [customColor, setCustomColor] = useState('#1B2B5B');
+  const [showQuickColors, setShowQuickColors] = useState(false);
 
   useEffect(() => {
     loadUserData();
     getUserPlan();
   }, []);
+
 
   const loadUserData = async () => {
     try {
@@ -116,6 +122,7 @@ export default function EditCard() {
         console.log('Card data loaded with zoom level:', userData.logoZoomLevel);
         
         setSelectedColor(userData.colorScheme || '#1B2B5B');
+        setCustomColor(userData.colorScheme || '#1B2B5B');
         setFormData({
           firstName: userData.name || '',
           lastName: userData.surname || '',
@@ -190,11 +197,23 @@ export default function EditCard() {
     navigation.goBack();
   };
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+
   const validateForm = () => {
     if (!formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
       setError('Please fill in all required fields');
       return false;
     }
+    
+    if (!validateEmail(formData.email)) {
+      setError('Please enter a valid email address');
+      return false;
+    }
+    
     setError('');
     return true;
   };
@@ -253,7 +272,7 @@ export default function EditCard() {
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
       
-      setModalMessage('Card updated successfully');
+      setModalMessage('Card updated');
       setIsSuccessModalVisible(true);
 
     } catch (error) {
@@ -268,8 +287,15 @@ export default function EditCard() {
       setIsSocialRemoveModalVisible(true);
     } else {
       setSelectedSocials([...selectedSocials, socialId]);
-      // KeyboardAwareScrollView will automatically scroll to the new input when it's focused
-      // No need for manual scrolling
+      
+      // Show notification for the added social link
+      const socialName = socials.find(s => s.id === socialId)?.label || socialId;
+      setSocialNotification(`A ${socialName} textbox has been added below.`);
+      
+      // Clear notification after 3 seconds
+      setTimeout(() => {
+        setSocialNotification(null);
+      }, 3000);
     }
   };
 
@@ -712,7 +738,7 @@ export default function EditCard() {
       
       {/* Cancel and Preview buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity onPress={handleCancel}>
+        <TouchableOpacity onPress={handleCancel} style={styles.cancelButtonContainer}>
           <Text style={styles.cancelButton}>Cancel</Text>
         </TouchableOpacity>
         <View style={styles.rightButtons}>
@@ -722,7 +748,7 @@ export default function EditCard() {
               <Text style={styles.previewButtonText}>Preview</Text>
             </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSave}>
+        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer}>
           <Text style={styles.saveButton}>Save</Text>
         </TouchableOpacity>
         </View>
@@ -741,9 +767,16 @@ export default function EditCard() {
         extraScrollHeight={20}
         extraHeight={20}
         >
-          {/* Warning Message */}
-          <View style={styles.colorSection}>
+          {/* Card Color Section */}
+          <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Card color</Text>
+            
+            {/* Current Color Indicator */}
+            <View style={styles.currentColorIndicator}>
+              <Text style={styles.currentColorLabel}>Preview colour:</Text>
+              <View style={[styles.currentColorPreview, { backgroundColor: selectedColor }]} />
+            </View>
+            
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
@@ -762,12 +795,30 @@ export default function EditCard() {
                   ]} />
                 </TouchableOpacity>
               ))}
+              
+              {/* Custom Color Picker Button */}
+              <TouchableOpacity
+                onPress={() => {
+                  setCustomColor(selectedColor); // Sync with current selected color
+                  setIsCustomColorModalVisible(true);
+                }}
+                style={styles.colorButtonWrapper}
+              >
+                <View style={[
+                  styles.colorButton,
+                  styles.customColorButton,
+                  selectedColor === customColor && styles.selectedColor,
+                ]}>
+                  <MaterialIcons name="palette" size={20} color="#666" />
+                </View>
+              </TouchableOpacity>
             </ScrollView>
           </View>
 
           {/* Images & Layout Section */}
-          <Text style={styles.sectionTitle}>Images & layout</Text>
-          <View style={styles.logoContainer}>
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Images & layout</Text>
+            <View style={styles.logoContainer}>
             <View style={styles.logoFrame}>
             <Image
               source={formData.companyLogo ? 
@@ -867,31 +918,11 @@ export default function EditCard() {
               </View>
             </View>
           </View>
-
-          {/* Link Socials Section */}
-          <Text style={styles.sectionTitle}>Link Socials</Text>
-          <View style={styles.socialsGrid}>
-            {socials.map((social) => (
-              <TouchableOpacity
-                key={social.id}
-                style={[
-                  styles.socialItem,
-                  selectedSocials.includes(social.id) && styles.selectedSocialItem
-                ]}
-                onPress={() => handleSocialSelect(social.id as SocialMediaPlatform)}
-              >
-                <MaterialCommunityIcons
-                  name={social.icon || 'link'}
-                  size={24}
-                  color={social.color}
-                />
-                <Text style={styles.socialLabel}>{social.label}</Text>
-              </TouchableOpacity>
-            ))}
           </View>
 
           {/* Personal Details Section */}
-          <Text style={styles.sectionTitle}>Personal details</Text>
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Personal details</Text>
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             <TextInput 
@@ -971,11 +1002,11 @@ export default function EditCard() {
                 </View>
                 <TextInput
                   style={styles.input}
-                  placeholder={`${socials.find(s => s.id === socialId)?.label} ${
+                  placeholder={
                     socialId === 'website' ? 'URL' : 
-                    socialId === 'whatsapp' ? 'number' : 
-                    'username (without @)'
-                  }`}
+                    socialId === 'whatsapp' ? 'Phone number' : 
+                    'Username'
+                  }
                   placeholderTextColor="#999"
                   value={formData[socialId]?.toString() || ''}
                   onChangeText={(text) => {
@@ -985,8 +1016,52 @@ export default function EditCard() {
                   }}
                   keyboardType={socialId === 'whatsapp' ? 'phone-pad' : 'default'}
                 />
+                {/* Helpful notes for social platforms */}
+                {socialId !== 'website' && socialId !== 'whatsapp' && (
+                  <Text style={styles.socialNote}>
+                    * Enter username without @ symbol
+                  </Text>
+                )}
+                {socialId === 'whatsapp' && (
+                  <Text style={styles.socialNote}>
+                    * Include country code (e.g., +1234567890)
+                  </Text>
+                )}
               </Animated.View>
             ))}
+          </View>
+          </View>
+
+          {/* Social Link Notification */}
+          {socialNotification && (
+            <View style={styles.notificationContainer}>
+              <MaterialIcons name="info" size={20} color="#1976D2" />
+              <Text style={styles.notificationText}>{socialNotification}</Text>
+            </View>
+          )}
+
+          {/* Link Socials Section */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Link Socials</Text>
+          <View style={styles.socialsGrid}>
+            {socials.map((social) => (
+              <TouchableOpacity
+                key={social.id}
+                style={[
+                  styles.socialItem,
+                  selectedSocials.includes(social.id) && styles.selectedSocialItem
+                ]}
+                onPress={() => handleSocialSelect(social.id as SocialMediaPlatform)}
+              >
+                <MaterialCommunityIcons
+                  name={social.icon || 'link'}
+                  size={24}
+                  color={social.color}
+                />
+                <Text style={styles.socialLabel}>{social.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           </View>
 
           {/* Delete Button */}
@@ -1008,8 +1083,8 @@ export default function EditCard() {
       <CustomModal
         isVisible={isSocialRemoveModalVisible}
         onClose={() => setIsSocialRemoveModalVisible(false)}
-        title="Remove Social Media"
-        message="Are you sure you want to remove this social media link?"
+        title="Remove social media"
+        message="Are you sure?"
         buttons={[
           {
             text: 'Cancel',
@@ -1222,6 +1297,109 @@ export default function EditCard() {
           </View>
         </SafeAreaView>
       </RNModal>
+
+      {/* Custom Color Picker Modal */}
+      <Modal
+        isVisible={isCustomColorModalVisible}
+        onBackdropPress={() => setIsCustomColorModalVisible(false)}
+        animationIn="fadeIn"
+        animationOut="fadeOut"
+        backdropOpacity={0.5}
+        style={{ margin: 20 }}
+      >
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>Choose Custom Color</Text>
+          
+          {/* Professional Color Picker - Moved to top */}
+          <View style={styles.visualColorPickerContainer}>
+            <Text style={styles.colorPickerLabel}>Select your color:</Text>
+            <View style={styles.professionalColorPicker}>
+              <ColorPicker
+                onColorChangeComplete={(color: string) => setCustomColor(color)}
+                color={customColor}
+                thumbSize={30}
+                sliderSize={30}
+                gapSize={10}
+                swatches={false}
+              />
+            </View>
+          </View>
+          
+          {/* Color Preview */}
+          <View style={styles.colorPreviewContainer}>
+            <Text style={styles.colorPreviewLabel}>Preview:</Text>
+            <View style={[styles.colorPreviewLarge, { backgroundColor: customColor }]} />
+            <Text style={styles.colorHexText}>{customColor.toUpperCase()}</Text>
+          </View>
+          
+          {/* Color Input */}
+          <View style={styles.colorInputContainer}>
+            <Text style={styles.colorInputLabel}>Hex Color:</Text>
+            <TextInput
+              style={styles.colorInput}
+              value={customColor}
+              onChangeText={(text) => {
+                // Ensure it starts with # and is valid hex
+                let cleanText = text.replace(/[^0-9A-Fa-f]/g, '');
+                if (cleanText.length > 6) cleanText = cleanText.substring(0, 6);
+                setCustomColor('#' + cleanText);
+              }}
+              placeholder="#000000"
+              placeholderTextColor="#999"
+              maxLength={7}
+            />
+          </View>
+          
+          {/* Quick Color Presets Toggle Button */}
+          <TouchableOpacity
+            style={styles.quickColorsToggleButton}
+            onPress={() => setShowQuickColors(!showQuickColors)}
+          >
+            <Text style={styles.quickColorsToggleText}>
+              {showQuickColors ? 'Hide Quick Colors' : 'Show Quick Colors'}
+            </Text>
+            <MaterialIcons 
+              name={showQuickColors ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} 
+              size={24} 
+              color={COLORS.primary} 
+            />
+          </TouchableOpacity>
+
+          {/* Quick Color Presets - Conditionally Rendered */}
+          {showQuickColors && (
+            <View style={styles.quickColorsContainer}>
+              <Text style={styles.quickColorsLabel}>Quick Colors:</Text>
+              <View style={styles.quickColorsGrid}>
+                {['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#FFC0CB', '#A52A2A', '#808080', '#000000'].map((color, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => setCustomColor(color)}
+                    style={[styles.quickColorButton, { backgroundColor: color }]}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+          
+          <View style={styles.modalButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel]}
+              onPress={() => setIsCustomColorModalVisible(false)}
+            >
+              <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonConfirm]}
+              onPress={() => {
+                setSelectedColor(customColor);
+                setIsCustomColorModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalButtonText}>Apply Color</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1300,9 +1478,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  cancelButtonContainer: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
   cancelButton: {
     color: '#666',
     fontSize: 16,
+    fontWeight: '500',
   },
   previewButton: {
     flexDirection: 'row',
@@ -1318,9 +1505,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 4,
   },
+  saveButtonContainer: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
   saveButton: {
-    color: '#666',
+    color: COLORS.white,
     fontSize: 16,
+    fontWeight: '600',
   },
   addButton: {
     backgroundColor: '#1E1B4B',
@@ -1337,6 +1531,13 @@ const styles = StyleSheet.create({
   errorText: {
     color: 'red',
     marginBottom: 10,
+  },
+  sectionContainer: {
+    marginTop: 20,
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
   colorSection: {
     marginTop: 20,
@@ -1361,6 +1562,127 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 20,
+  },
+  currentColorIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+  },
+  currentColorLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginRight: 8,
+  },
+  currentColorPreview: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+  },
+  customColorButton: {
+    backgroundColor: '#F5F5F5',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  colorPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+  },
+  colorPreviewLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginRight: 12,
+  },
+  colorPreviewLarge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    marginRight: 12,
+  },
+  colorHexText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.black,
+    fontFamily: 'monospace',
+  },
+  visualColorPickerContainer: {
+    marginBottom: 20,
+  },
+  colorPickerLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginBottom: 12,
+  },
+  professionalColorPicker: {
+    width: '100%',
+    height: Math.min(Dimensions.get('window').height * 0.35, 280),
+  },
+  colorInputContainer: {
+    marginBottom: 20,
+  },
+  colorInputLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  colorInput: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    fontFamily: 'monospace',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  quickColorsToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  quickColorsToggleText: {
+    fontSize: 16,
+    color: COLORS.primary,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  quickColorsContainer: {
+    marginBottom: 20,
+  },
+  quickColorsLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginBottom: 12,
+  },
+  quickColorsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickColorButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
   },
   logoContainer: {
     width: '100%',
@@ -1468,6 +1790,13 @@ const styles = StyleSheet.create({
   },
   removeSocialButton: {
     padding: 4,
+  },
+  socialNote: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    marginLeft: 4,
+    fontStyle: 'italic',
   },
   scrollContent: {
     paddingBottom: Platform.OS === 'ios' ? 20 : 20,
@@ -1612,6 +1941,24 @@ const styles = StyleSheet.create({
   zoomLabelText: {
     fontSize: 12,
     color: '#666',
+  },
+  notificationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1976D2',
+  },
+  notificationText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#1976D2',
+    flex: 1,
   },
   previewModalContainer: {
     flex: 1,

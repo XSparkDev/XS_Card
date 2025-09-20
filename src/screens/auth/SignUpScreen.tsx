@@ -254,6 +254,14 @@ export default function SignUpScreen() {
           />
           {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
+          {/* Email Warning */}
+          <View style={styles.emailWarningContainer}>
+            <MaterialIcons name="warning" size={16} color="#FF6B35" />
+            <Text style={styles.emailWarningText}>
+              Use your personal email address. Company emails may result in account loss if employment ends.
+            </Text>
+          </View>
+
           <View style={styles.passwordContainer}>
             <TextInput
               style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
@@ -469,6 +477,24 @@ const styles = StyleSheet.create({
     marginTop: -10,
     marginBottom: 10,
     marginLeft: 15,
+  },
+  emailWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF6B35',
+  },
+  emailWarningText: {
+    color: '#E65100',
+    fontSize: 13,
+    lineHeight: 18,
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
   },
   disabledButton: {
     backgroundColor: '#999',

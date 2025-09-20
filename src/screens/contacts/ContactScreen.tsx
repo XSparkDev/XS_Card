@@ -12,7 +12,8 @@ import {
   Linking, 
   RefreshControl, 
   ActivityIndicator,
-  SafeAreaView 
+  SafeAreaView,
+  Share 
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -31,11 +32,17 @@ import {
   getUserId, 
   authenticatedFetchWithRefresh 
 } from '../../utils/api';
+import { formatTimestamp } from '../../utils/dateFormatter';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
 
 // Type definitions
+interface Timestamp {
+  seconds: number;
+  nanoseconds?: number;
+}
+
 interface Contact {
   id?: string;
   name: string;
@@ -44,7 +51,7 @@ interface Contact {
   email?: string;
   company?: string;
   howWeMet: string;
-  createdAt: string;
+  createdAt: string | Timestamp;
 }
 
 interface ContactData {
@@ -61,7 +68,7 @@ interface UserData {
 interface ShareOption {
   id: string;
   name: string;
-  icon: 'whatsapp' | 'send' | 'email';
+  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
   color: string;
   action: (contact?: Contact) => Promise<void>;
 }
@@ -371,6 +378,75 @@ export default function ContactsScreen() {
           showToast('Could not open email client');
         }
       }
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      icon: 'linkedin',
+      color: '#0077B5',
+      action: async (contact?: Contact) => {
+        try {
+          const storedUserData = await AsyncStorage.getItem('userData');
+          if (!storedUserData) {
+            showToast('User data not available');
+            return;
+          }
+          
+          const userData = JSON.parse(storedUserData);
+          let message: string;
+          let url: string;
+          
+          if (contact) {
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            url = '';
+          } else {
+            const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+            message = `Check out my digital business card!`;
+            url = shareUrl;
+          }
+          
+          const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url || '')}&summary=${encodeURIComponent(message)}`;
+          await Linking.openURL(linkedinUrl);
+        } catch (error) {
+          showToast('Could not open LinkedIn');
+        }
+      }
+    },
+    {
+      id: 'more',
+      name: 'More',
+      icon: 'more-horiz',
+      color: '#6B7280',
+      action: async (contact?: Contact) => {
+        try {
+          const storedUserData = await AsyncStorage.getItem('userData');
+          if (!storedUserData) {
+            showToast('User data not available');
+            return;
+          }
+          
+          const userData = JSON.parse(storedUserData);
+          let message: string;
+          let url: string;
+          
+          if (contact) {
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            url = '';
+          } else {
+            const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+            message = `Check out my digital business card!`;
+            url = shareUrl;
+          }
+          
+          await Share.share({
+            message: url ? `${message}\n\n${url}` : message,
+            url: url || undefined,
+            title: contact ? `Contact: ${contact.name} ${contact.surname}` : 'My Digital Business Card'
+          });
+        } catch (error) {
+          showToast('Could not open share options');
+        }
+      }
     }
   ];
 
@@ -392,10 +468,21 @@ export default function ContactsScreen() {
 
   // ============= COMPUTED VALUES =============
   
-  // Filter contacts based on search query
-  const filteredContacts = contacts.filter(contact =>
-    `${contact.name || ''} ${contact.surname || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter contacts based on search query (name, phone, company, email, howWeMet)
+  const filteredContacts = contacts.filter(contact => {
+    const searchTerm = searchQuery.toLowerCase();
+    const fullName = `${contact.name || ''} ${contact.surname || ''}`.toLowerCase();
+    const phone = (contact.phone || '').toLowerCase();
+    const company = (contact.company || '').toLowerCase();
+    const email = (contact.email || '').toLowerCase();
+    const howWeMet = (contact.howWeMet || '').toLowerCase();
+    
+    return fullName.includes(searchTerm) ||
+           phone.includes(searchTerm) ||
+           company.includes(searchTerm) ||
+           email.includes(searchTerm) ||
+           howWeMet.includes(searchTerm);
+  });
 
   // Dynamic styles based on color scheme
   const dynamicStyles = {
@@ -445,13 +532,13 @@ export default function ContactsScreen() {
   const RenderLeftActions = useCallback((progress: any, dragX: any, contact: Contact) => {
     return (
       <TouchableOpacity 
-        style={dynamicStyles.shareAction}
+        style={[styles.shareAction, { backgroundColor: '#2196F3' }]}
         onPress={() => handleShare(contact)}
       >
         <MaterialIcons name="share" size={24} color={COLORS.white} />
       </TouchableOpacity>
     );
-  }, [dynamicStyles.shareAction, handleShare]);
+  }, [handleShare]);
 
   // ============= EFFECTS =============
   
@@ -623,7 +710,7 @@ export default function ContactsScreen() {
                             Met at: {contact.howWeMet}
                           </Text>
                           <Text style={styles.contactDate}>
-                            {contact.createdAt}
+                            {formatTimestamp(contact.createdAt)}
                           </Text>
                         </View>
                       </View>
@@ -659,13 +746,16 @@ export default function ContactsScreen() {
                     style={styles.shareOption}
                     onPress={() => handlePlatformSelect(option.id)}
                   >
-                    <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
-                      {option.id === 'whatsapp' ? (
-                        <MaterialCommunityIcons name="whatsapp" size={24} color={COLORS.white} />
-                      ) : (
-                        <MaterialIcons name={option.icon as 'send' | 'email'} size={24} color={COLORS.white} />
-                      )}
-                    </View>
+                     <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
+                       {option.id === 'whatsapp' ? (
+                         <MaterialCommunityIcons name="whatsapp" size={22} color={COLORS.white} />
+                       ) : option.id === 'linkedin' ? (
+                         <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
+                       ) : (
+                         <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
+                       )}
+                     </View>
+                    <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -753,7 +843,7 @@ export default function ContactsScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: colorScheme }]}
+                      style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
                       onPress={() => {
                         handleShare(selectedContactForOptions);
                         setIsContactOptionsVisible(false);
@@ -766,7 +856,7 @@ export default function ContactsScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: COLORS.error }]}
+                      style={[styles.actionButton, { backgroundColor: '#FF0000' }]}
                       onPress={() => {
                         setIsContactOptionsVisible(false);
                         setSelectedContactForOptions(null);
@@ -1009,7 +1099,13 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   deleteAction: {
-    backgroundColor: COLORS.error,
+    backgroundColor: '#FF0000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  shareAction: {
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
@@ -1046,17 +1142,27 @@ const styles = StyleSheet.create({
   },
   shareOptions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-evenly',
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: 5,
   },
   shareOption: {
-    padding: 10,
+    alignItems: 'center',
+    padding: 4,
+    flex: 1,
+    maxWidth: 60,
+  },
+  shareOptionText: {
+    fontSize: 10,
+    color: COLORS.black,
+    marginTop: 4,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     justifyContent: 'center',
     alignItems: 'center',
   },

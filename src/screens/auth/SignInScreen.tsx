@@ -288,7 +288,7 @@ export default function SignInScreen() {
 
       <TextInput
         style={[styles.input, errors.email ? styles.inputError : null]}
-        placeholder="Mail"
+        placeholder="Email"
         value={email}
         onChangeText={(text) => {
           setEmail(text);
