@@ -17,6 +17,7 @@ const formatDate = (date) => {
         return null;
     }
 
+    // Use UTC timezone to avoid server timezone issues
     return date.toLocaleString('en-US', {
         month: 'long',
         day: 'numeric',
@@ -24,11 +25,11 @@ const formatDate = (date) => {
         hour: 'numeric',
         minute: '2-digit',
         second: '2-digit',
+        timeZone: 'UTC',
         timeZoneName: 'short'
     })
     .replace(',', '')
-    .replace(/\s+/g, ' ')
-    .replace(/(\d+:\d+:\d+)/, 'at $1');
+    .replace(/\s+/g, ' ');
 };
 
 const convertToISOString = (date) => {

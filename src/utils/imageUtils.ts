@@ -7,7 +7,21 @@ export const checkPermissions = async () => {
     if (Platform.OS === 'android') {
       // Check current permission status first
       const cameraStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
-      const storageStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
+      
+      // Check storage permission based on Android version
+      let storageStatus = false;
+      try {
+        // Try READ_MEDIA_IMAGES first (Android 13+)
+        storageStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
+      } catch (error) {
+        // Fallback to READ_EXTERNAL_STORAGE for older Android versions
+        try {
+          storageStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+        } catch (fallbackError) {
+          console.warn('Could not check storage permissions:', fallbackError);
+          storageStatus = false;
+        }
+      }
 
       return {
         cameraGranted: cameraStatus,
@@ -58,16 +72,37 @@ export const requestPermissions = async () => {
 
       // Only request storage permission if not already granted
       if (!galleryGranted) {
-        const storagePermission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-          {
-            title: 'Photo Library Permission',
-            message: 'XSCard needs photo library access to select profile pictures and company logos.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
+        let storagePermission = null;
+        try {
+          // Try READ_MEDIA_IMAGES first (Android 13+)
+          storagePermission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+            {
+              title: 'Photo Library Permission',
+              message: 'XSCard needs photo library access to select profile pictures and company logos.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            }
+          );
+        } catch (error) {
+          // Fallback to READ_EXTERNAL_STORAGE for older Android versions
+          try {
+            storagePermission = await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+              {
+                title: 'Photo Library Permission',
+                message: 'XSCard needs photo library access to select profile pictures and company logos.',
+                buttonNeutral: 'Ask Me Later',
+                buttonNegative: 'Cancel',
+                buttonPositive: 'OK',
+              }
+            );
+          } catch (fallbackError) {
+            console.warn('Could not request storage permissions:', fallbackError);
+            storagePermission = PermissionsAndroid.RESULTS.DENIED;
           }
-        );
+        }
         galleryGranted = storagePermission === PermissionsAndroid.RESULTS.GRANTED;
       }
 

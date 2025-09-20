@@ -155,7 +155,35 @@ exports.addUser = async (req, res) => {
         });
     } catch (error) {
         console.error('Error adding user:', error);
-        res.status(500).send({ message: 'Internal Server Error', error: error.message });
+        
+        // Handle specific Firebase Auth errors
+        if (error.code === 'auth/email-already-exists') {
+            return res.status(409).send({ 
+                message: 'An account with this email already exists. Please sign in instead.',
+                code: 'EMAIL_ALREADY_EXISTS'
+            });
+        } else if (error.code === 'auth/invalid-email') {
+            return res.status(400).send({ 
+                message: 'Invalid email address format.',
+                code: 'INVALID_EMAIL'
+            });
+        } else if (error.code === 'auth/weak-password') {
+            return res.status(400).send({ 
+                message: 'Password is too weak. Please choose a stronger password.',
+                code: 'WEAK_PASSWORD'
+            });
+        } else if (error.code === 'auth/operation-not-allowed') {
+            return res.status(500).send({ 
+                message: 'Email/password accounts are not enabled. Please contact support.',
+                code: 'OPERATION_NOT_ALLOWED'
+            });
+        }
+        
+        // Generic server error for other cases
+        res.status(500).send({ 
+            message: 'Internal Server Error', 
+            error: error.message 
+        });
     }
 };
 
@@ -1405,6 +1433,99 @@ exports.deactivateUser = async (req, res) => {
             success: false,
             message: 'Failed to deactivate user account',
             error: error.message
+        });
+    }
+};
+
+// Public resend verification (no authentication required)
+exports.resendVerificationPublic = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email is required'
+            });
+        }
+
+        console.log(`[ResendVerificationPublic] 📧 Processing resend request for email: ${email}`);
+
+        // Find user by email in Firestore
+        const usersRef = db.collection('users');
+        const snapshot = await usersRef.where('email', '==', email).get();
+
+        if (snapshot.empty) {
+            console.log(`[ResendVerificationPublic] ❌ No account found with email: ${email}`);
+            return res.status(404).json({
+                success: false,
+                message: 'No account found with this email address'
+            });
+        }
+
+        const userDoc = snapshot.docs[0];
+        const userData = userDoc.data();
+        const uid = userDoc.id;
+
+        console.log(`[ResendVerificationPublic] ✅ Found user: ${uid}`);
+
+        // Check if already verified
+        if (userData.isEmailVerified) {
+            console.log(`[ResendVerificationPublic] ✅ Email already verified for: ${email}`);
+            return res.status(400).json({
+                success: false,
+                message: 'Email is already verified'
+            });
+        }
+
+        // Check cooldown (prevent spam)
+        const lastSent = userData.lastVerificationEmailSent;
+        if (lastSent) {
+            const timeSinceLastSent = Date.now() - lastSent;
+            const cooldownPeriod = 60 * 1000; // 60 seconds
+            
+            if (timeSinceLastSent < cooldownPeriod) {
+                const remainingTime = Math.ceil((cooldownPeriod - timeSinceLastSent) / 1000);
+                console.log(`[ResendVerificationPublic] ⏰ Cooldown active, ${remainingTime}s remaining`);
+                return res.status(429).json({
+                    success: false,
+                    message: `Please wait ${remainingTime} seconds before requesting another verification email`
+                });
+            }
+        }
+
+        // Generate new verification token
+        const verificationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        
+        // Update user record with new token and timestamp
+        await userDoc.ref.update({
+            verificationToken: verificationToken,
+            lastVerificationEmailSent: Date.now()
+        });
+
+        console.log(`[ResendVerificationPublic] 🔄 Updated verification token for user: ${uid}`);
+
+        // Send verification email
+        const verificationUrl = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}&uid=${uid}`;
+        
+        await sendMailWithStatus({
+            to: email,
+            subject: EMAIL_TEMPLATES.verification.subject,
+            html: EMAIL_TEMPLATES.verification.getHtml(userData.name || 'User', verificationUrl)
+        });
+
+        console.log(`[ResendVerificationPublic] ✅ Verification email sent to: ${email}`);
+
+        res.json({
+            success: true,
+            message: 'Verification email sent successfully'
+        });
+
+    } catch (error) {
+        console.error('[ResendVerificationPublic] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send verification email'
         });
     }
 };

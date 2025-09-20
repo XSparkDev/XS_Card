@@ -1,20 +1,87 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Image, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Linking } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Linking, Modal, FlatList } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
-import { API_BASE_URL, ENDPOINTS, buildUrl } from '../../utils/api';
+import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type CompleteProfileRouteProp = RouteProp<AuthStackParamList, 'CompleteProfile'>;
 type CompleteProfileNavigationProp = StackNavigationProp<AuthStackParamList>;
 
+// Country data with flags and codes (most common countries)
+const COUNTRIES = [
+  { code: '+1', name: 'United States', flag: '🇺🇸' },
+  { code: '+1', name: 'Canada', flag: '🇨🇦' },
+  { code: '+44', name: 'United Kingdom', flag: '🇬🇧' },
+  { code: '+33', name: 'France', flag: '🇫🇷' },
+  { code: '+49', name: 'Germany', flag: '🇩🇪' },
+  { code: '+86', name: 'China', flag: '🇨🇳' },
+  { code: '+91', name: 'India', flag: '🇮🇳' },
+  { code: '+81', name: 'Japan', flag: '🇯🇵' },
+  { code: '+61', name: 'Australia', flag: '🇦🇺' },
+  { code: '+55', name: 'Brazil', flag: '🇧🇷' },
+  { code: '+39', name: 'Italy', flag: '🇮🇹' },
+  { code: '+34', name: 'Spain', flag: '🇪🇸' },
+  { code: '+31', name: 'Netherlands', flag: '🇳🇱' },
+  { code: '+46', name: 'Sweden', flag: '🇸🇪' },
+  { code: '+47', name: 'Norway', flag: '🇳🇴' },
+  { code: '+45', name: 'Denmark', flag: '🇩🇰' },
+  { code: '+41', name: 'Switzerland', flag: '🇨🇭' },
+  { code: '+43', name: 'Austria', flag: '🇦🇹' },
+  { code: '+32', name: 'Belgium', flag: '🇧🇪' },
+  { code: '+351', name: 'Portugal', flag: '🇵🇹' },
+  { code: '+30', name: 'Greece', flag: '🇬🇷' },
+  { code: '+48', name: 'Poland', flag: '🇵🇱' },
+  { code: '+420', name: 'Czech Republic', flag: '🇨🇿' },
+  { code: '+36', name: 'Hungary', flag: '🇭🇺' },
+  { code: '+40', name: 'Romania', flag: '🇷🇴' },
+  { code: '+359', name: 'Bulgaria', flag: '🇧🇬' },
+  { code: '+385', name: 'Croatia', flag: '🇭🇷' },
+  { code: '+386', name: 'Slovenia', flag: '🇸🇮' },
+  { code: '+421', name: 'Slovakia', flag: '🇸🇰' },
+  { code: '+370', name: 'Lithuania', flag: '🇱🇹' },
+  { code: '+371', name: 'Latvia', flag: '🇱🇻' },
+  { code: '+372', name: 'Estonia', flag: '🇪🇪' },
+  { code: '+358', name: 'Finland', flag: '🇫🇮' },
+  { code: '+353', name: 'Ireland', flag: '🇮🇪' },
+  { code: '+354', name: 'Iceland', flag: '🇮🇸' },
+  { code: '+352', name: 'Luxembourg', flag: '🇱🇺' },
+  { code: '+7', name: 'Russia', flag: '🇷🇺' },
+  { code: '+380', name: 'Ukraine', flag: '🇺🇦' },
+  { code: '+90', name: 'Turkey', flag: '🇹🇷' },
+  { code: '+82', name: 'South Korea', flag: '🇰🇷' },
+  { code: '+65', name: 'Singapore', flag: '🇸🇬' },
+  { code: '+60', name: 'Malaysia', flag: '🇲🇾' },
+  { code: '+66', name: 'Thailand', flag: '🇹🇭' },
+  { code: '+84', name: 'Vietnam', flag: '🇻🇳' },
+  { code: '+63', name: 'Philippines', flag: '🇵🇭' },
+  { code: '+62', name: 'Indonesia', flag: '🇮🇩' },
+  { code: '+880', name: 'Bangladesh', flag: '🇧🇩' },
+  { code: '+92', name: 'Pakistan', flag: '🇵🇰' },
+  { code: '+98', name: 'Iran', flag: '🇮🇷' },
+  { code: '+972', name: 'Israel', flag: '🇮🇱' },
+  { code: '+966', name: 'Saudi Arabia', flag: '🇸🇦' },
+  { code: '+971', name: 'UAE', flag: '🇦🇪' },
+  { code: '+20', name: 'Egypt', flag: '🇪🇬' },
+  { code: '+27', name: 'South Africa', flag: '🇿🇦' },
+  { code: '+234', name: 'Nigeria', flag: '🇳🇬' },
+  { code: '+254', name: 'Kenya', flag: '🇰🇪' },
+  { code: '+52', name: 'Mexico', flag: '🇲🇽' },
+  { code: '+54', name: 'Argentina', flag: '🇦🇷' },
+  { code: '+56', name: 'Chile', flag: '🇨🇱' },
+  { code: '+57', name: 'Colombia', flag: '🇨🇴' },
+  { code: '+51', name: 'Peru', flag: '🇵🇪' },
+  { code: '+64', name: 'New Zealand', flag: '🇳🇿' },
+];
+
 export default function CompleteProfile() {
   const navigation = useNavigation<CompleteProfileNavigationProp>();
   const route = useRoute<CompleteProfileRouteProp>();
+  const toast = useToast();
   const [userId, setUserId] = useState<string | null>(route.params?.userId || null);
   const [idError, setIdError] = useState<string | null>(null);
   
@@ -23,6 +90,10 @@ export default function CompleteProfile() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('+27'); // Default to South Africa
+  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES.find(c => c.code === '+27') || COUNTRIES[0]); // Default to South Africa
+  const [showCountryModal, setShowCountryModal] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [errors, setErrors] = useState({
@@ -30,6 +101,45 @@ export default function CompleteProfile() {
     occupation: '',
     company: ''
   });
+
+  // Phone validation function
+  const validatePhone = (phoneNumber: string) => {
+    // Remove all non-digit characters for validation
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    
+    // Check if it's a valid phone number (7-15 digits)
+    const phoneRegex = /^\d{7,15}$/;
+    return phoneRegex.test(cleanPhone);
+  };
+
+  // Real-time phone validation
+  const handlePhoneChange = (text: string) => {
+    // Only allow digits, spaces, hyphens, and parentheses
+    const cleanedText = text.replace(/[^\d\s\-\(\)]/g, '');
+    setPhone(cleanedText);
+    
+    // Clear error when user starts typing
+    if (errors.phone) {
+      setErrors(prev => ({ ...prev, phone: '' }));
+    }
+    
+    // Real-time validation feedback
+    if (cleanedText.length > 0 && !validatePhone(cleanedText)) {
+      const cleanPhone = cleanedText.replace(/\D/g, '');
+      if (cleanPhone.length < 7) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number must be at least 7 digits' }));
+      } else if (cleanPhone.length > 15) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number must be no more than 15 digits' }));
+      } else {
+        setErrors(prev => ({ ...prev, phone: 'Please enter a valid phone number (7-15 digits)' }));
+      }
+    }
+  };
+
+  // Show account created toast when component mounts
+  useEffect(() => {
+    toast.success('Account Created!', 'Welcome! Please complete your profile to get started.');
+  }, []);
 
   // Ensure we have a userId, first from route params, then from AsyncStorage
   useEffect(() => {
@@ -213,6 +323,16 @@ export default function CompleteProfile() {
     if (!phone.trim()) {
       newErrors.phone = 'Phone number is required';
       isValid = false;
+    } else if (!validatePhone(phone)) {
+      const cleanPhone = phone.replace(/\D/g, '');
+      if (cleanPhone.length < 7) {
+        newErrors.phone = 'Phone number must be at least 7 digits';
+      } else if (cleanPhone.length > 15) {
+        newErrors.phone = 'Phone number must be no more than 15 digits';
+      } else {
+        newErrors.phone = 'Please enter a valid phone number (7-15 digits)';
+      }
+      isValid = false;
     }
 
     if (!occupation.trim()) {
@@ -308,7 +428,7 @@ export default function CompleteProfile() {
       }
 
       // Add other user data
-      formData.append('phone', phone);
+      formData.append('phone', `${countryCode}${phone}`);
       formData.append('occupation', occupation);
       formData.append('company', company);
 
@@ -398,7 +518,7 @@ export default function CompleteProfile() {
       const requestData = {
         userId: userId,
         email: email || '', // Include email as well
-        phone: phone || '',
+        phone: phone ? `${countryCode}${phone}` : '',
         occupation: occupation || '',
         company: company || '',
         uid: userId // Add uid as an alternative
@@ -500,7 +620,7 @@ export default function CompleteProfile() {
         >
           <View style={styles.stepIndicator}>
             <View style={styles.stepCompleted}>
-              <Text style={styles.stepActiveText}>2</Text>
+              <Text style={styles.stepActiveText}>1</Text>
               <MaterialIcons name="check" size={20} color={COLORS.white} />
             </View>
             <View style={styles.stepLine} />
@@ -515,17 +635,25 @@ export default function CompleteProfile() {
           </Text>
 
           {/* Business Information Fields */}
-          <TextInput
-            style={[styles.input, errors.phone ? styles.inputError : null]}
-            placeholder="Phone number"
-            value={phone}
-            onChangeText={(text) => {
-              setPhone(text);
-              setErrors(prev => ({ ...prev, phone: '' }));
-            }}
-            keyboardType="phone-pad"
-            placeholderTextColor="#999"
-          />
+          <View style={styles.phoneContainer}>
+            <TouchableOpacity 
+              style={[styles.countryCodeButton, errors.phone ? styles.inputError : null]}
+              onPress={() => setShowCountryModal(true)}
+            >
+              <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
+              <Text style={styles.countryCodeText}>{selectedCountry.code}</Text>
+              <MaterialIcons name="keyboard-arrow-down" size={20} color="#666" />
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.phoneInput, errors.phone ? styles.inputError : null]}
+              placeholder="Phone number"
+              value={phone}
+              onChangeText={handlePhoneChange}
+              keyboardType="phone-pad"
+              placeholderTextColor="#999"
+              maxLength={15}
+            />
+          </View>
           {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
 
           <TextInput
@@ -621,6 +749,82 @@ export default function CompleteProfile() {
           <View style={styles.bottomPadding} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country Selection Modal */}
+      <Modal
+        visible={showCountryModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowCountryModal(false);
+          setCountrySearch('');
+        }}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowCountryModal(false);
+                  setCountrySearch('');
+                }}
+                style={styles.closeButton}
+              >
+                <MaterialIcons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+              <MaterialIcons name="search" size={20} color="#999" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search countries..."
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+                placeholderTextColor="#999"
+              />
+            </View>
+            
+            <FlatList
+              data={COUNTRIES.filter(country => 
+                country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+                country.code.includes(countrySearch)
+              )}
+              keyExtractor={(item, index) => `${item.code}-${index}`}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.countryItem,
+                    selectedCountry.code === item.code && selectedCountry.name === item.name && styles.selectedCountryItem
+                  ]}
+                  onPress={() => {
+                    setSelectedCountry(item);
+                    setCountryCode(item.code);
+                    setShowCountryModal(false);
+                    setCountrySearch('');
+                  }}
+                >
+                  <Text style={styles.countryItemFlag}>{item.flag}</Text>
+                  <View style={styles.countryItemInfo}>
+                    <Text style={styles.countryItemName}>{item.name}</Text>
+                    <Text style={styles.countryItemCode}>{item.code}</Text>
+                  </View>
+                  {selectedCountry.code === item.code && selectedCountry.name === item.name && (
+                    <MaterialIcons name="check" size={20} color={COLORS.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              style={styles.countryList}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -808,5 +1012,115 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 30,
     color: '#666',
+  },
+  // Phone container and country code styles
+  phoneContainer: {
+    flexDirection: 'row',
+    marginBottom: 15,
+  },
+  countryCodeButton: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+    marginRight: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  countryCodeText: {
+    fontSize: 16,
+    color: '#333',
+    marginRight: 5,
+  },
+  phoneInput: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+    padding: 15,
+    fontSize: 16,
+  },
+  countryFlag: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    minHeight: '60%',
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 20,
+    marginBottom: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  countryList: {
+    flex: 1,
+  },
+  countryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  selectedCountryItem: {
+    backgroundColor: '#F0F8FF',
+  },
+  countryItemFlag: {
+    fontSize: 24,
+    marginRight: 15,
+  },
+  countryItemInfo: {
+    flex: 1,
+  },
+  countryItemName: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  countryItemCode: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
   },
 }); 

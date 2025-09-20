@@ -31,6 +31,7 @@ interface AuthState {
   userToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isEmailVerified: boolean; // Track email verification status
   keepLoggedIn: boolean;
   lastLoginTime: number | null;
   error: string | null;
@@ -45,18 +46,20 @@ interface AuthContextType extends AuthState {
   setKeepLoggedIn: (value: boolean) => void;
   clearError: () => void;
   setLoading: (loading: boolean) => void;
+  resendVerificationEmail: () => Promise<void>; // Resend email verification
 }
 
 // Action types for the reducer
 type AuthAction = 
   | { type: 'SET_LOADING'; payload: boolean }
-  | { type: 'SET_USER'; payload: { user: User; token: string; keepLoggedIn: boolean; lastLoginTime: number } }
+  | { type: 'SET_USER'; payload: { user: User; token: string; keepLoggedIn: boolean; lastLoginTime: number; isEmailVerified: boolean } }
   | { type: 'CLEAR_USER' }
   | { type: 'SET_KEEP_LOGGED_IN'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESTORE_AUTH'; payload: AuthData }
-  | { type: 'SET_FIREBASE_READY'; payload: boolean };
+  | { type: 'SET_FIREBASE_READY'; payload: boolean }
+  | { type: 'SET_EMAIL_VERIFIED'; payload: boolean };
 
 // Initial state
 const initialState: AuthState = {
@@ -64,6 +67,7 @@ const initialState: AuthState = {
   userToken: null,
   isLoading: true, // Start with loading true while we check stored auth
   isAuthenticated: false,
+  isEmailVerified: false, // Default to false for security
   keepLoggedIn: false,
   lastLoginTime: null,
   error: null,
@@ -84,7 +88,8 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         ...state,
         user: action.payload.user,
         userToken: action.payload.token,
-        isAuthenticated: true,
+        isAuthenticated: action.payload.isEmailVerified, // Only authenticated if email verified
+        isEmailVerified: action.payload.isEmailVerified,
         keepLoggedIn: action.payload.keepLoggedIn,
         lastLoginTime: action.payload.lastLoginTime,
         isLoading: false,
@@ -97,6 +102,7 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         user: null,
         userToken: null,
         isAuthenticated: false,
+        isEmailVerified: false,
         lastLoginTime: null,
         isLoading: false,
         error: null,
@@ -128,6 +134,7 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         user: action.payload.userData,
         userToken: action.payload.userToken,
         isAuthenticated: !!(action.payload.userToken && action.payload.userData),
+        isEmailVerified: false, // Will be updated by Firebase auth state listener
         keepLoggedIn: action.payload.keepLoggedIn,
         lastLoginTime: action.payload.lastLoginTime,
         isLoading: false,
@@ -138,6 +145,13 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
       return {
         ...state,
         firebaseReady: action.payload,
+      };
+    
+    case 'SET_EMAIL_VERIFIED':
+      return {
+        ...state,
+        isEmailVerified: action.payload,
+        isAuthenticated: action.payload && !!state.user, // Update auth status based on verification
       };
     
     default:
@@ -175,6 +189,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (firebaseUser) {
           console.log('Firebase user authenticated:', firebaseUser.uid);
           
+          // 🔥 CRITICAL: Check email verification FIRST
+          if (!firebaseUser.emailVerified) {
+            console.log('AuthProvider: Email not verified, blocking authentication');
+            
+            // Clear any existing auth data
+            await clearAuthData();
+            dispatch({ type: 'CLEAR_USER' });
+            dispatch({ type: 'SET_EMAIL_VERIFIED', payload: false });
+            
+            // Set error for unverified email
+            dispatch({ type: 'SET_ERROR', payload: 'Email not verified. Please check your inbox and verify your email address.' });
+            return; // Block authentication
+          }
+          
+          console.log('AuthProvider: Email verified, proceeding with authentication');
+          
           // Get fresh token from Firebase
           const token = await firebaseUser.getIdToken();
           console.log('Firebase token refreshed automatically');
@@ -198,7 +228,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 user: storedAuthData.userData,
                 token: `Bearer ${token}`,
                 keepLoggedIn: storedAuthData.keepLoggedIn,
-                lastLoginTime: Date.now()
+                lastLoginTime: Date.now(),
+                isEmailVerified: true // Email is verified since we passed the check above
               }
             });
             
@@ -263,7 +294,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     user: userData,
                     token: `Bearer ${token}`,
                     keepLoggedIn,
-                    lastLoginTime: Date.now()
+                    lastLoginTime: Date.now(),
+                    isEmailVerified: true // Email is verified since we passed the check above
                   }
                 });
                 
@@ -498,6 +530,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Resend verification email function
+  const resendVerificationEmail = async (): Promise<void> => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('No authenticated user');
+      }
+      
+      // Use Firebase's built-in resend verification
+      const { sendEmailVerification } = await import('firebase/auth');
+      await sendEmailVerification(currentUser);
+      console.log('AuthProvider: Verification email sent');
+      
+      // Clear any existing errors
+      dispatch({ type: 'CLEAR_ERROR' });
+      
+    } catch (error) {
+      console.error('Error sending verification email:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to send verification email. Please try again.' });
+      throw error;
+    }
+  };
+
   // Set keep logged in preference
   const setKeepLoggedIn = (value: boolean): void => {
     dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: value });
@@ -528,6 +583,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setKeepLoggedIn,
     clearError,
     setLoading,
+    resendVerificationEmail,
   };
 
   return (
@@ -562,5 +618,9 @@ export const setAuthUser = async (user: User, token: string, keepLoggedIn: boole
   // Update last login time
   await updateLastLoginTime();
 };
+
+export default AuthContext;
+
+
 
 export default AuthContext; 
