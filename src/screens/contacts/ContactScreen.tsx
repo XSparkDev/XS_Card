@@ -13,7 +13,8 @@ import {
   RefreshControl, 
   ActivityIndicator,
   SafeAreaView,
-  Share 
+  Share,
+  Dimensions 
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -52,6 +53,18 @@ interface Contact {
   company?: string;
   howWeMet: string;
   createdAt: string | Timestamp;
+  // Contact linking fields
+  isXsCardUser?: boolean;
+  sourceUserId?: string;
+  sourceCardIndex?: number;
+  profileImageUrl?: string; // Legacy single URL
+  profileImageUrls?: {
+    thumbnail?: string;
+    medium?: string;
+    large?: string;
+    original?: string;
+  };
+  linkedAt?: string;
 }
 
 interface ContactData {
@@ -72,6 +85,152 @@ interface ShareOption {
   color: string;
   action: (contact?: Contact) => Promise<void>;
 }
+
+// Lazy Contact Image Component
+interface LazyContactImageProps {
+  contact: Contact;
+  style: any;
+  onLayout?: (event: any) => void;
+}
+
+const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onLayout }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const viewRef = useRef<View>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Get the appropriate image URL
+  const getImageUrl = useCallback(() => {
+    if (!contact.isXsCardUser) return null;
+    
+    // Prefer new structure with multiple sizes
+    if (contact.profileImageUrls?.thumbnail) {
+      return contact.profileImageUrls.thumbnail;
+    }
+    
+    // Fallback to legacy single URL
+    if (contact.profileImageUrl) {
+      return contact.profileImageUrl;
+    }
+    
+    return null;
+  }, [contact]);
+
+  // Check if component is visible on screen
+  const checkVisibility = useCallback(() => {
+    if (!viewRef.current) return;
+    
+    viewRef.current.measure((x, y, width, height, pageX, pageY) => {
+      const windowHeight = Dimensions.get('window').height;
+      const isInViewport = pageY < windowHeight && (pageY + height) > 0;
+      
+      if (isInViewport && !isVisible) {
+        setIsVisible(true);
+      }
+    });
+  }, [isVisible]);
+
+  // Load image when visible
+  useEffect(() => {
+    if (!isVisible || imageLoaded || imageError) return;
+    
+    const url = getImageUrl();
+    if (!url) return;
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
+    const loadImage = async () => {
+      try {
+        // Pre-load the image to check if it exists
+        const response = await fetch(url, {
+          method: 'HEAD',
+          signal: abortControllerRef.current?.signal
+        });
+
+        if (response.ok) {
+          setImageUri(url);
+          setImageLoaded(true);
+        } else {
+          setImageError(true);
+        }
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.log('Failed to load contact image:', error);
+          setImageError(true);
+        }
+      }
+    };
+
+    loadImage();
+  }, [isVisible, imageLoaded, imageError, getImageUrl]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Check visibility on layout
+  const handleLayout = useCallback((event: any) => {
+    onLayout?.(event);
+    setTimeout(checkVisibility, 100);
+  }, [checkVisibility, onLayout]);
+
+  // Render appropriate image
+  if (!contact.isXsCardUser || imageError || (!imageLoaded && !isVisible)) {
+    // Show default avatar for non-XS Card users or when image failed/not loaded
+    return (
+      <View ref={viewRef} style={style} onLayout={handleLayout}>
+        <Image 
+          source={require('../../../assets/images/profile.png')} 
+          style={style} 
+        />
+        {contact.isXsCardUser && (
+          <View style={styles.xsCardBadge}>
+            <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  if (imageLoaded && imageUri) {
+    // Show profile image with XS Card badge
+    return (
+      <View ref={viewRef} style={style} onLayout={handleLayout}>
+        <Image 
+          source={{ uri: imageUri }} 
+          style={style}
+          onError={() => setImageError(true)}
+        />
+        <View style={styles.xsCardBadge}>
+          <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  // Show loading state
+  return (
+    <View ref={viewRef} style={[style, styles.imageLoadingContainer]} onLayout={handleLayout}>
+      <ActivityIndicator size="small" color="#666" />
+      <View style={styles.xsCardBadge}>
+        <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+      </View>
+    </View>
+  );
+};
 
 // Main Component
 export default function ContactsScreen() {
@@ -666,6 +825,13 @@ export default function ContactsScreen() {
                   tintColor={colorScheme}
                 />
               }
+              onScroll={() => {
+                // Trigger visibility checks on scroll
+                setTimeout(() => {
+                  // This will trigger visibility checks for all LazyContactImage components
+                }, 100);
+              }}
+              scrollEventThrottle={200}
             >
               {filteredContacts.map((contact, index) => (
                 <Swipeable
@@ -684,9 +850,9 @@ export default function ContactsScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.contactLeft}>
-                      <Image 
-                        source={require('../../../assets/images/profile.png')} 
-                        style={styles.contactImage} 
+                      <LazyContactImage 
+                        contact={contact}
+                        style={styles.contactImage}
                       />
                       <View style={styles.contactInfo}>
                         <Text style={styles.contactName}>
@@ -791,14 +957,20 @@ export default function ContactsScreen() {
                 <>
                   <View style={styles.selectedContactHeader}>
                     <View style={styles.modalContactImageContainer}>
-                      <Image 
-                        source={require('../../../assets/images/profile.png')} 
-                        style={styles.modalContactImage} 
+                      <LazyContactImage 
+                        contact={selectedContactForOptions}
+                        style={styles.modalContactImage}
                       />
                     </View>
                     <Text style={styles.modalContactName}>
                       {selectedContactForOptions.name} {selectedContactForOptions.surname}
                     </Text>
+                      {selectedContactForOptions.isXsCardUser && (
+                        <View style={styles.xsCardUserBadge}>
+                          <MaterialIcons name="verified" size={16} color={COLORS.primary} />
+                          <Text style={styles.xsCardUserText}>XS Card User</Text>
+                        </View>
+                      )}
                   </View>
 
                   {/* Contact Information Section */}
@@ -826,6 +998,7 @@ export default function ContactsScreen() {
                       <MaterialIcons name="place" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>Met at: {selectedContactForOptions.howWeMet}</Text>
                     </View>
+                    
                   </View>
 
                   <View style={styles.contactActionButtons}>
@@ -1062,6 +1235,27 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     marginRight: 15,
   },
+  xsCardBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 2,
+  },
+  imageLoadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
   contactInfo: {
     justifyContent: 'center',
   },
@@ -1176,6 +1370,21 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     marginBottom: 12,
+  },
+  xsCardUserBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${COLORS.primary}80`,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 8,
+  },
+  xsCardUserText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 4,
   },
   modalContactImage: {
     width: '100%',

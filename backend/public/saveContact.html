@@ -1109,7 +1109,7 @@
                 <div class="form-group">
                     <div class="floating-label">
                         <input type="tel" id="scannerPhone" placeholder=" ">
-                        <label for="scannerPhone" class="required">Phone number</label>
+                        <label for="scannerPhone">Phone number</label>
                     </div>
                 </div><div class="form-group">
                     <div class="floating-label">
@@ -1752,9 +1752,9 @@ END:VCARD`;
             const scannerCompany = document.getElementById('scannerCompany').value;
             const howWeMet = document.getElementById('howWeMet').value;
 
-            // Only require name, surname and how we met
-            if (!scannerName || !scannerSurname || !howWeMet) {
-                alert('Please fill in all required details');
+            // Require name, surname, email and how we met
+            if (!scannerName || !scannerSurname || !scannerEmail || !howWeMet) {
+                alert('Please fill in all required details (Name, Surname, Email, and How We Met)');
                 return false;
             }
 
