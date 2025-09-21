@@ -18,6 +18,8 @@ const CAPTCHA_RATE_LIMIT = {
 };
 const { db, admin, storage, bucket } = require('./firebase.js');
 const { sendMailWithStatus } = require('./public/Utils/emailService');
+const { checkUserExistsByEmail } = require('./utils/userDetection');
+const { linkContactToXsCardUser } = require('./utils/contactLinking');
 const { handleSingleUpload } = require('./middleware/fileUpload');
 const app = express();
 const port = 8383;
@@ -289,6 +291,14 @@ app.post('/AddContact', async (req, res) => {
         });
     }
 
+    // Validate that email is provided (required for user detection)
+    if (!contactInfo.email || !contactInfo.email.trim()) {
+        return res.status(400).send({ 
+            success: false,
+            message: 'Email is required for contact saving'
+        });
+    }
+
     try {
         // Get user's plan information
         const userRef = db.collection('users').doc(userId);
@@ -321,11 +331,51 @@ app.post('/AddContact', async (req, res) => {
             });
         }
 
-        const newContact = {
+        // Create base contact
+        const baseContact = {
             ...contactInfo,
             email: contactInfo.email || '', // Add email field with fallback
             createdAt: admin.firestore.Timestamp.now()
         };
+
+        // Check if the contact email belongs to an existing XS Card user
+        let newContact = baseContact;
+        try {
+            console.log('Checking if contact is an XS Card user...');
+            const existingUser = await checkUserExistsByEmail(contactInfo.email);
+            
+            if (existingUser) {
+                console.log(`Contact is XS Card user: ${existingUser.userId}`);
+                // Link the contact to the XS Card user (using card index 0 as primary)
+                // Make linking non-blocking for better performance
+                setImmediate(async () => {
+                    try {
+                        const linkedContact = await linkContactToXsCardUser(baseContact, existingUser.userId, 0);
+                        console.log('Linked contact created in background');
+                        // Update the contact in the database with linking info
+                        const updatedContacts = [...currentContacts];
+                        const contactIndex = updatedContacts.findIndex(c => c.email === baseContact.email);
+                        if (contactIndex !== -1) {
+                            updatedContacts[contactIndex] = linkedContact;
+                            await contactRef.set({
+                                userId: db.doc(`users/${userId}`),
+                                contactList: updatedContacts
+                            }, { merge: true });
+                            console.log('Contact updated with linking info');
+                        }
+                    } catch (linkingError) {
+                        console.error('Error during background linking:', linkingError);
+                    }
+                });
+                console.log('Contact saved, linking will happen in background');
+            } else {
+                console.log('Contact is not an XS Card user, saving as regular contact');
+            }
+        } catch (linkingError) {
+            console.error('Error during user detection (non-blocking):', linkingError);
+            // Continue with regular contact if linking fails
+            newContact = baseContact;
+        }
 
         currentContacts.push(newContact);
 
@@ -334,41 +384,43 @@ app.post('/AddContact', async (req, res) => {
             contactList: currentContacts
         }, { merge: true });
         
-        // Send email notification if user has email
+        // Send email notification if user has email (non-blocking)
         if (userData.email) {
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: userData.email,
-                subject: 'Someone Saved Your Contact Information',
-                html: `
-                    <h2>New Contact Added</h2>
-                    <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-                    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                        <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
-                            <li><strong>Name:</strong> ${contactInfo.name}</li>
-                            <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                            <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
-                            <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
-                            ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
-                            <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
-                        </ul>
-                    </div>
-                    <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-                    ${userData.plan === 'free' ? 
-                        `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
-                        : ''}
-                `
-            };
+            // Send email in background - don't wait for it
+            setImmediate(async () => {
+                try {
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: userData.email,
+                        subject: 'Someone Saved Your Contact Information',
+                        html: `
+                            <h2>New Contact Added</h2>
+                            <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
+                            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                                <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
+                                    <li><strong>Name:</strong> ${contactInfo.name}</li>
+                                    <li><strong>Surname:</strong> ${contactInfo.surname}</li>
+                                    <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
+                                    <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
+                                    ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
+                                    <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
+                                </ul>
+                            </div>
+                            <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
+                            ${userData.plan === 'free' ? 
+                                `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
+                                : ''}
+                        `
+                    };
 
-            try {
-                const mailResult = await sendMailWithStatus(mailOptions);
-                if (!mailResult.success) {
-                    console.error('Failed to send email notification:', mailResult.error);
+                    const mailResult = await sendMailWithStatus(mailOptions);
+                    if (!mailResult.success) {
+                        console.error('Failed to send email notification:', mailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('Email sending error:', emailError);
                 }
-            } catch (emailError) {
-                console.error('Email sending error:', emailError);
-                // Continue execution even if email fails
-            }
+            });
         }
         
         res.status(201).send({ 
@@ -388,6 +440,53 @@ app.post('/AddContact', async (req, res) => {
             success: false,
             message: 'Internal Server Error', 
             error: error.message 
+        });
+    }
+});
+
+// Profile image endpoint - public
+app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
+    const { userId, cardIndex } = req.params;
+    
+    console.log(`Profile image requested for user: ${userId}, card: ${cardIndex}`);
+    
+    try {
+        // Validate parameters
+        if (!userId || cardIndex === undefined) {
+            return res.status(400).send({
+                success: false,
+                message: 'User ID and card index are required'
+            });
+        }
+
+        const cardIndexNum = parseInt(cardIndex);
+        if (isNaN(cardIndexNum) || cardIndexNum < 0) {
+            return res.status(400).send({
+                success: false,
+                message: 'Card index must be a non-negative number'
+            });
+        }
+
+        // Generate the profile image URL
+        const { getCardProfileImageUrl } = require('./utils/contactLinking');
+        const profileImageUrl = getCardProfileImageUrl(userId, cardIndexNum);
+        
+        console.log(`Generated profile image URL: ${profileImageUrl}`);
+        
+        // Return the URL - the frontend can handle checking if the image actually exists
+        res.status(200).send({
+            success: true,
+            userId: userId,
+            cardIndex: cardIndexNum,
+            profileImageUrl: profileImageUrl
+        });
+
+    } catch (error) {
+        console.error('Error getting profile image URL:', error);
+        res.status(500).send({
+            success: false,
+            message: 'Failed to get profile image URL',
+            error: error.message
         });
     }
 });
