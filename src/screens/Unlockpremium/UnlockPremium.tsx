@@ -29,6 +29,8 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const [userEmail, setUserEmail] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [currency, setCurrency] = useState<'ZAR' | 'USD'>('ZAR');
+  const [subscriptionData, setSubscriptionData] = useState<any>(null);
+  const [loadingSubscriptionData, setLoadingSubscriptionData] = useState(false);
   const { logout } = useAuth(); // Use our centralized auth context
 
   // Define pricing for both currencies
@@ -68,6 +70,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   }, []);
 
   const checkSubscriptionStatus = async () => {
+    setLoadingSubscriptionData(true);
     try {
       const response = await authenticatedFetchWithRefresh(ENDPOINTS.SUBSCRIPTION_STATUS, {
         method: 'GET',
@@ -77,6 +80,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
         const data = await response.json();
         if (data.status && data.data?.isActive) {
           setUserPlan('premium');
+          setSubscriptionData(data.data);
           
           // Update local storage with current subscription status
           const userData = await AsyncStorage.getItem('userData');
@@ -89,6 +93,8 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
       }
     } catch (error) {
       console.error('Error checking subscription status:', error);
+    } finally {
+      setLoadingSubscriptionData(false);
     }
   };
 
@@ -283,24 +289,104 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     }
   };
 
-  const renderPremiumUserUI = () => (
-    <View style={styles.premiumContainer}>
-      <MaterialIcons name="verified" size={80} color={COLORS.primary} />
-      <Text style={styles.premiumTitle}>Premium Subscription Active</Text>
-      <Text style={styles.premiumSubtitle}>
-        You have access to all premium features
-      </Text>
-      <TouchableOpacity
-        style={[styles.cancelButton, isLoading && styles.disabledButton]}
-        onPress={handleCancelSubscription}
-        disabled={isLoading}
-      >
-        <Text style={styles.cancelButtonText}>
-          {isLoading ? 'Processing...' : 'Cancel Subscription'}
+  const renderPremiumUserUI = () => {
+    const getNextBillingDate = () => {
+      if (!subscriptionData) return null;
+      
+      // Try different possible fields for next billing date
+      // Priority: Paystack live data > stored nextBillingDate > subscriptionEnd > trialEndDate > firstBillingDate
+      const nextBilling = subscriptionData.paystackData?.nextPaymentDate ||
+                         subscriptionData.nextBillingDate || 
+                         subscriptionData.subscriptionEnd || 
+                         subscriptionData.trialEndDate ||
+                         subscriptionData.firstBillingDate;
+      
+      if (nextBilling) {
+        const date = new Date(nextBilling);
+        return date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      }
+      
+      return null;
+    };
+
+    const getBillingInfo = () => {
+      if (!subscriptionData) return null;
+      
+      const nextBillingDate = getNextBillingDate();
+      const interval = subscriptionData.interval || subscriptionData.paystackData?.interval || 'monthly';
+      const amount = subscriptionData.amount || subscriptionData.paystackData?.amount;
+      
+      return {
+        nextBillingDate,
+        interval,
+        amount,
+        isLiveData: !!subscriptionData.paystackData
+      };
+    };
+
+    const billingInfo = getBillingInfo();
+
+    return (
+      <View style={styles.premiumContainer}>
+        <MaterialIcons name="verified" size={80} color={COLORS.success} />
+        <Text style={styles.premiumTitle}>Premium Subscription Active</Text>
+        <Text style={styles.premiumSubtitle}>
+          You have access to all premium features
         </Text>
-      </TouchableOpacity>
-    </View>
-  );
+        
+        {loadingSubscriptionData ? (
+          <View style={styles.billingInfoContainer}>
+            <MaterialIcons name="schedule" size={20} color={COLORS.primary} />
+            <View style={styles.billingInfoTextContainer}>
+              <Text style={styles.billingInfoText}>
+                Loading billing information...
+              </Text>
+            </View>
+          </View>
+        ) : billingInfo?.nextBillingDate ? (
+          <View style={styles.billingInfoContainer}>
+            <MaterialIcons name="schedule" size={20} color={COLORS.primary} />
+            <View style={styles.billingInfoTextContainer}>
+              <Text style={styles.billingInfoText}>
+                Next billing: {billingInfo.nextBillingDate}
+              </Text>
+               {billingInfo.interval && billingInfo.amount && (
+                 <Text style={styles.billingInfoSubtext}>
+                   {billingInfo.interval === 'annually' ? 'Annual' : 'Monthly'} • R{(billingInfo.amount / 100).toFixed(2)}
+                 </Text>
+               )}
+            </View>
+          </View>
+        ) : subscriptionData ? (
+          <View style={styles.billingInfoContainer}>
+            <MaterialIcons name="info" size={20} color={COLORS.primary} />
+            <View style={styles.billingInfoTextContainer}>
+              <Text style={styles.billingInfoText}>
+                Premium subscription active
+              </Text>
+              <Text style={styles.billingInfoSubtext}>
+                Billing details will be available soon
+              </Text>
+            </View>
+          </View>
+        ) : null}
+        
+        <TouchableOpacity
+          style={[styles.cancelButton, isLoading && styles.disabledButton]}
+          onPress={handleCancelSubscription}
+          disabled={isLoading}
+        >
+          <Text style={styles.cancelButtonText}>
+            {isLoading ? 'Processing...' : 'Cancel Subscription'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const currentPricing = pricing[currency];
   const symbol = currencySymbols[currency];
@@ -718,7 +804,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 25,
-    marginTop: 20,
+    marginTop: 10,
   },
   cancelButtonText: {
     color: 'white',
@@ -781,6 +867,28 @@ const styles = StyleSheet.create({
   },
   toggleTextActive: {
     color: 'white',
+  },
+  billingInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginTop: 15,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
+  billingInfoTextContainer: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  billingInfoText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  billingInfoSubtext: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
   },
 });
 

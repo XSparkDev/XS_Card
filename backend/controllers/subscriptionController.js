@@ -1248,8 +1248,75 @@ const getSubscriptionPlans = (req, res) => {
 };
 
 /**
+ * Fetch subscription data from Paystack API (optimized - only essential fields)
+ * @param {string} subscriptionCode - The Paystack subscription code
+ * @returns {Promise<Object>} - Paystack subscription data (minimal)
+ */
+const getPaystackSubscription = async (subscriptionCode) => {
+    const options = {
+        hostname: 'api.paystack.co',
+        port: 443,
+        path: `/subscription/${subscriptionCode}`,
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    };
+
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, res => {
+            let data = '';
+
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            res.on('end', () => {
+                try {
+                    const response = JSON.parse(data);
+                    if (response.status) {
+                        const fullData = response.data;
+                        
+                        // Extract only the essential fields we need
+                        const essentialData = {
+                            subscription_code: fullData.subscription_code,
+                            status: fullData.status,
+                            next_payment_date: fullData.next_payment_date,
+                            amount: fullData.amount,
+                            interval: fullData.interval || fullData.plan?.interval || 'monthly', // Fallback to monthly if not specified
+                            created_at: fullData.created_at,
+                            // Get the most recent invoice for billing info
+                            most_recent_invoice: fullData.most_recent_invoice ? {
+                                amount: fullData.most_recent_invoice.amount,
+                                period_start: fullData.most_recent_invoice.period_start,
+                                period_end: fullData.most_recent_invoice.period_end,
+                                paid_at: fullData.most_recent_invoice.paid_at
+                            } : null
+                        };
+                        
+                        resolve(essentialData);
+                    } else {
+                        reject(new Error(response.message || 'Failed to fetch subscription from Paystack'));
+                    }
+                } catch (error) {
+                    reject(new Error('Invalid response from Paystack'));
+                }
+            });
+        });
+
+        req.on('error', (error) => {
+            reject(error);
+        });
+
+        req.end();
+    });
+};
+
+/**
  * Get user's subscription status
  * Checks both subscriptions collection and users collection for subscription data
+ * Also fetches live data from Paystack for accurate billing information
  */
 const getSubscriptionStatus = async (req, res) => {
     try {
@@ -1272,25 +1339,82 @@ const getSubscriptionStatus = async (req, res) => {
                 subscriptionStatus = now < trialEnd ? 'trial' : 'expired';
             }
             
+            // Try to get live subscription data from Paystack for accurate billing info
+            let paystackSubscriptionData = null;
+            if (subscriptionData.subscriptionCode) {
+                try {
+                    // Add timeout to prevent hanging
+                    const timeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Paystack API timeout')), 5000)
+                    );
+                    
+                    paystackSubscriptionData = await Promise.race([
+                        getPaystackSubscription(subscriptionData.subscriptionCode),
+                        timeoutPromise
+                    ]);
+                    
+                } catch (error) {
+                    console.log('Could not fetch Paystack subscription data:', error.message);
+                }
+            }
+            
+            // Use Paystack data for next billing date if available, otherwise fall back to stored data
+            const nextBillingDate = paystackSubscriptionData?.next_payment_date || 
+                                  subscriptionData.nextBillingDate || 
+                                  subscriptionData.endDate || 
+                                  subscriptionData.trialEndDate || null;
+            
+            // Get billing amount from Paystack or stored data
+            const billingAmount = paystackSubscriptionData?.amount || subscriptionData.amount || null;
+            
+            // Determine interval - try multiple sources
+            let billingInterval = paystackSubscriptionData?.interval || subscriptionData.interval || null;
+            
+            // If interval is still null, try to determine from plan name
+            if (!billingInterval && subscriptionData.planId) {
+                if (subscriptionData.planId.includes('MONTHLY') || subscriptionData.planId.includes('monthly')) {
+                    billingInterval = 'monthly';
+                } else if (subscriptionData.planId.includes('ANNUAL') || subscriptionData.planId.includes('annual')) {
+                    billingInterval = 'annually';
+                }
+            }
+            
+            // Final fallback - if we have a subscription but no interval, assume monthly
+            if (!billingInterval && subscriptionData.subscriptionCode) {
+                billingInterval = 'monthly';
+            }
+            
             // Return subscription status info from subscriptions collection
-            return res.status(200).json({
+            const responseData = {
                 status: true,
                 data: {
                     subscriptionStatus: subscriptionStatus,
                     subscriptionPlan: subscriptionData.planId || subscriptionData.plan || null,
                     trialStartDate: subscriptionData.trialStartDate || null,
                     trialEndDate: subscriptionData.trialEndDate || null,
+                    nextBillingDate: nextBillingDate,
                     isActive: ['trial', 'active'].includes(subscriptionStatus),
+                    // Billing information
+                    amount: billingAmount,
+                    interval: billingInterval,
                     // Additional useful fields
                     subscriptionCode: subscriptionData.subscriptionCode || null,
                     customerCode: subscriptionData.customerCode || null,
-                    amount: subscriptionData.amount || null,
-                    interval: subscriptionData.interval || null,
                     createdAt: subscriptionData.createdAt || null,
                     lastUpdated: subscriptionData.lastUpdated || null,
-                    dataSource: 'subscriptions_collection'
+                    dataSource: 'subscriptions_collection',
+                    paystackData: paystackSubscriptionData ? {
+                        nextPaymentDate: paystackSubscriptionData.next_payment_date,
+                        status: paystackSubscriptionData.status,
+                        amount: paystackSubscriptionData.amount,
+                        interval: paystackSubscriptionData.interval,
+                        createdAt: paystackSubscriptionData.created_at,
+                        mostRecentInvoice: paystackSubscriptionData.most_recent_invoice
+                    } : null
                 }
-            });
+            };
+            
+            return res.status(200).json(responseData);
         }
         
         // If no subscription found in subscriptions collection, check users collection
@@ -1316,13 +1440,14 @@ const getSubscriptionStatus = async (req, res) => {
         // Check if user has subscription data
         if (userData.subscriptionStatus || userData.plan || userData.trialStartDate) {
             // Return subscription status info from users collection
-            return res.status(200).json({
+            const userResponseData = {
                 status: true,
                 data: {
                     subscriptionStatus: userData.subscriptionStatus || 'none',
                     subscriptionPlan: userData.subscriptionPlan || userData.plan || null,
                     trialStartDate: userData.trialStartDate || null,
                     trialEndDate: userData.trialEndDate || null,
+                    nextBillingDate: userData.nextBillingDate || userData.subscriptionEnd || userData.trialEndDate || userData.firstBillingDate || null,
                     isActive: ['trial', 'active'].includes(userData.subscriptionStatus || 'none'),
                     // Additional fields from user document
                     role: userData.role || null,
@@ -1330,7 +1455,9 @@ const getSubscriptionStatus = async (req, res) => {
                     firstBillingDate: userData.firstBillingDate || null,
                     dataSource: 'users_collection'
                 }
-            });
+            };
+            
+            return res.status(200).json(userResponseData);
         }
         
         // No subscription data found in either collection
