@@ -57,7 +57,7 @@ const getBaseUrl = () => {
   
   // Common localhost addresses
  // return 'http://localhost:8383';
-  return 'http://192.168.3.12:8383';
+  return 'http://192.168.68.105:8383';
   
 };
 
@@ -84,7 +84,7 @@ export const ENDPOINTS = {
     UPDATE_CARD_COLOR: '/Cards/:id/color',
     CREATE_MEETING: '/meetings',
     MEETING_INVITE: '/meetings/invite',
-    DELETE_CARD: '/Cards/:id',  // Change this to match the working endpoint
+    DELETE_CARD: '/Cards/:id',
     UPGRADE_USER: '/Users/:id/upgrade',
     INITIALIZE_PAYMENT: '/payment/initialize',
     SUBSCRIPTION_STATUS: '/subscription/status',
