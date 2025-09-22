@@ -8,7 +8,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // ErrorPopup import removed - no popups on signin page
-import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData } from '../../utils/authStorage';
+import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData, getStoredAuthData } from '../../utils/authStorage';
 // Error handler imports removed - no popups on signin page
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
@@ -167,6 +167,7 @@ export default function SignInScreen() {
         };
 
         // Use our Phase 1 storage system to store all auth data
+        console.log('SignIn: About to store auth data with keepLoggedIn:', keepLoggedIn);
         await storeAuthData({
           userToken: token,
           userData: userData,
@@ -179,6 +180,12 @@ export default function SignInScreen() {
         await updateLastLoginTime();
 
         console.log('SignIn: Data stored successfully, keepLoggedIn:', keepLoggedIn);
+        
+        // iOS-specific verification
+        if (Platform.OS === 'ios') {
+          const verification = await getStoredAuthData();
+          console.log('iOS SignIn: Verification - stored keepLoggedIn:', verification?.keepLoggedIn);
+        }
         console.log('SignIn: Firebase auth state listener will now handle automatic token refresh');
         
         // Navigate to root navigator's MainApp screen

@@ -11,6 +11,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import { useColorScheme } from '../../context/ColorSchemeContext';
 import { getImageUrl } from '../../utils/imageUtils';
+import { isProfileIncompleteError } from '../../utils/profileErrorHandler';
+import ProfileCompletionModal from '../../components/ProfileCompletionModal';
 
 // Update interfaces to match new data structure
 interface UserData {
@@ -105,6 +107,7 @@ export default function CardsScreen() {
   // Add these new state variables at the beginning of the CardsScreen component
   const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'email' | 'phone' | null>(null);
+  const [showProfileCompletionModal, setShowProfileCompletionModal] = useState(false);
   const [modalData, setModalData] = useState<string>('');
 
   // Update the cards state definition
@@ -197,6 +200,13 @@ export default function CardsScreen() {
       fetchQRCode(userId);
     } catch (error) {
       console.error('Error loading data:', error);
+      
+      // Check if this is a profile incomplete error
+      if (isProfileIncompleteError(error)) {
+        console.log('Detected profile incomplete error during data loading, showing completion modal');
+        setShowProfileCompletionModal(true);
+        return;
+      }
     }
   };
 
@@ -266,6 +276,15 @@ export default function CardsScreen() {
       reader.readAsDataURL(blob);
     } catch (error) {
       console.error('Error fetching QR code:', error);
+      
+      // Check if this is a profile incomplete error
+      if (isProfileIncompleteError(error)) {
+        console.log('Detected profile incomplete error, showing completion modal');
+        setShowProfileCompletionModal(true);
+        return;
+      }
+      
+      // Show technical errors for other issues
       Alert.alert('Error', 'Failed to generate QR code');
     }
   };
@@ -1004,6 +1023,21 @@ export default function CardsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Profile Completion Modal */}
+      <ProfileCompletionModal
+        visible={showProfileCompletionModal}
+        onClose={() => setShowProfileCompletionModal(false)}
+        onCompleteProfile={() => {
+          setShowProfileCompletionModal(false);
+          // Navigate to Auth stack first, then to CompleteProfile
+          // CardsScreen is in MainApp, CompleteProfile is in Auth stack
+          navigation.getParent()?.getParent()?.navigate('Auth', {
+            screen: 'CompleteProfile',
+            params: { userId: userData?.id }
+          });
+        }}
+      />
     </View>
   );
 }
