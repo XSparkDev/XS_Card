@@ -127,6 +127,8 @@ android {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
         }
     }
+    
+    // Enable 16KB page size support
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
@@ -179,4 +181,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+    
+    // Google Play Billing Library
+    implementation 'com.android.billingclient:billing:6.1.0'
 }
