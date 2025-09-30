@@ -5,6 +5,7 @@ const {
     initializeTrialWithBanking, // New endpoint
     handleTrialCallback,
     handleSubscriptionWebhook,
+    handleRevenueCatWebhook, // New RevenueCat webhook handler
     getSubscriptionPlans,
     getSubscriptionStatus,
     cancelSubscription,
@@ -17,6 +18,9 @@ const { authenticateUser } = require('../middleware/auth');
 router.get('/subscription/trial/callback', handleTrialCallback);
 // TEMPORARILY DISABLED - Webhook route disabled due to suspected external money transfers
 // router.post('/subscription/webhook', handleSubscriptionWebhook);
+
+// RevenueCat webhook - iOS subscription events (additive change)
+router.post('/subscription/revenuecat-webhook', handleRevenueCatWebhook);
 
 // Protected routes - authentication required
 router.post('/subscription/trial/initialize', authenticateUser, initializeTrialSubscription);

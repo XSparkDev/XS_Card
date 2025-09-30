@@ -1606,6 +1606,153 @@ const getUserBankingInfo = async (req, res) => {
     }
 };
 
+/**
+ * Handle RevenueCat webhook events
+ * Following existing patterns - additive changes only
+ * Used for iOS subscription lifecycle events
+ */
+const handleRevenueCatWebhook = async (req, res) => {
+    try {
+        // Log all incoming webhook data for debugging
+        console.log('Received RevenueCat webhook payload:', JSON.stringify(req.body));
+        
+        const event = req.body;
+        
+        // Quickly acknowledge the webhook
+        res.status(200).send('RevenueCat webhook received');
+        
+        console.log('Received RevenueCat webhook event:', event.type);
+        
+        // Handle subscription lifecycle events
+        if (event.type === 'INITIAL_PURCHASE' || event.type === 'RENEWAL') {
+            
+            const data = event.event;
+            const appUserId = data.app_user_id;
+            const productId = data.product_id;
+            const purchaseDateMs = data.purchased_at_ms;
+            const expirationDateMs = data.expiration_at_ms;
+            const originalTransactionId = data.original_transaction_id;
+            
+            console.log(`Processing RevenueCat purchase for user: ${appUserId}, product: ${productId}`);
+            
+            // Find user by RevenueCat app_user_id (which should match our user ID)
+            const userDoc = await db.collection('users').doc(appUserId).get();
+            
+            if (userDoc.exists) {
+                const userId = userDoc.id;
+                const userData = userDoc.data();
+                
+                console.log(`Updating subscription status to active for user ${userId}`);
+                
+                // Determine plan based on product ID
+                let planType = 'premium';
+                let interval = 'monthly';
+                
+                if (productId && productId.includes('annual')) {
+                    interval = 'annually';
+                }
+                
+                // Update user with active status and premium plan
+                await userDoc.ref.update({
+                    subscriptionStatus: 'active',
+                    subscriptionPlatform: 'ios_revenuecat',
+                    plan: planType,
+                    subscriptionStart: new Date(purchaseDateMs).toISOString(),
+                    subscriptionEnd: new Date(expirationDateMs).toISOString(),
+                    revenuecatCustomerId: data.subscriber.subscriber_id || null,
+                    revenuecatOriginalAppUserId: appUserId,
+                    appleOriginalTransactionId: originalTransactionId,
+                    lastUpdated: new Date().toISOString()
+                });
+                
+                // Also update/create subscription document
+                await db.collection('subscriptions').doc(userId).set({
+                    userId: userId,
+                    email: userData.email,
+                    platform: 'ios_revenuecat',
+                    productId: productId,
+                    originalTransactionId: originalTransactionId,
+                    revenuecatCustomerId: data.subscriber.subscriber_id || null,
+                    status: 'active',
+                    interval: interval,
+                    startDate: new Date(purchaseDateMs).toISOString(),
+                    endDate: new Date(expirationDateMs).toISOString(),
+                    createdAt: new Date().toISOString(),
+                    lastUpdated: new Date().toISOString(),
+                    webhookData: data
+                }, { merge: true });
+                
+                // Add log entry for subscription creation
+                await logSubscriptionEvent(userId, 'revenuecat_subscription_created', {
+                    productId,
+                    originalTransactionId,
+                    interval,
+                    platform: 'ios_revenuecat'
+                });
+                
+                console.log(`RevenueCat subscription activated for user ${userId}`);
+            } else {
+                console.error(`No matching user found for RevenueCat app_user_id: ${appUserId}`);
+            }
+        }
+        
+        // Handle subscription cancellations and expirations
+        if (event.type === 'CANCELLATION' || event.type === 'EXPIRATION') {
+            
+            const data = event.event;
+            const appUserId = data.app_user_id;
+            const productId = data.product_id;
+            const expirationDateMs = data.expiration_at_ms;
+            
+            console.log(`Processing RevenueCat cancellation/expiration for user: ${appUserId}`);
+            
+            // Find user by RevenueCat app_user_id
+            const userDoc = await db.collection('users').doc(appUserId).get();
+            
+            if (userDoc.exists) {
+                const userId = userDoc.id;
+                
+                console.log(`Updating subscription status to cancelled/expired for user ${userId}`);
+                
+                // Update user with cancelled status and change plan to free
+                await userDoc.ref.update({
+                    subscriptionStatus: event.type === 'CANCELLATION' ? 'cancelled' : 'expired',
+                    plan: 'free', // Change plan back to free when subscription ends
+                    subscriptionEnd: new Date(expirationDateMs).toISOString(),
+                    cancellationDate: new Date().toISOString(),
+                    lastUpdated: new Date().toISOString()
+                });
+                
+                // Also update subscription document
+                await db.collection('subscriptions').doc(userId).update({
+                    status: event.type === 'CANCELLATION' ? 'cancelled' : 'expired',
+                    endDate: new Date(expirationDateMs).toISOString(),
+                    cancellationDate: new Date().toISOString(),
+                    lastUpdated: new Date().toISOString()
+                });
+                
+                // Add log entry
+                await logSubscriptionEvent(userId, `revenuecat_subscription_${event.type.toLowerCase()}`, {
+                    productId,
+                    platform: 'ios_revenuecat'
+                });
+                
+                console.log(`RevenueCat subscription ${event.type.toLowerCase()} processed for user ${userId}`);
+            } else {
+                console.error(`No matching user found for RevenueCat app_user_id: ${appUserId}`);
+            }
+        }
+        
+        // Handle other RevenueCat events as needed
+        console.log(`RevenueCat webhook event ${event.type} processed successfully`);
+        
+    } catch (error) {
+        console.error('RevenueCat webhook error:', error);
+        // Still return 200 to acknowledge receipt, preventing retries
+        res.status(200).send('RevenueCat webhook error logged');
+    }
+};
+
 module.exports = {
     initializeSubscription,
     initializeTrialSubscription,
@@ -1613,6 +1760,7 @@ module.exports = {
     handleSubscriptionCallback,
     handleTrialCallback,
     handleSubscriptionWebhook,
+    handleRevenueCatWebhook, // New RevenueCat webhook handler
     getSubscriptionPlans,
     getSubscriptionStatus,
     cancelSubscription,

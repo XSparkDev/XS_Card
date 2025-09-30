@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>identifier</key>
+	<string>XSCard_StoreKit_Config</string>
+	<key>nonRenewingSubscriptions</key>
+	<array/>
+	<key>products</key>
+	<array>
+		<dict>
+			<key>displayPrice</key>
+			<string>R159.99</string>
+			<key>familyShareable</key>
+			<false/>
+			<key>identifier</key>
+			<string>Premium_Monthly</string>
+			<key>internalID</key>
+			<integer>1000001</integer>
+			<key>localizations</key>
+			<array>
+				<dict>
+					<key>description</key>
+					<string>XS Card Premium Monthly Subscription - Access to unlimited cards, advanced features, and premium support.</string>
+					<key>displayName</key>
+					<string>XS Card Premium Monthly</string>
+					<key>locale</key>
+					<string>en_US</string>
+				</dict>
+			</array>
+			<key>productID</key>
+			<string>Premium_Monthly</string>
+			<key>referenceName</key>
+			<string>XS Card Premium Monthly</string>
+			<key>type</key>
+			<string>RecurringSubscription</string>
+		</dict>
+		<dict>
+			<key>displayPrice</key>
+			<string>R1800.00</string>
+			<key>familyShareable</key>
+			<false/>
+			<key>identifier</key>
+			<string>Premium_Annually</string>
+			<key>internalID</key>
+			<integer>1000002</integer>
+			<key>localizations</key>
+			<array>
+				<dict>
+					<key>description</key>
+					<string>XS Card Premium Annual Subscription - Access to unlimited cards, advanced features, and premium support. Save R120 compared to monthly billing!</string>
+					<key>displayName</key>
+					<string>XS Card Premium Annual</string>
+					<key>locale</key>
+					<string>en_US</string>
+				</dict>
+			</array>
+			<key>productID</key>
+			<string>Premium_Annually</string>
+			<key>referenceName</key>
+			<string>XS Card Premium Annual</string>
+			<key>type</key>
+			<string>RecurringSubscription</string>
+		</dict>
+	</array>
+	<key>settings</key>
+	<dict>
+		<key>askToBuyEnabled</key>
+		<false/>
+		<key>failTransactionsEnabled</key>
+		<false/>
+		<key>locale</key>
+		<string>en_US</string>
+		<key>storefront</key>
+		<string>ZAF</string>
+		<key>subscriptionRenewalRate</key>
+		<string>1</string>
+		<key>subscriptionStatus</key>
+		<string>active</string>
+	</dict>
+	<key>subscriptionGroups</key>
+	<array>
+		<dict>
+			<key>id</key>
+			<string>Premium_Plans</string>
+			<key>localizations</key>
+			<array>
+				<dict>
+					<key>displayName</key>
+					<string>Premium Plans</string>
+					<key>locale</key>
+					<string>en_US</string>
+				</dict>
+			</array>
+			<key>name</key>
+			<string>Premium Plans</string>
+			<key>subscriptions</key>
+			<array>
+				<dict>
+					<key>adHocOffers</key>
+					<array/>
+					<key>codeOffers</key>
+					<array/>
+					<key>displayPrice</key>
+					<string>R159.99</string>
+					<key>familyShareable</key>
+					<false/>
+					<key>groupNumber</key>
+					<integer>1</integer>
+					<key>identifier</key>
+					<string>Premium_Monthly</string>
+					<key>internalID</key>
+					<integer>1000001</integer>
+					<key>introductoryOffer</key>
+					<dict>
+						<key>internalID</key>
+						<integer>1000003</integer>
+						<key>numberOfPeriods</key>
+						<integer>1</integer>
+						<key>paymentMode</key>
+						<string>free</string>
+						<key>subscriptionPeriod</key>
+						<string>P7D</string>
+					</dict>
+					<key>localizations</key>
+					<array>
+						<dict>
+							<key>description</key>
+							<string>XS Card Premium Monthly Subscription - Access to unlimited cards, advanced features, and premium support.</string>
+							<key>displayName</key>
+							<string>XS Card Premium Monthly</string>
+							<key>locale</key>
+							<string>en_US</string>
+						</dict>
+					</array>
+					<key>productID</key>
+					<string>Premium_Monthly</string>
+					<key>recurringSubscriptionPeriod</key>
+					<string>P1M</string>
+					<key>referenceName</key>
+					<string>XS Card Premium Monthly</string>
+					<key>subscriptionGroupID</key>
+					<string>Premium_Plans</string>
+					<key>type</key>
+					<string>RecurringSubscription</string>
+				</dict>
+				<dict>
+					<key>adHocOffers</key>
+					<array/>
+					<key>codeOffers</key>
+					<array/>
+					<key>displayPrice</key>
+					<string>R1800.00</string>
+					<key>familyShareable</key>
+					<false/>
+					<key>groupNumber</key>
+					<integer>2</integer>
+					<key>identifier</key>
+					<string>Premium_Annually</string>
+					<key>internalID</key>
+					<integer>1000002</integer>
+					<key>introductoryOffer</key>
+					<dict>
+						<key>internalID</key>
+						<integer>1000004</integer>
+						<key>numberOfPeriods</key>
+						<integer>1</integer>
+						<key>paymentMode</key>
+						<string>free</string>
+						<key>subscriptionPeriod</key>
+						<string>P7D</string>
+					</dict>
+					<key>localizations</key>
+					<array>
+						<dict>
+							<key>description</key>
+							<string>XS Card Premium Annual Subscription - Access to unlimited cards, advanced features, and premium support. Save R120 compared to monthly billing!</string>
+							<key>displayName</key>
+							<string>XS Card Premium Annual</string>
+							<key>locale</key>
+							<string>en_US</string>
+						</dict>
+					</array>
+					<key>productID</key>
+					<string>Premium_Annually</string>
+					<key>recurringSubscriptionPeriod</key>
+					<string>P1Y</string>
+					<key>referenceName</key>
+					<string>XS Card Premium Annual</string>
+					<key>subscriptionGroupID</key>
+					<string>Premium_Plans</string>
+					<key>type</key>
+					<string>RecurringSubscription</string>
+				</dict>
+			</array>
+		</dict>
+	</array>
+	<key>version</key>
+	<string>3.0</string>
+</dict>
+</plist>
