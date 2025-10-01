@@ -1,6 +1,6 @@
 /**
  * Fallback Scenario Testing
- * Tests different failure scenarios to ensure fallbacks work
+ * Tests different failurenarios to ensure fallbacks work
  * 
  * Usage: node test-fallback-scenario
  */
