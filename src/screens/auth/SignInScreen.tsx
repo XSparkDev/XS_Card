@@ -181,7 +181,7 @@ export default function SignInScreen() {
 
         console.log('SignIn: Data stored successfully, keepLoggedIn:', keepLoggedIn);
         
-        // iOS-specific verification
+        // iOS-specific verifications
         if (Platform.OS === 'ios') {
           const verification = await getStoredAuthData();
           console.log('iOS SignIn: Verification - stored keepLoggedIn:', verification?.keepLoggedIn);
