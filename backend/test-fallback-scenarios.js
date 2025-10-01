@@ -1,8 +1,8 @@
 /**
- * Fallback Scenario Testing
- * Tests different failure scenarios to ensure fallbacks work
+ * Fallback Scenario Test
+ * Tests different failurenarios to ensure fallbacks work
  * 
- * Usage: node test-fallback-scenarios.js
+ * Usage: node test-fallback-scenario
  */
 
 require('dotenv').config();

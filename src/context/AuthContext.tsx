@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { 
   getStoredAuthData, 
   storeAuthData, 
@@ -384,7 +385,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         dispatch({ type: 'SET_LOADING', payload: true });
         
-        console.log('AuthProvider: Restoring auth state from storage');
+        console.log('AuthProvider: Restoring auth state from storage - Platform:', Platform.OS);
         
         // First, always load the keepLoggedIn preference
         const keepLoggedIn = await getKeepLoggedInPreference();
@@ -393,6 +394,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Then check for stored auth data
         const authData = await getStoredAuthData();
+        
+        if (Platform.OS === 'ios') {
+          console.log('iOS AuthProvider: Auth data check result:', authData ? 'exists' : 'null');
+          if (authData) {
+            console.log('iOS AuthProvider: Token exists:', authData.userToken ? 'yes' : 'no');
+            console.log('iOS AuthProvider: KeepLoggedIn from storage:', authData.keepLoggedIn);
+          }
+        }
         
         if (authData) {
           console.log('AuthProvider: Found stored auth data');

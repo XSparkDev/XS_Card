@@ -34,5 +34,15 @@ dependencyResolutionManagement {
 apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle");
 useExpoModules()
 
+// Force exclusion of react-native-reanimated from autolinking
+System.setProperty("EXPO_USE_COMMUNITY_AUTOLINKING", "1")
+
+// Exclude react-native-reanimated from autolinking
+def reactNativeReanimated = new File(rootProject.projectDir, '../node_modules/react-native-reanimated/android')
+if (reactNativeReanimated.exists()) {
+    // Do not include react-native-reanimated
+    println "Excluding react-native-reanimated from autolinking"
+}
+
 include ':app'
 includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile())
