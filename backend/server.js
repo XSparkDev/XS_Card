@@ -1,4 +1,4 @@
-/**
+    /**
  * XS Card Backend Server
  */
 
@@ -52,6 +52,7 @@ const testRoutes = require('./routes/testRoutes'); // Add test routes for debugg
 const ticketRoutes = require('./routes/ticketRoutes'); // Add ticket routes
 const eventOrganiserRoutes = require('./routes/eventOrganiserRoutes'); // Add event organiser routes
 const bulkRegistrationRoutes = require('./routes/bulkRegistrationRoutes'); // Add bulk registration routes
+const revenueCatRoutes = require('./routes/revenueCatRoutes'); // Add RevenueCat routes
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -495,6 +496,7 @@ app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/', paymentRoutes); // Add this line before protected routes
 app.use('/', subscriptionRoutes); // Add subscription routes
+app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
 app.use('/', apkRoutes); // Add APK routes for public download
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
 app.use('/', userRoutes); // Move user routes to public section so SignIn works
