@@ -4,6 +4,9 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
+import android.content.res.Configuration
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -20,8 +23,21 @@ class MainActivity : ReactActivity() {
     setTheme(R.style.AppTheme);
     super.onCreate(null)
     
-    // Hide system navigation bar
-    hideSystemNavigationBar()
+    // Enable edge-to-edge for Android 15+ (SDK 35+)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+      enableEdgeToEdge()
+    } else {
+      hideSystemNavigationBar()
+    }
+  }
+  
+  private fun enableEdgeToEdge() {
+    // Enable edge-to-edge display for Android 15+
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    val windowInsetsController = WindowInsetsControllerCompat(window, window.decorView)
+    windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    window.statusBarColor = android.graphics.Color.TRANSPARENT
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
   }
   
   private fun hideSystemNavigationBar() {
@@ -35,6 +51,35 @@ class MainActivity : ReactActivity() {
         or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
       )
     }
+  }
+  
+  // Picture-in-Picture support (compliance only)
+  override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    if (isInPictureInPictureMode) {
+      hideSystemUI()
+    } else {
+      showSystemUI()
+    }
+  }
+  
+  private fun hideSystemUI() {
+    window.decorView.systemUiVisibility = (
+      View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+      or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+      or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+      or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+      or View.SYSTEM_UI_FLAG_FULLSCREEN
+      or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    )
+  }
+  
+  private fun showSystemUI() {
+    window.decorView.systemUiVisibility = (
+      View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+      or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+      or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+    )
   }
 
   /**
