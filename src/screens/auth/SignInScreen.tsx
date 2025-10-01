@@ -7,9 +7,7 @@ import { AuthStackParamList } from '../../types';
 import { MaterialIcons } from '@expo/vector-icons';
 import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// ErrorPopup import removed - no popups on signin page
 import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData, getStoredAuthData } from '../../utils/authStorage';
-// Error handler imports removed - no popups on signin page
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
@@ -36,9 +34,6 @@ export default function SignInScreen() {
   });
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
-  // Error popup removed - no popups on signin page
-
-
 
   // Animated values for smooth toggle
   const toggleAnimation = useRef(new Animated.Value(1)).current; // Start at 1 (on position)
@@ -78,12 +73,6 @@ export default function SignInScreen() {
     }
   };
 
-
-  // const validateEmail = (email: string) => {
-  //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  //   return emailRegex.test(email);
-  // };
-
   const validateForm = () => {
     const newErrors = {
       email: '',
@@ -105,8 +94,6 @@ export default function SignInScreen() {
     setErrors(newErrors);
     return isValid;
   };
-
-
 
   const handleSignIn = async () => {
     if (!validateForm()) {
@@ -149,7 +136,7 @@ export default function SignInScreen() {
 
       if (response.ok) {
         const backendUserData = await response.json();
-        console.log('SignIn: User data retrieved from backend:', JSON.stringify(backendUserData, null, 2));
+        // User data retrieved from backend successfully
         
         // Store the token and user data using our enhanced storage system
         const token = `Bearer ${firebaseToken}`;
@@ -289,122 +276,118 @@ export default function SignInScreen() {
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
-      {/* ErrorPopup removed - no popups on signin page */}
-      
-      <Text style={styles.title}>Sign In</Text>
+          <Text style={styles.title}>Sign In</Text>
 
-      <TextInput
-        style={[styles.input, errors.email ? styles.inputError : null]}
-        placeholder="Email"
-        value={email}
-        onChangeText={(text) => {
-          setEmail(text);
-          // Only clear error if there's actually an error to clear
-          if (errors.email) {
-            setErrors(prev => ({ ...prev, email: '' }));
-          }
-        }}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        placeholderTextColor="#999"
-      />
-      {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
-
-      <View style={styles.passwordContainer}>
-        <TextInput
-          style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
-          placeholder="Password"
-          value={password}
-          onChangeText={(text) => {
-            setPassword(text);
-            // Only clear error if there's actually an error to clear
-            if (errors.password) {
-              setErrors(prev => ({ ...prev, password: '' }));
-            }
-          }}
-          secureTextEntry={!showPassword}
-          placeholderTextColor="#999"
-        />
-        <TouchableOpacity 
-          style={styles.eyeIcon}
-          onPress={() => setShowPassword(!showPassword)}
-        >
-          <MaterialIcons 
-            name={showPassword ? "visibility" : "visibility-off"} 
-            size={24} 
-            color="#999" 
+          <TextInput
+            style={[styles.input, errors.email ? styles.inputError : null]}
+            placeholder="Email"
+            value={email}
+            onChangeText={(text) => {
+              setEmail(text);
+              // Only clear error if there's actually an error to clear
+              if (errors.email) {
+                setErrors(prev => ({ ...prev, email: '' }));
+              }
+            }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            placeholderTextColor="#999"
           />
-        </TouchableOpacity>
-      </View>
-      {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
-      
-      <TouchableOpacity 
-        style={styles.forgotPasswordLink}
-        onPress={() => navigation.navigate('ForgotPassword')}
-      >
-        <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-      </TouchableOpacity>
+          {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
-      {/* Keep me logged in toggle */}
-      <View style={styles.keepLoggedInContainer}>
-        <TouchableOpacity 
-          style={styles.toggleTouchArea}
-          onPress={handleTogglePress}
-          activeOpacity={0.8}
-        >
-          <Animated.View 
-            style={[
-              styles.toggleSwitch,
-              {
-                backgroundColor: backgroundColorAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['#FFFFFF', COLORS.primary],
-                }),
-                borderColor: backgroundColorAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['#E0E0E0', COLORS.primary],
-                }),
-              }
-            ]}
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
+              placeholder="Password"
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                // Only clear error if there's actually an error to clear
+                if (errors.password) {
+                  setErrors(prev => ({ ...prev, password: '' }));
+                }
+              }}
+              secureTextEntry={!showPassword}
+              placeholderTextColor="#999"
+            />
+            <TouchableOpacity 
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <MaterialIcons 
+                name={showPassword ? "visibility" : "visibility-off"} 
+                size={24} 
+                color="#999" 
+              />
+            </TouchableOpacity>
+          </View>
+          {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+          
+          <TouchableOpacity 
+            style={styles.forgotPasswordLink}
+            onPress={() => navigation.navigate('ForgotPassword')}
           >
-            <Animated.View style={[
-              styles.toggleThumb,
-              {
-                transform: [{
-                  translateX: toggleAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 28], // More precise calculation: 60 - 24 - 8 (accounting for padding)
-                  })
-                }],
-                backgroundColor: backgroundColorAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['#E0E0E0', '#FFFFFF'],
-                }),
-              }
-            ]} />
-          </Animated.View>
-          <Text style={styles.keepLoggedInText}>Keep me logged in</Text>
-        </TouchableOpacity>
-      </View>
+            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity 
-        style={[styles.signInButton, isLoading && styles.disabledButton]}
-        onPress={handleSignIn}
-        disabled={isLoading}
-      >
-        <Text style={styles.signInButtonText}>
-          {isLoading ? 'Signing In...' : 'Sign In'}
-        </Text>
-      </TouchableOpacity>
+          {/* Keep me logged in toggle */}
+          <View style={styles.keepLoggedInContainer}>
+            <TouchableOpacity 
+              style={styles.toggleTouchArea}
+              onPress={handleTogglePress}
+              activeOpacity={0.8}
+            >
+              <Animated.View 
+                style={[
+                  styles.toggleSwitch,
+                  {
+                    backgroundColor: backgroundColorAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['#FFFFFF', COLORS.primary],
+                    }),
+                    borderColor: backgroundColorAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['#E0E0E0', COLORS.primary],
+                    }),
+                  }
+                ]}
+              >
+                <Animated.View style={[
+                  styles.toggleThumb,
+                  {
+                    transform: [{
+                      translateX: toggleAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 28], // More precise calculation: 60 - 24 - 8 (accounting for padding)
+                      })
+                    }],
+                    backgroundColor: backgroundColorAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['#E0E0E0', '#FFFFFF'],
+                    }),
+                  }
+                ]} />
+              </Animated.View>
+              <Text style={styles.keepLoggedInText}>Keep me logged in</Text>
+            </TouchableOpacity>
+          </View>
 
+          <TouchableOpacity 
+            style={[styles.signInButton, isLoading && styles.disabledButton]}
+            onPress={handleSignIn}
+            disabled={isLoading}
+          >
+            <Text style={styles.signInButtonText}>
+              {isLoading ? 'Signing In...' : 'Sign In'}
+            </Text>
+          </TouchableOpacity>
 
-
-      <View style={styles.signUpContainer}>
-        <Text style={styles.signUpText}>Don't have an account? </Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-          <Text style={styles.signUpLink}>Sign Up</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.signUpContainer}>
+            <Text style={styles.signUpText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+              <Text style={styles.signUpLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </TouchableWithoutFeedback>
       
@@ -450,7 +433,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-
   signUpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',

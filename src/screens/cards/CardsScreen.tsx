@@ -162,27 +162,15 @@ export default function CardsScreen() {
         // New structure: { cards: [...], analytics: {...} }
         cardsArray = responseData.cards;
         analytics = responseData.analytics;
-        console.log('Scan analytics:', analytics);
       } else if (Array.isArray(responseData)) {
         // Fallback for old structure: [card1, card2, ...]
         cardsArray = responseData;
-        console.log('Using fallback for old API response structure');
       } else {
-        console.error('Unexpected API response structure:', responseData);
+        console.error('Unexpected API response structure');
         return;
       }
 
       if (cardsArray && cardsArray.length > 0) {
-        // Log the first card's data to check if scans and logoZoomLevel are included
-        console.log('Card data received:', JSON.stringify(cardsArray[0], null, 2));
-        
-        // Debug profile image and company logo specifically
-        cardsArray.forEach((card: any, index: number) => {
-          console.log(`Card ${index} - Profile Image:`, card.profileImage);
-          console.log(`Card ${index} - Company Logo:`, card.companyLogo);
-          console.log(`Card ${index} - Profile Image URL processed:`, getImageUrl(card.profileImage));
-          console.log(`Card ${index} - Company Logo URL processed:`, getImageUrl(card.companyLogo));
-        });
         
         setUserData({
           id: userId,
@@ -214,28 +202,6 @@ export default function CardsScreen() {
     React.useCallback(() => {
       setIsLoading(true);
       
-      // Add a direct API check when screen gets focus to verify server data
-      const verifyServerData = async () => {
-        try {
-          const userId = await getUserId();
-          if (userId) {
-            const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
-            const cardsData = await response.json();
-            console.log('FOCUS CHECK - Cards API response:', JSON.stringify(cardsData, null, 2));
-            
-            // Check if logoZoomLevel exists in the data
-            if (cardsData && cardsData.length > 0) {
-              cardsData.forEach((card: any, index: number) => {
-                console.log(`Card ${index} zoom level:`, card.logoZoomLevel);
-              });
-            }
-          }
-        } catch (error) {
-          console.error('Error in verification check:', error);
-        }
-      };
-      
-      verifyServerData();
       loadUserData().finally(() => {
         setIsLoading(false);
       });
@@ -505,7 +471,7 @@ export default function CardsScreen() {
         .replace(':cardIndex', currentPage.toString()) + 
         (skipImages ? '?skipImages=true' : '');
 
-      console.log('Making wallet request to:', endpoint);
+      // Making wallet request
 
       // Use authenticatedFetchWithRefresh which automatically handles the token
       const response = await authenticatedFetchWithRefresh(endpoint, {
@@ -518,11 +484,11 @@ export default function CardsScreen() {
         throw new Error(data.message || 'Failed to add to wallet');
       }
 
-      console.log('Wallet pass created:', data);
+      // Wallet pass created successfully
 
       // Check if there's a warning about images
       if (data.warning) {
-        console.log('Wallet warning:', data.warning);
+        console.warn('Wallet warning:', data.warning);
       }
 
       if (data.passPageUrl) {
@@ -704,21 +670,16 @@ export default function CardsScreen() {
     },
   });
 
-  // Enhance the applyLogoZoom function with better debugging and handling
+  // Apply logo zoom level if available
   const applyLogoZoom = (card: CardData) => {
     try {
       if (card.logoZoomLevel !== undefined && card.logoZoomLevel !== null) {
         const zoomLevel = Number(card.logoZoomLevel);
         if (!isNaN(zoomLevel)) {
-          console.log(`Applying zoom level ${zoomLevel} to card logo`);
           return {
             transform: [{ scale: zoomLevel }]
           };
-        } else {
-          console.warn('Invalid zoom level value:', card.logoZoomLevel);
         }
-      } else {
-        console.log('No zoom level found for card');
       }
     } catch (error) {
       console.error('Error applying zoom level:', error);
@@ -726,15 +687,6 @@ export default function CardsScreen() {
     return undefined;
   };
 
-  // Add an effect to log when cards change in the userData state
-  useEffect(() => {
-    if (userData?.cards && userData.cards.length > 0 && currentPage < userData.cards.length) {
-      const currentCard = userData.cards[currentPage];
-      if (currentCard) {
-        console.log(`Current card (${currentPage}) zoom level:`, currentCard.logoZoomLevel);
-      }
-    }
-  }, [userData, currentPage]);
 
   return (
     <View style={styles.container}>
@@ -794,12 +746,7 @@ export default function CardsScreen() {
                       resizeMode="contain"
                       fadeDuration={300} // Smooth fade-in animation when loading
                       onError={(error) => {
-                        console.warn('Failed to load company logo:', error.nativeEvent.error);
-                        console.log('Company logo URL that failed:', card.companyLogo);
-                        console.log('Processed logo URL:', getImageUrl(card.companyLogo));
-                      }}
-                      onLoad={() => {
-                        console.log('Company logo loaded successfully:', card.companyLogo);
+                        console.warn('Failed to load company logo');
                       }}
                   />
                   </View>
@@ -812,12 +759,7 @@ export default function CardsScreen() {
                           require('../../../assets/images/profile.png')
                         }
                         onError={(error) => {
-                          console.warn('Failed to load profile image:', error.nativeEvent.error);
-                          console.log('Profile image URL that failed:', card.profileImage);
-                          console.log('Processed URL:', getImageUrl(card.profileImage));
-                        }}
-                        onLoad={() => {
-                          console.log('Profile image loaded successfully:', card.profileImage);
+                          console.warn('Failed to load profile image');
                         }}
                       />
                     </Animated.View>
