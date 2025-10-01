@@ -39,6 +39,30 @@ const updateVersion = (newVersion, newVersionCode) => {
     console.log(`📱 Version: ${newVersion}`);
     console.log(`🔢 Version Code: ${newVersionCode}`);
     
+    // Automatically stage and commit the changes
+    console.log('');
+    console.log('📝 Staging and committing changes...');
+    
+    const { execSync } = require('child_process');
+    
+    try {
+      // Stage the version files
+      execSync('git add package.json android/app/build.gradle app.json', { stdio: 'inherit' });
+      
+      // Commit with version bump message
+      execSync(`git commit -m "Bump version to ${newVersion} (${newVersionCode})"`, { stdio: 'inherit' });
+      
+      console.log('✅ Version changes committed successfully!');
+      console.log('');
+      console.log('🚀 Now run: git push origin qa');
+      
+    } catch (gitError) {
+      console.error('❌ Error committing changes:', gitError.message);
+      console.log('📝 You may need to commit manually:');
+      console.log('   git add package.json android/app/build.gradle app.json');
+      console.log(`   git commit -m "Bump version to ${newVersion} (${newVersionCode})"`);
+    }
+    
   } catch (error) {
     console.error('❌ Error updating versions:', error.message);
     process.exit(1);
