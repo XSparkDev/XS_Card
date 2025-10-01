@@ -2,7 +2,7 @@
   "expo": {
     "name": "XS Card",
     "slug": "xscard",
-    "version": "2.0.0",
+    "version": "2.0.5",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.p.zzles.xscard",
-      "buildNumber": "2.0.0",
+      "buildNumber": "2.0.5",
       "icon": "./assets/icons/icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
@@ -54,8 +54,8 @@
       [
         "expo-image-picker",
         {
-                  "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
-        "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
+          "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
+          "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
         }
       ]
     ]
