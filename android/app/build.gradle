@@ -91,7 +91,7 @@ android {
         applicationId 'com.p.zzles.xscard'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 21
+        versionCode 22
         versionName "205"
         
         // Add build config to handle Windows path length issues
@@ -134,7 +134,7 @@ android {
             
             // Enable debug logging for RevenueCat testing
             buildConfigField "boolean", "DEBUG", "true"
-            debuggable true
+            debuggable false
         }
     }
     packagingOptions {
