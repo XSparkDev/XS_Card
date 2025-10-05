@@ -6,7 +6,7 @@ import Purchases, {
   PURCHASES_ERROR_CODE
 } from 'react-native-purchases';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { shouldUseRevenueCat } from '../utils/paymentPlatform';
 import { authenticatedFetchWithRefresh } from '../utils/api';
 
@@ -104,11 +104,34 @@ class RevenueCatService {
       }
 
       const offerings = await Purchases.getOfferings();
+      
+      // Debug: Log all available offerings
+      console.log('RevenueCat: All offerings:', Object.keys(offerings.all || {}));
+      console.log('RevenueCat: Current offering:', offerings.current?.identifier || 'NONE');
+      console.log('RevenueCat: Current packages:', offerings.current?.availablePackages.length || 0);
+      
       const packages: SubscriptionPackage[] = [];
 
-      if (offerings.current && offerings.current.availablePackages.length > 0) {
+      // Try to use current offering first, or fallback to any available offering
+      let selectedOffering = offerings.current;
+      
+      if (!selectedOffering && offerings.all) {
+        // If no current offering, try to find XS_Card_Offerings or use the first available
+        const offeringKeys = Object.keys(offerings.all);
+        console.log('RevenueCat: No current offering, checking available offerings:', offeringKeys);
+        
+        if (offeringKeys.includes('XS_Card_Offerings')) {
+          selectedOffering = offerings.all['XS_Card_Offerings'];
+          console.log('RevenueCat: Using XS_Card_Offerings');
+        } else if (offeringKeys.length > 0) {
+          selectedOffering = offerings.all[offeringKeys[0]];
+          console.log('RevenueCat: Using first available offering:', offeringKeys[0]);
+        }
+      }
+
+      if (selectedOffering && selectedOffering.availablePackages.length > 0) {
         // Use offerings if available
-        for (const packageItem of offerings.current.availablePackages) {
+        for (const packageItem of selectedOffering.availablePackages) {
           packages.push({
             identifier: packageItem.identifier,
             packageType: packageItem.packageType,
@@ -165,7 +188,15 @@ class RevenueCatService {
       }
 
       // Get all available products from RevenueCat
+      console.log('RevenueCat: Requesting products from RevenueCat SDK:', productIds);
       const products = await Purchases.getProducts(productIds);
+      console.log('RevenueCat: SDK returned products:', products.map(p => ({ id: p.identifier, title: p.title, price: p.priceString })));
+      
+      // DEBUG: Show what RevenueCat SDK returned
+      console.log('RevenueCat: SDK Response - Requested:', JSON.stringify(productIds));
+      console.log('RevenueCat: SDK Response - Returned:', products.length, 'products');
+      console.log('RevenueCat: SDK Response - Products:', products.map(p => ({ id: p.identifier, title: p.title, price: p.priceString })));
+      Alert.alert('RevenueCat SDK Response', `Requested: ${JSON.stringify(productIds)}\n\nReturned: ${products.length} products`);
 
       const packages: SubscriptionPackage[] = [];
 
@@ -187,6 +218,16 @@ class RevenueCatService {
       }
 
       console.log(`RevenueCat: Found ${packages.length} products directly`);
+      
+      // DEBUG: Show what we found
+      console.log('RevenueCat: Final packages found:', packages.length);
+      console.log('RevenueCat: Final packages:', packages.map(p => ({ 
+        id: p.identifier, 
+        product: p.product.identifier, 
+        title: p.product.title, 
+        price: p.product.priceString 
+      })));
+      
       return packages;
 
     } catch (error) {
@@ -244,30 +285,44 @@ class RevenueCatService {
       console.log(`RevenueCat: Package: ${packageIdentifier}`);
       console.log(`RevenueCat: User: ${this.currentUserId}`);
 
-      // Get the product directly (since we're not using offerings)
-      // Use the full product ID with base plan suffix
-      const productId = packageIdentifier === 'monthly' ? 'premium_monthly:monthly-autorenewing' : 'premium_annual:annual-autorenewing';
+      // Get offerings to find the package
+      const offerings = await Purchases.getOfferings();
       
-      console.log(`RevenueCat: Looking for product: ${productId}`);
+      // Try to use current offering first, or fallback to any available offering
+      let selectedOffering = offerings.current;
       
-      // Get the product from RevenueCat
-      const products = await Purchases.getProducts([productId]);
+      if (!selectedOffering && offerings.all) {
+        const offeringKeys = Object.keys(offerings.all);
+        if (offeringKeys.includes('XS_Card_Offerings')) {
+          selectedOffering = offerings.all['XS_Card_Offerings'];
+        } else if (offeringKeys.length > 0) {
+          selectedOffering = offerings.all[offeringKeys[0]];
+        }
+      }
       
-      console.log(`RevenueCat: Available products:`, products.map(p => ({ id: p.identifier, title: p.title })));
-      console.log(`RevenueCat: Looking for: ${productId}`);
+      if (!selectedOffering) {
+        throw new Error('No offerings available');
+      }
       
-      const productToPurchase = products.find(p => p.identifier === productId);
-
-      if (!productToPurchase) {
-        console.error(`RevenueCat: Product ${productId} not found. Available products:`, products.map(p => p.identifier));
-        throw new Error(`Product ${productId} not found in store`);
+      console.log(`RevenueCat: Using offering: ${selectedOffering.identifier}`);
+      console.log(`RevenueCat: Available packages:`, selectedOffering.availablePackages.map(p => p.identifier));
+      
+      // Find the package in the offering
+      const rcPackage = selectedOffering.availablePackages.find(p => p.identifier === packageIdentifier);
+      
+      if (!rcPackage) {
+        console.error(`RevenueCat: Package ${packageIdentifier} not found in offering`);
+        console.error(`RevenueCat: Available packages:`, selectedOffering.availablePackages.map(p => p.identifier));
+        throw new Error(`Package ${packageIdentifier} not found in offering`);
       }
 
-      console.log(`RevenueCat: Found product: ${productToPurchase.identifier}`);
-      console.log(`RevenueCat: Price: ${productToPurchase.priceString}`);
+      console.log(`RevenueCat: Found package: ${rcPackage.identifier}`);
+      console.log(`RevenueCat: Product: ${rcPackage.product.identifier}`);
+      console.log(`RevenueCat: Price: ${rcPackage.product.priceString}`);
 
-      // Initiate purchase through RevenueCat SDK
-      const { customerInfo } = await Purchases.purchaseProduct(productToPurchase.identifier);
+      // Initiate purchase through RevenueCat SDK using the package directly
+      // This is the CORRECT way - purchase the package, not the product
+      const { customerInfo } = await Purchases.purchasePackage(rcPackage);
       
       console.log('RevenueCat: Purchase transaction completed');
       console.log(`RevenueCat: Customer Info received, checking entitlements...`);

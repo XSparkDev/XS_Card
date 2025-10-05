@@ -98,6 +98,10 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
         // Configure RevenueCat with platform-specific API key
         const apiKey = getRevenueCatApiKey();
         
+        // DEBUG: Show API key in console
+        console.log('RevenueCat: API Key Debug - Platform:', Platform.OS);
+        console.log('RevenueCat: API Key Debug - Key:', apiKey.substring(0, 20) + '...');
+        
         const configured = await revenueCatService.configure({
           apiKey: apiKey,
           userId: userId
@@ -107,6 +111,15 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
           // Load available packages
           const packages = await revenueCatService.getOfferings();
           setRevenueCatPackages(packages);
+          
+          // DEBUG: Show RevenueCat packages in console
+          console.log('RevenueCat: Debug Info - Found', packages.length, 'packages');
+          console.log('RevenueCat: Debug Info - Packages:', packages.map(p => ({
+            id: p.identifier,
+            product: p.product.identifier,
+            title: p.product.title,
+            price: p.product.priceString
+          })));
           
           // Check current subscription status
           const status = await revenueCatService.getSubscriptionStatus();

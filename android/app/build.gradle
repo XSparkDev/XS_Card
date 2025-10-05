@@ -131,6 +131,10 @@ android {
             
             // Disable react-native-reanimated for release builds to avoid Windows path length issues
             buildConfigField "boolean", "REANIMATED_DISABLED", "true"
+            
+            // Enable debug logging for RevenueCat testing
+            buildConfigField "boolean", "DEBUG", "true"
+            debuggable true
         }
     }
     packagingOptions {
