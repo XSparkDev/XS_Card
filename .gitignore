@@ -18,7 +18,6 @@ build/
 # Large backup files
 *_old.jpg
 *_old.png
-backend/
 
 # iOS
 ios/Pods/
