@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -16,6 +17,10 @@ import { COLORS } from '../../constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, ENDPOINTS, getUserId, performServerLogout, authenticatedFetchWithRefresh } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+// RevenueCat imports - iOS payment integration
+import { shouldUseRevenueCat, getPlatformConfig } from '../../utils/paymentPlatform';
+import revenueCatService, { SubscriptionPackage, SubscriptionStatus } from '../../services/revenueCatService';
+import { getRevenueCatApiKey } from '../../config/revenueCatConfig';
 
 type UnlockPremiumStackParamList = {
   UnlockPremium: undefined;
@@ -32,6 +37,11 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
   const [loadingSubscriptionData, setLoadingSubscriptionData] = useState(false);
   const { logout } = useAuth(); // Use our centralized auth context
+  
+  // RevenueCat state - iOS payment integration
+  const [revenueCatPackages, setRevenueCatPackages] = useState<SubscriptionPackage[]>([]);
+  const [revenueCatStatus, setRevenueCatStatus] = useState<SubscriptionStatus | null>(null);
+  const [loadingRevenueCat, setLoadingRevenueCat] = useState(false);
 
   // Define pricing for both currencies
   const pricing = {
@@ -67,6 +77,49 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
 
     getUserData();
     checkSubscriptionStatus();
+    
+    // RevenueCat initialization - iOS only
+    const initializeRevenueCat = async () => {
+      if (!shouldUseRevenueCat()) {
+        console.log('Not iOS platform, skipping RevenueCat initialization');
+        return;
+      }
+
+      try {
+        setLoadingRevenueCat(true);
+        
+        // Get user ID for RevenueCat
+        const userId = await getUserId();
+        if (!userId) {
+          console.log('No user ID available for RevenueCat initialization');
+          return;
+        }
+
+        // Configure RevenueCat with platform-specific API key
+        const apiKey = getRevenueCatApiKey();
+        
+        const configured = await revenueCatService.configure({
+          apiKey: apiKey,
+          userId: userId
+        });
+
+        if (configured) {
+          // Load available packages
+          const packages = await revenueCatService.getOfferings();
+          setRevenueCatPackages(packages);
+          
+          // Check current subscription status
+          const status = await revenueCatService.getSubscriptionStatus();
+          setRevenueCatStatus(status);
+        }
+      } catch (error) {
+        console.error('RevenueCat initialization error:', error);
+      } finally {
+        setLoadingRevenueCat(false);
+      }
+    };
+
+    initializeRevenueCat();
   }, []);
 
   const checkSubscriptionStatus = async () => {
@@ -95,6 +148,124 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
       console.error('Error checking subscription status:', error);
     } finally {
       setLoadingSubscriptionData(false);
+    }
+  };
+
+  // iOS RevenueCat payment handler
+  const handleIOSPayment = async () => {
+    try {
+      setIsProcessing(true);
+
+      if (!revenueCatService.isReady()) {
+        Alert.alert('Error', 'Payment system not ready. Please try again.');
+        return;
+      }
+
+      // Find the appropriate package based on selected plan
+      const targetPackage = revenueCatPackages.find(pkg => 
+        selectedPlan === 'annually' ? 
+          pkg.identifier.includes('annual') || pkg.packageType === 'ANNUAL' :
+          pkg.identifier.includes('monthly') || pkg.packageType === 'MONTHLY'
+      );
+
+      if (!targetPackage) {
+        Alert.alert('Error', 'Subscription plan not available. Please try again.');
+        return;
+      }
+
+      // Purchase the package
+      const result = await revenueCatService.purchasePackage(targetPackage.identifier);
+      
+      if (result.success) {
+        // Update subscription status
+        const status = await revenueCatService.getSubscriptionStatus();
+        setRevenueCatStatus(status);
+        
+        // Update user plan locally
+        setUserPlan('premium');
+        
+        // Update local storage
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const parsedUserData = JSON.parse(userData);
+          parsedUserData.plan = 'premium';
+          await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
+        }
+
+        Alert.alert(
+          'Payment Successful!',
+          'Your premium subscription is now active. Enjoy all premium features!',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                // Navigate back or refresh the screen
+                navigation.goBack();
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Payment Failed', result.error || 'Could not complete purchase. Please try again.');
+      }
+    } catch (error) {
+      console.error('iOS payment error:', error);
+      Alert.alert('Error', 'Failed to process payment. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Platform-aware payment handler - determines which payment method to use
+  const handlePayment = async () => {
+    if (shouldUseRevenueCat()) {
+      await handleIOSPayment();
+    } else {
+      await handlePaymentInitiation();
+    }
+  };
+
+  // iOS restore purchases handler
+  const handleRestorePurchases = async () => {
+    if (!shouldUseRevenueCat()) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      const result = await revenueCatService.restorePurchases();
+      
+      if (result.success) {
+        // Check if any subscriptions were restored
+        const status = await revenueCatService.getSubscriptionStatus();
+        setRevenueCatStatus(status);
+        
+        if (status?.isActive) {
+          Alert.alert(
+            'Purchases Restored!',
+            'Your premium subscription has been restored.',
+            [
+              {
+                text: 'Continue',
+                onPress: () => {
+                  checkSubscriptionStatus();
+                }
+              }
+            ]
+          );
+        } else {
+          Alert.alert('No Purchases Found', 'No previous purchases were found to restore.');
+        }
+      } else {
+        Alert.alert('Restore Failed', result.error || 'Could not restore purchases.');
+      }
+      
+    } catch (error) {
+      console.error('Restore purchases error:', error);
+      Alert.alert('Error', 'Failed to restore purchases. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -414,7 +585,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
               { marginVertical: 20 },
               isProcessing && styles.disabledButton
             ]}
-            onPress={handlePaymentInitiation}
+            onPress={handlePayment}
             disabled={isProcessing}
           >
             <Text style={styles.trialButtonText}>
@@ -576,13 +747,26 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
               styles.bottomTrialButton,
               isProcessing && styles.disabledButton
             ]}
-            onPress={handlePaymentInitiation}
+            onPress={handlePayment}
             disabled={isProcessing}
           >
             <Text style={styles.bottomTrialButtonText}>
               {isProcessing ? 'Processing...' : 'Start 7-day free trial'}
             </Text>
           </TouchableOpacity>
+          
+          {/* iOS Restore Purchases Button */}
+          {shouldUseRevenueCat() && (
+            <TouchableOpacity 
+              style={styles.restoreButton}
+              onPress={handleRestorePurchases}
+              disabled={isLoading}
+            >
+              <Text style={styles.restoreButtonText}>
+                {isLoading ? 'Restoring...' : 'Restore Purchases'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -889,6 +1073,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.gray,
     marginTop: 2,
+  },
+  restoreButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 10,
+    marginHorizontal: 20,
+  },
+  restoreButtonText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
 
