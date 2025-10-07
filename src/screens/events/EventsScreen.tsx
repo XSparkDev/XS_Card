@@ -584,7 +584,7 @@ export default function EventsScreen() {
             onPress={() => navigation.navigate('EventPreferences')}
           >
             <MaterialIcons name="tune" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>Preferences</Text>
+            <Text style={styles.quickActionText}>Personalize</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -592,7 +592,7 @@ export default function EventsScreen() {
             onPress={() => navigation.navigate('CreateEvent')}
           >
             <MaterialIcons name="add" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>Create Event</Text>
+            <Text style={styles.quickActionText}>New Event</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -783,8 +783,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    flexGrow: 1,
-    flexBasis: '30%',
+    minWidth: 100,
+    flex: 1,
+    maxWidth: '32%',
     gap: 4,
   },
   quickActionText: {
