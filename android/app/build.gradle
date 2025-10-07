@@ -134,7 +134,7 @@ android {
             
             // Enable debug logging for RevenueCat testing
             buildConfigField "boolean", "DEBUG", "true"
-            debuggable true
+            debuggable false
         }
     }
     packagingOptions {
