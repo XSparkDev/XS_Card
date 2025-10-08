@@ -6,6 +6,7 @@
  */
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { 
     handleRevenueCatWebhook, 
@@ -14,14 +15,31 @@ const {
 } = require('../controllers/revenueCatController');
 const { authenticateUser } = require('../middleware/auth');
 
+// Rate limiting for webhook endpoint (CRITICAL for security)
+const webhookRateLimit = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 10, // Max 10 webhook calls per minute per IP
+    message: {
+        error: 'Too many webhook requests',
+        code: 'RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+        // Skip rate limiting for localhost during development
+        return req.ip === '127.0.0.1' || req.ip === '::1';
+    }
+});
+
 /**
  * PUBLIC ROUTE: RevenueCat webhook endpoint
  * POST /api/revenuecat/webhook
  * 
  * NOTE: This endpoint has NO user authentication (webhooks come from RevenueCat servers)
  * Security is handled via webhook signature verification inside the controller
+ * Rate limiting applied to prevent abuse
  */
-router.post('/webhook', handleRevenueCatWebhook);
+router.post('/webhook', webhookRateLimit, handleRevenueCatWebhook);
 
 /**
  * PROTECTED ROUTE: Get user subscription status
