@@ -980,8 +980,156 @@
             color: transparent;
         }
 
+        /* Country Code Selector Styles */
+        .phone-input-container {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .country-code-selector {
+            position: relative;
+            flex-shrink: 0;
+            width: 110px;
+        }
+
+        .country-code-label {
+            position: absolute;
+            left: 0px;
+            top: 0;
+            font-size: 12px;
+            color: var(--secondary);
+            font-weight: 500;
+            pointer-events: none;
+        }
+
+        .country-code-button {
+            width: 100%;
+            padding: 16px 4px 8px 4px;
+            border: none;
+            border-bottom: 1px solid #E0E0E0;
+            background: transparent;
+            font-size: 15px;
+            color: #333;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: border-bottom-color 0.3s ease;
+            outline: none;
+        }
+        
+        .country-code-button #selectedCountryCode {
+            flex: 1;
+            text-align: left;
+            font-weight: 500;
+        }
+
+        .country-code-button:focus {
+            border-bottom-color: var(--secondary);
+        }
+
+        .country-code-button:hover {
+            border-bottom-color: var(--secondary);
+        }
+
+        .country-code-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 1px solid #E0E0E0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            margin-top: 4px;
+            min-width: 280px;
+        }
+
+        .country-code-dropdown.active {
+            display: block;
+        }
+
+        .country-code-option {
+            padding: 12px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            transition: background-color 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .country-code-option:hover {
+            background-color: #f5f5f5;
+        }
+
+        .country-code-option.selected {
+            background-color: #e3f2fd;
+            color: var(--secondary);
+            font-weight: 500;
+        }
+
+        .country-flag {
+            font-size: 18px;
+        }
+
+        .country-name {
+            flex: 1;
+            font-size: 13px;
+        }
+
+        .country-code-text {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .phone-input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
         /* Mobile Responsiveness */
         @media (max-width: 480px) {
+            .country-code-selector {
+                width: 95px;
+            }
+
+            .country-code-button {
+                padding: 14px 6px 6px 6px;
+                font-size: 14px;
+            }
+
+            .country-code-option {
+                padding: 10px 8px;
+                font-size: 13px;
+            }
+
+            .country-flag {
+                font-size: 16px;
+            }
+
+            .country-name {
+                font-size: 12px;
+            }
+
+            .country-code-text {
+                font-size: 13px;
+            }
+
+            .phone-input-container {
+                gap: 8px;
+            }
+
+            .country-code-dropdown {
+                min-width: 250px;
+                max-height: 250px;
+            }
+
             .success-card {
                 padding: 30px 20px;
                 margin: 20px;
@@ -1107,9 +1255,23 @@
                 </div>
                 
                 <div class="form-group">
-                    <div class="floating-label">
-                        <input type="tel" id="scannerPhone" placeholder=" ">
-                        <label for="scannerPhone">Phone number</label>
+                    <div class="phone-input-container">
+                        <div class="country-code-selector">
+                            <span class="country-code-label">Country</span>
+                            <button type="button" class="country-code-button" id="countryCodeButton" onclick="toggleCountryCodeDropdown(event)">
+                                <span id="selectedCountryCode">+27</span>
+                                <span class="material-icons" style="font-size: 18px;">arrow_drop_down</span>
+                            </button>
+                            <div class="country-code-dropdown" id="countryCodeDropdown">
+                                <!-- Country options will be populated by JavaScript -->
+                            </div>
+                        </div>
+                        <div class="phone-input-wrapper">
+                            <div class="floating-label">
+                                <input type="tel" id="scannerPhone" placeholder=" " oninput="formatPhoneNumber(this)">
+                                <label for="scannerPhone">Phone number</label>
+                            </div>
+                        </div>
                     </div>
                 </div><div class="form-group">
                     <div class="floating-label">
@@ -1624,6 +1786,232 @@ END:VCARD`;
         // Initialize session for scan tracking
         initializeSession();
 
+        // Country codes data - comprehensive list
+        const countryCodes = [
+            // Africa
+            { code: '+27', name: 'South Africa', flag: '🇿🇦' },
+            { code: '+234', name: 'Nigeria', flag: '🇳🇬' },
+            { code: '+254', name: 'Kenya', flag: '🇰🇪' },
+            { code: '+20', name: 'Egypt', flag: '🇪🇬' },
+            { code: '+263', name: 'Zimbabwe', flag: '🇿🇼' },
+            { code: '+267', name: 'Botswana', flag: '🇧🇼' },
+            { code: '+233', name: 'Ghana', flag: '🇬🇭' },
+            { code: '+255', name: 'Tanzania', flag: '🇹🇿' },
+            { code: '+256', name: 'Uganda', flag: '🇺🇬' },
+            { code: '+260', name: 'Zambia', flag: '🇿🇲' },
+            { code: '+265', name: 'Malawi', flag: '🇲🇼' },
+            { code: '+264', name: 'Namibia', flag: '🇳🇦' },
+            { code: '+258', name: 'Mozambique', flag: '🇲🇿' },
+            { code: '+251', name: 'Ethiopia', flag: '🇪🇹' },
+            { code: '+212', name: 'Morocco', flag: '🇲🇦' },
+            { code: '+213', name: 'Algeria', flag: '🇩🇿' },
+            { code: '+216', name: 'Tunisia', flag: '🇹🇳' },
+            { code: '+225', name: 'Ivory Coast', flag: '🇨🇮' },
+            { code: '+221', name: 'Senegal', flag: '🇸🇳' },
+            { code: '+250', name: 'Rwanda', flag: '🇷🇼' },
+            { code: '+268', name: 'Eswatini', flag: '🇸🇿' },
+            { code: '+266', name: 'Lesotho', flag: '🇱🇸' },
+            
+            // North America
+            { code: '+1', name: 'United States', flag: '🇺🇸' },
+            { code: '+1', name: 'Canada', flag: '🇨🇦' },
+            { code: '+52', name: 'Mexico', flag: '🇲🇽' },
+            
+            // Europe
+            { code: '+44', name: 'United Kingdom', flag: '🇬🇧' },
+            { code: '+49', name: 'Germany', flag: '🇩🇪' },
+            { code: '+33', name: 'France', flag: '🇫🇷' },
+            { code: '+39', name: 'Italy', flag: '🇮🇹' },
+            { code: '+34', name: 'Spain', flag: '🇪🇸' },
+            { code: '+31', name: 'Netherlands', flag: '🇳🇱' },
+            { code: '+41', name: 'Switzerland', flag: '🇨🇭' },
+            { code: '+32', name: 'Belgium', flag: '🇧🇪' },
+            { code: '+43', name: 'Austria', flag: '🇦🇹' },
+            { code: '+48', name: 'Poland', flag: '🇵🇱' },
+            { code: '+351', name: 'Portugal', flag: '🇵🇹' },
+            { code: '+30', name: 'Greece', flag: '🇬🇷' },
+            { code: '+46', name: 'Sweden', flag: '🇸🇪' },
+            { code: '+47', name: 'Norway', flag: '🇳🇴' },
+            { code: '+45', name: 'Denmark', flag: '🇩🇰' },
+            { code: '+358', name: 'Finland', flag: '🇫🇮' },
+            { code: '+353', name: 'Ireland', flag: '🇮🇪' },
+            { code: '+7', name: 'Russia', flag: '🇷🇺' },
+            { code: '+380', name: 'Ukraine', flag: '🇺🇦' },
+            { code: '+420', name: 'Czech Republic', flag: '🇨🇿' },
+            { code: '+40', name: 'Romania', flag: '🇷🇴' },
+            
+            // Asia
+            { code: '+91', name: 'India', flag: '🇮🇳' },
+            { code: '+86', name: 'China', flag: '🇨🇳' },
+            { code: '+81', name: 'Japan', flag: '🇯🇵' },
+            { code: '+82', name: 'South Korea', flag: '🇰🇷' },
+            { code: '+65', name: 'Singapore', flag: '🇸🇬' },
+            { code: '+60', name: 'Malaysia', flag: '🇲🇾' },
+            { code: '+62', name: 'Indonesia', flag: '🇮🇩' },
+            { code: '+63', name: 'Philippines', flag: '🇵🇭' },
+            { code: '+66', name: 'Thailand', flag: '🇹🇭' },
+            { code: '+84', name: 'Vietnam', flag: '🇻🇳' },
+            { code: '+92', name: 'Pakistan', flag: '🇵🇰' },
+            { code: '+880', name: 'Bangladesh', flag: '🇧🇩' },
+            { code: '+94', name: 'Sri Lanka', flag: '🇱🇰' },
+            { code: '+977', name: 'Nepal', flag: '🇳🇵' },
+            { code: '+852', name: 'Hong Kong', flag: '🇭🇰' },
+            { code: '+886', name: 'Taiwan', flag: '🇹🇼' },
+            { code: '+90', name: 'Turkey', flag: '🇹🇷' },
+            { code: '+971', name: 'UAE', flag: '🇦🇪' },
+            { code: '+966', name: 'Saudi Arabia', flag: '🇸🇦' },
+            { code: '+972', name: 'Israel', flag: '🇮🇱' },
+            { code: '+961', name: 'Lebanon', flag: '🇱🇧' },
+            { code: '+962', name: 'Jordan', flag: '🇯🇴' },
+            { code: '+965', name: 'Kuwait', flag: '🇰🇼' },
+            { code: '+974', name: 'Qatar', flag: '🇶🇦' },
+            
+            // Oceania
+            { code: '+61', name: 'Australia', flag: '🇦🇺' },
+            { code: '+64', name: 'New Zealand', flag: '🇳🇿' },
+            { code: '+679', name: 'Fiji', flag: '🇫🇯' },
+            
+            // South America
+            { code: '+55', name: 'Brazil', flag: '🇧🇷' },
+            { code: '+54', name: 'Argentina', flag: '🇦🇷' },
+            { code: '+56', name: 'Chile', flag: '🇨🇱' },
+            { code: '+57', name: 'Colombia', flag: '🇨🇴' },
+            { code: '+51', name: 'Peru', flag: '🇵🇪' },
+            { code: '+58', name: 'Venezuela', flag: '🇻🇪' },
+            { code: '+593', name: 'Ecuador', flag: '🇪🇨' },
+            { code: '+595', name: 'Paraguay', flag: '🇵🇾' },
+            { code: '+598', name: 'Uruguay', flag: '🇺🇾' },
+            
+            // Caribbean
+            { code: '+1', name: 'Jamaica', flag: '🇯🇲' },
+            { code: '+1', name: 'Trinidad & Tobago', flag: '🇹🇹' },
+            { code: '+1', name: 'Barbados', flag: '🇧🇧' },
+        ];
+
+        let selectedCountryCode = '+27'; // Default to South Africa
+
+        // Populate country code dropdown
+        function populateCountryCodeDropdown() {
+            const dropdown = document.getElementById('countryCodeDropdown');
+            if (!dropdown) return;
+
+            dropdown.innerHTML = countryCodes.map(country => `
+                <div class="country-code-option ${country.code === selectedCountryCode ? 'selected' : ''}" 
+                     onclick="selectCountryCode('${country.code}')">
+                    <span class="country-flag">${country.flag}</span>
+                    <span class="country-name">${country.name}</span>
+                    <span class="country-code-text">${country.code}</span>
+                </div>
+            `).join('');
+        }
+
+        // Toggle country code dropdown
+        function toggleCountryCodeDropdown(event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('countryCodeDropdown');
+            dropdown.classList.toggle('active');
+        }
+
+        // Select country code
+        function selectCountryCode(code) {
+            selectedCountryCode = code;
+            document.getElementById('selectedCountryCode').textContent = code;
+            
+            // Update selected state in dropdown
+            const dropdown = document.getElementById('countryCodeDropdown');
+            const options = dropdown.querySelectorAll('.country-code-option');
+            options.forEach(option => {
+                option.classList.remove('selected');
+                if (option.textContent.includes(code)) {
+                    option.classList.add('selected');
+                }
+            });
+            
+            // Close dropdown
+            dropdown.classList.remove('active');
+        }
+
+        // Format phone number as user types (remove non-numeric characters)
+        function formatPhoneNumber(input) {
+            // Remove all non-numeric characters except + at the start
+            let value = input.value.replace(/[^\d]/g, '');
+            
+            // Remove leading zeros
+            value = value.replace(/^0+/, '');
+            
+            // Update input value
+            input.value = value;
+        }
+
+        // Get full phone number with country code
+        function getFullPhoneNumber() {
+            const phoneInput = document.getElementById('scannerPhone');
+            let phoneNumber = phoneInput.value.trim();
+            
+            // If no phone number entered, return empty
+            if (!phoneNumber) {
+                return '';
+            }
+            
+            // Remove any non-numeric characters
+            phoneNumber = phoneNumber.replace(/[^\d]/g, '');
+            
+            // Remove leading zeros
+            phoneNumber = phoneNumber.replace(/^0+/, '');
+            
+            // If phone number already starts with the country code, return as is
+            if (phoneNumber.startsWith(selectedCountryCode.replace('+', ''))) {
+                return '+' + phoneNumber;
+            }
+            
+            // Otherwise, prepend the selected country code
+            return selectedCountryCode + phoneNumber;
+        }
+
+        // Format phone number for display with country code
+        function formatPhoneWithCountryCode(phone) {
+            if (!phone) return 'No phone number available';
+            
+            // Clean the phone number
+            const cleanedPhone = phone.replace(/[\s\-\(\)]/g, '');
+            
+            // If already has a country code (starts with +), return as is
+            if (cleanedPhone.startsWith('+')) {
+                return cleanedPhone;
+            }
+            
+            // If starts with 00, replace with +
+            if (cleanedPhone.startsWith('00')) {
+                return '+' + cleanedPhone.substring(2);
+            }
+            
+            // If starts with 0 (local number), add default country code +27
+            if (cleanedPhone.startsWith('0')) {
+                return '+27' + cleanedPhone.substring(1);
+            }
+            
+            // Otherwise, add default country code to the number
+            return '+27' + cleanedPhone;
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('countryCodeDropdown');
+            const button = document.getElementById('countryCodeButton');
+            
+            if (dropdown && !dropdown.contains(event.target) && !button.contains(event.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        // Initialize country code dropdown
+        document.addEventListener('DOMContentLoaded', function() {
+            populateCountryCodeDropdown();
+        });
+
+        // Call it immediately as well (in case DOMContentLoaded already fired)
+        populateCountryCodeDropdown();
+
         // Updated loadUserData function to use new endpoint
         async function loadUserData() {
             try {
@@ -1648,7 +2036,7 @@ END:VCARD`;
                     
                     <div class="contact-section">
                         <span class="material-icons contact-icon">phone</span>
-                        <span class="contact-text">${userData.phone || 'No phone number available'}</span>
+                        <span class="contact-text">${formatPhoneWithCountryCode(userData.phone)}</span>
                     </div>
                 `;
                 
@@ -1747,10 +2135,12 @@ END:VCARD`;
         }        async function saveContactToDatabase() {
             const scannerName = document.getElementById('scannerName').value;
             const scannerSurname = document.getElementById('scannerSurname').value;
-            const scannerPhone = document.getElementById('scannerPhone').value;
             const scannerEmail = document.getElementById('scannerEmail').value;
             const scannerCompany = document.getElementById('scannerCompany').value;
             const howWeMet = document.getElementById('howWeMet').value;
+            
+            // Get full phone number with country code
+            const scannerPhone = getFullPhoneNumber();
 
             // Require name, surname, email and how we met
             if (!scannerName || !scannerSurname || !scannerEmail || !howWeMet) {
@@ -1764,7 +2154,7 @@ END:VCARD`;
                 contactInfo: {
                     name: scannerName,
                     surname: scannerSurname,
-                    phone: scannerPhone,
+                    phone: scannerPhone, // Now includes country code
                     email: scannerEmail, // Include email exactly as in your working example
                     company: scannerCompany, // Add company field
                     howWeMet: howWeMet

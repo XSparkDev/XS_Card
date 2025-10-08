@@ -744,7 +744,7 @@ export default function CardsScreen() {
         rightIcon={
           <TouchableOpacity onPress={handleEditCard}>
             <Text style={styles.headerIconContainer}>
-              <MaterialIcons name="edit" size={24} color={COLORS.black} />
+              <MaterialIcons name="edit" size={24} color={COLORS.white} />
             </Text>
           </TouchableOpacity>
         }
