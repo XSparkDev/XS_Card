@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 20 : 55,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 55,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
