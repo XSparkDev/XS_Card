@@ -51,13 +51,13 @@ export const setGlobalAuthContextRef = (ref: any) => {
 const getBaseUrl = () => {
   // For production, use the deployed server
   //return 'https://xscard-app-8ign.onrender.com';
-   // return 'https://baseurl.xscard.co.za';
+    return 'https://baseurl.xscard.co.za';
 
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-  return 'http://192.168.68.108:8383';
+ // return 'http://192.168.68.108:8383';
   //return 'https://e5f9e391e0f2.ngrok-free.app';
   
 };
