@@ -2,7 +2,7 @@
   "expo": {
     "name": "XS Card",
     "slug": "xscard",
-    "version": "2.0.6",
+    "version": "206",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "userInterfaceStyle": "light",
