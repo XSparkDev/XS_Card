@@ -535,3 +535,6 @@ if (!shouldUseRevenueCat()) {
 **Status:** RevenueCat is RBAC-compatible and mostly implemented  
 **Next Steps:** Update frontend endpoints and complete Android integration
 
+
+
+

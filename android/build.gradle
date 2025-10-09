@@ -25,7 +25,8 @@ apply plugin: "com.facebook.react.rootproject"
 
 // Fix for Expo module configuration issue
 subprojects { subproject ->
-    afterEvaluate {
+    if (subproject.state.executed) {
+        // Project already evaluated, configure immediately
         if (subproject.plugins.hasPlugin('maven-publish')) {
             subproject.publishing {
                 publications {
@@ -33,6 +34,22 @@ subprojects { subproject ->
                     if (it.findByName('release') == null && subproject.plugins.hasPlugin('com.android.library')) {
                         release(MavenPublication) {
                             // Handled by AGP
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Project not yet evaluated, use afterEvaluate
+        subproject.afterEvaluate {
+            if (subproject.plugins.hasPlugin('maven-publish')) {
+                subproject.publishing {
+                    publications {
+                        // Fix the missing 'release' component error
+                        if (it.findByName('release') == null && subproject.plugins.hasPlugin('com.android.library')) {
+                            release(MavenPublication) {
+                                // Handled by AGP
+                            }
                         }
                     }
                 }
