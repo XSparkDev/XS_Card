@@ -29,11 +29,18 @@ const updateVersion = (newVersion, newVersionCode) => {
     fs.writeFileSync(buildGradlePath, updatedGradle);
     
     // 3. Update app.json (Expo/iOS)
-    console.log('🍎 Updating app.json...');
+    console.log('🍎 Updating app.json for iOS...');
     const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+    
+    // iOS versioning:
+    // - expo.version: semantic version (e.g., "2.0.3")
+    // - expo.ios.buildNumber: incremental build number (e.g., "11")
     appJson.expo.version = newVersion;
-    appJson.expo.ios.buildNumber = newVersion;
+    appJson.expo.ios.buildNumber = String(newVersionCode);
+    
     fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2));
+    console.log(`   iOS version: ${newVersion}`);
+    console.log(`   iOS buildNumber: ${newVersionCode}`);
     
     console.log('✅ All files updated successfully!');
     console.log(`📱 Version: ${newVersion}`);
@@ -85,7 +92,7 @@ const checkCurrentVersions = () => {
     }
     
     const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-    console.log(`🍎 app.json: ${appJson.expo.version}`);
+    console.log(`🍎 iOS version: ${appJson.expo.version} (buildNumber: ${appJson.expo.ios.buildNumber})`);
     
   } catch (error) {
     console.error('❌ Error reading current versions:', error.message);

@@ -17,7 +17,8 @@ export default {
       "**/*"
     ],
     ios: {
-      supportsTablet: true
+      supportsTablet: true,
+      bundleIdentifier: "com.p.zzles.xscard"
     },
     android: {
       adaptiveIcon: {

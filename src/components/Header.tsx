@@ -205,7 +205,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
           onPress={() => setIsMenuVisible(true)}
         >
           <Text style={styles.iconContainer}>
-            <MaterialIcons name="menu" size={24} color={COLORS.black} />
+            <MaterialIcons name="menu" size={24} color={COLORS.white} />
           </Text>
         </TouchableOpacity>
 
@@ -217,7 +217,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
           {showAddButton && userPlan !== 'free' && userPlan !== 'enterprise' && (
             <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
               <Text style={styles.iconContainer}>
-                <MaterialIcons name="add" size={24} color={COLORS.black} />
+                <MaterialIcons name="add" size={24} color={COLORS.white} />
               </Text>
             </TouchableOpacity>
           )}
@@ -301,12 +301,12 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 20 : 55,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 55,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.secondary,
     zIndex: 1,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.black,
+    color: COLORS.white,
   },
   icon: {
     width: 24,

@@ -337,7 +337,7 @@ class RevenueCatService {
         // But server webhook will be the final source of truth
         await AsyncStorage.setItem('subscriptionStatus', JSON.stringify({
           isActive: true,
-          productIdentifier: productToPurchase.identifier,
+          productIdentifier: rcPackage.product.identifier,
           purchaseDate: new Date().toISOString(),
           customerInfo: customerInfo,
           needsServerVerification: true // Flag to indicate server needs to verify

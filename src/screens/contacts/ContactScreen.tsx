@@ -38,6 +38,7 @@ import { AuthManager } from '../../utils/authManager';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
+const DEFAULT_COUNTRY_CODE = '+27'; // South Africa
 
 // Type definitions
 interface Timestamp {
@@ -247,6 +248,32 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
       </View>
     </View>
   );
+};
+
+// Utility function to format phone number with country code
+const formatPhoneWithCountryCode = (phone: string): string => {
+  if (!phone) return '';
+  
+  // Remove any spaces, hyphens, or parentheses
+  const cleanedPhone = phone.replace(/[\s\-\(\)]/g, '');
+  
+  // If already has a country code (starts with +), return as is
+  if (cleanedPhone.startsWith('+')) {
+    return cleanedPhone;
+  }
+  
+  // If starts with 00, replace with +
+  if (cleanedPhone.startsWith('00')) {
+    return '+' + cleanedPhone.substring(2);
+  }
+  
+  // If starts with 0 (local number), add country code
+  if (cleanedPhone.startsWith('0')) {
+    return DEFAULT_COUNTRY_CODE + cleanedPhone.substring(1);
+  }
+  
+  // Otherwise, add country code to the number
+  return DEFAULT_COUNTRY_CODE + cleanedPhone;
 };
 
 // Main Component
@@ -547,7 +574,7 @@ export default function ContactsScreen() {
           
           let message: string;
           if (contact) {
-            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
           } else {
             const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
             message = `Check out my digital business card! ${shareUrl}`;
@@ -576,7 +603,7 @@ export default function ContactsScreen() {
           
           let message: string;
           if (contact) {
-            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
           } else {
             const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
             message = `Check out my business card: ${shareUrl}`;
@@ -605,7 +632,7 @@ export default function ContactsScreen() {
           let emailUrl = '';
           
           if (contact) {
-            const formattedMessage = `Hello,\n\nI wanted to share this contact information with you:\n\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}\n\nBest regards,\n${userData.name || ''} ${userData.surname || ''}`;
+            const formattedMessage = `Hello,\n\nI wanted to share this contact information with you:\n\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}\n\nBest regards,\n${userData.name || ''} ${userData.surname || ''}`;
             
             emailUrl = `mailto:?subject=${encodeURIComponent(`Contact Information - ${contact.name} ${contact.surname}`)}&body=${encodeURIComponent(formattedMessage)}`;
           } else {
@@ -639,7 +666,7 @@ export default function ContactsScreen() {
           let url: string;
           
           if (contact) {
-            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
             url = '';
           } else {
             const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
@@ -672,7 +699,7 @@ export default function ContactsScreen() {
           let url: string;
           
           if (contact) {
-            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
             url = '';
           } else {
             const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
@@ -812,7 +839,7 @@ export default function ContactsScreen() {
               <MaterialIcons 
                 name={remainingContacts === 0 ? "error-outline" : "people-outline"} 
                 size={22} 
-                color={remainingContacts === 0 ? COLORS.error : colorScheme} 
+                color={remainingContacts === 0 ? COLORS.error : COLORS.primary} 
               />
             </View>
             <View style={styles.contactCountContent}>
@@ -832,11 +859,11 @@ export default function ContactsScreen() {
                       width: typeof remainingContacts === 'number' 
                         ? `${(remainingContacts / FREE_PLAN_CONTACT_LIMIT) * 100}%`
                         : '0%',
-                      backgroundColor: remainingContacts === 0 
+                      backgroundColor: remainingContacts === 5 
                         ? COLORS.error 
-                        : remainingContacts === 1 
+                        : remainingContacts === 10 
                           ? '#FFA500'
-                          : colorScheme
+                          : COLORS.primary
                     }
                   ]} 
                 />
@@ -943,7 +970,7 @@ export default function ContactsScreen() {
                         </Text>
                         <View style={styles.contactSubInfo}>
                           <Text style={styles.contactPhone}>
-                            {contact.phone}
+                            {formatPhoneWithCountryCode(contact.phone)}
                           </Text>
                           {contact.email && (
                             <Text style={styles.contactEmail}>
@@ -1067,7 +1094,7 @@ export default function ContactsScreen() {
                   <View style={styles.contactInfoSection}>
                     <View style={styles.contactInfoRow}>
                       <MaterialIcons name="phone" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
-                      <Text style={styles.contactInfoText}>{selectedContactForOptions.phone}</Text>
+                      <Text style={styles.contactInfoText}>{formatPhoneWithCountryCode(selectedContactForOptions.phone)}</Text>
                     </View>
                     
                     {selectedContactForOptions.email && (
