@@ -208,6 +208,29 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
       const result = await revenueCatService.purchasePackage(targetPackage.identifier);
       
       if (result.success) {
+        console.log('✅ Purchase successful, syncing with backend...');
+        
+        // CRITICAL: Sync with backend to update Firestore database
+        // This is necessary because webhooks don't fire for simulator purchases
+        try {
+          const syncResponse = await authenticatedFetchWithRefresh(ENDPOINTS.REVENUECAT_SYNC, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (syncResponse.ok) {
+            const syncData = await syncResponse.json();
+            console.log('✅ Backend sync successful:', syncData);
+          } else {
+            console.warn('⚠️ Backend sync failed, but purchase was successful');
+          }
+        } catch (syncError) {
+          console.error('❌ Backend sync error:', syncError);
+          // Don't fail the purchase flow - user already paid
+        }
+        
         // Update subscription status
         const status = await revenueCatService.getSubscriptionStatus();
         setRevenueCatStatus(status);
@@ -509,6 +532,31 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
 
   const symbol = currencySymbols[currency];
 
+  // Helper function to get trial text from package
+  const getTrialText = (pkg: SubscriptionPackage | undefined): string => {
+    if (!pkg?.product.introPrice) return '';
+    
+    const intro = pkg.product.introPrice;
+    if (intro.price === 0) {
+      // Free trial
+      const duration = `${intro.periodNumberOfUnits} ${intro.periodUnit.toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''}`;
+      return `${duration} free trial`;
+    }
+    // Discounted trial
+    return `${intro.priceString} for ${intro.periodNumberOfUnits} ${intro.periodUnit.toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''}`;
+  };
+
+  // Get packages for display
+  const annualPackage = revenueCatPackages.find(pkg => 
+    pkg.identifier.includes('annual') || pkg.packageType === 'ANNUAL'
+  );
+  const monthlyPackage = revenueCatPackages.find(pkg => 
+    pkg.identifier.includes('monthly') || pkg.packageType === 'MONTHLY'
+  );
+
+  // Determine if we're using RevenueCat pricing
+  const useRevenueCat = shouldUseRevenueCat() && revenueCatPackages.length > 0;
+
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity 
@@ -536,43 +584,104 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             disabled={isProcessing}
           >
             <Text style={styles.trialButtonText}>
-              {isProcessing ? 'Processing...' : 'Start your 7-day free trial'}
+              {isProcessing ? 'Processing...' : (() => {
+                const currentPackage = selectedPlan === 'annually' ? annualPackage : monthlyPackage;
+                const trialText = currentPackage?.product.introPrice 
+                  ? `Start your ${getTrialText(currentPackage)}`
+                  : 'Subscribe Now';
+                return trialText;
+              })()}
             </Text>
           </TouchableOpacity>
 
-          {/* Currency Toggle */}
-          <CurrencyToggle />
+          {/* Currency Toggle - Only show for non-RevenueCat platforms */}
+          {!useRevenueCat && <CurrencyToggle />}
 
           {/* Pricing Options */}
           <View style={styles.pricingContainer}>
-            <TouchableOpacity 
-              style={[
-                styles.planOption,
-                selectedPlan === 'annually' && styles.selectedPlan
-              ]}
-              onPress={() => setSelectedPlan('annually')}
-            >
-              <View style={styles.saveBadge}>
-                <Text style={styles.saveText}>Save {symbol}{pricing[currency].annually.save}</Text>
-              </View>
-              <Text style={styles.planType}>Annually</Text>
-              <Text style={styles.price}>{symbol}{pricing[currency].annually.total.toFixed(2)}</Text>
-              <Text style={styles.monthlyPrice}>{symbol}{pricing[currency].annually.monthly.toFixed(2)}/month</Text>
-            </TouchableOpacity>
+            {/* Annual Plan */}
+            {useRevenueCat && annualPackage ? (
+              <TouchableOpacity 
+                style={[
+                  styles.planOption,
+                  selectedPlan === 'annually' && styles.selectedPlan
+                ]}
+                onPress={() => setSelectedPlan('annually')}
+              >
+                {monthlyPackage && (
+                  <View style={styles.saveBadge}>
+                    <Text style={styles.saveText}>
+                      Save {annualPackage.product.currencyCode === 'USD' ? '$' : ''}{(monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.planType}>Annually</Text>
+                <Text style={styles.price}>{annualPackage.product.priceString}</Text>
+                <Text style={styles.monthlyPrice}>
+                  {(annualPackage.product.price / 12).toFixed(2)} {annualPackage.product.currencyCode}/month
+                </Text>
+                {annualPackage.product.introPrice && (
+                  <Text style={styles.trialBadge}>{getTrialText(annualPackage)}</Text>
+                )}
+              </TouchableOpacity>
+            ) : !useRevenueCat && (
+              <TouchableOpacity 
+                style={[
+                  styles.planOption,
+                  selectedPlan === 'annually' && styles.selectedPlan
+                ]}
+                onPress={() => setSelectedPlan('annually')}
+              >
+                <View style={styles.saveBadge}>
+                  <Text style={styles.saveText}>Save {symbol}{pricing[currency].annually.save}</Text>
+                </View>
+                <Text style={styles.planType}>Annually</Text>
+                <Text style={styles.price}>{symbol}{pricing[currency].annually.total.toFixed(2)}</Text>
+                <Text style={styles.monthlyPrice}>{symbol}{pricing[currency].annually.monthly.toFixed(2)}/month</Text>
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity 
-              style={[
-                styles.planOption,
-                selectedPlan === 'monthly' && styles.selectedPlan
-              ]}
-              onPress={() => setSelectedPlan('monthly')}
-            >
-              <Text style={styles.planType}>Monthly</Text>
-              <Text style={styles.price}>{symbol}{pricing[currency].monthly.total.toFixed(2)}</Text>
-            </TouchableOpacity>
+            {/* Monthly Plan */}
+            {useRevenueCat && monthlyPackage ? (
+              <TouchableOpacity 
+                style={[
+                  styles.planOption,
+                  selectedPlan === 'monthly' && styles.selectedPlan
+                ]}
+                onPress={() => setSelectedPlan('monthly')}
+              >
+                <Text style={styles.planType}>Monthly</Text>
+                <Text style={styles.price}>{monthlyPackage.product.priceString}</Text>
+                {monthlyPackage.product.introPrice && (
+                  <Text style={styles.trialBadge}>{getTrialText(monthlyPackage)}</Text>
+                )}
+              </TouchableOpacity>
+            ) : !useRevenueCat && (
+              <TouchableOpacity 
+                style={[
+                  styles.planOption,
+                  selectedPlan === 'monthly' && styles.selectedPlan
+                ]}
+                onPress={() => setSelectedPlan('monthly')}
+              >
+                <Text style={styles.planType}>Monthly</Text>
+                <Text style={styles.price}>{symbol}{pricing[currency].monthly.total.toFixed(2)}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          <Text style={styles.cancelText}>7-day free trial. Cancel anytime</Text>
+          {/* Trial text - Dynamic based on selected plan */}
+          {useRevenueCat ? (
+            <Text style={styles.cancelText}>
+              {selectedPlan === 'annually' && annualPackage?.product.introPrice
+                ? `${getTrialText(annualPackage)}. Cancel anytime`
+                : selectedPlan === 'monthly' && monthlyPackage?.product.introPrice
+                ? `${getTrialText(monthlyPackage)}. Cancel anytime`
+                : 'Cancel anytime'}
+            </Text>
+          ) : (
+            <Text style={styles.cancelText}>7-day free trial. Cancel anytime</Text>
+          )}
 
           {/* Feature Comparison */}
           <View style={styles.comparisonContainer}>
@@ -788,6 +897,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 5,
+  },
+  trialBadge: {
+    fontSize: 13,
+    color: '#FF6B6B',
+    fontWeight: '600',
+    marginTop: 8,
   },
   cancelText: {
     textAlign: 'center',

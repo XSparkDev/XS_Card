@@ -206,11 +206,6 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
         </View>
 
         <View style={styles.rightIconContainer}>
-          {/* DEBUG: Show current userPlan */}
-          <Text style={{ color: 'red', fontSize: 10, position: 'absolute', top: -20, right: 0 }}>
-            DEBUG: {userPlan}
-          </Text>
-          
           {showAddButton && userPlan !== 'free' && userPlan !== 'enterprise' && (
             <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
               <Text style={styles.iconContainer}>
@@ -234,11 +229,6 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
           onPress={() => setIsMenuVisible(false)}
         >
           <View style={styles.menuContainer}>
-            {/* DEBUG: Show current userPlan */}
-            <Text style={{ color: 'red', fontSize: 12, textAlign: 'center', marginBottom: 10 }}>
-              DEBUG: userPlan = {userPlan}
-            </Text>
-            
             {userPlan !== 'free' && (
               <TouchableOpacity 
                 style={styles.menuItem}

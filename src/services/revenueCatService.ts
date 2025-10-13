@@ -36,6 +36,13 @@ export interface SubscriptionPackage {
     price: number;
     priceString: string;
     currencyCode: string;
+    introPrice?: {
+      price: number;
+      priceString: string;
+      period: string;
+      periodUnit: string;
+      periodNumberOfUnits: number;
+    } | null;
   };
   offeringIdentifier: string;
 }
@@ -132,6 +139,21 @@ class RevenueCatService {
       if (selectedOffering && selectedOffering.availablePackages.length > 0) {
         // Use offerings if available
         for (const packageItem of selectedOffering.availablePackages) {
+          // Extract introductory offer information if available
+          const product = packageItem.product as any;
+          let introPrice = null;
+          
+          if (product.introPrice) {
+            introPrice = {
+              price: product.introPrice.price || 0,
+              priceString: product.introPrice.priceString || 'Free',
+              period: product.introPrice.period || '',
+              periodUnit: product.introPrice.periodUnit || '',
+              periodNumberOfUnits: product.introPrice.periodNumberOfUnits || 0,
+            };
+            console.log(`RevenueCat: Intro price for ${product.identifier}:`, introPrice);
+          }
+          
           packages.push({
             identifier: packageItem.identifier,
             packageType: packageItem.packageType,
@@ -142,6 +164,7 @@ class RevenueCatService {
               price: packageItem.product.price,
               priceString: packageItem.product.priceString,
               currencyCode: packageItem.product.currencyCode,
+              introPrice,
             },
             offeringIdentifier: packageItem.offeringIdentifier,
           });

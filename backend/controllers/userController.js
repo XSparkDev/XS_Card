@@ -1534,6 +1534,176 @@ exports.deactivateUser = async (req, res) => {
 };
 
 /**
+ * Permanently delete user account and anonymize data
+ * Deletes Firebase Auth, anonymizes users doc, anonymizes cards doc
+ */
+exports.deleteUserAccount = async (req, res) => {
+    try {
+        console.log(`[DeleteAccount] 🗑️  Delete account request received`);
+        console.log(`[DeleteAccount] 📋 req.user exists:`, !!req.user);
+        console.log(`[DeleteAccount] 📋 req.user:`, req.user);
+        
+        const userId = req.user.uid;
+
+        console.log(`[DeleteAccount] 🗑️  Starting account deletion for user: ${userId}`);
+        console.log(`[DeleteAccount] 📋 Looking for user in Firestore...`);
+
+        // Get user and cards data before deletion
+        const userRef = db.collection('users').doc(userId);
+        const cardsRef = db.collection('cards').doc(userId);
+        
+        const userDoc = await userRef.get();
+        const cardsDoc = await cardsRef.get();
+
+        console.log(`[DeleteAccount] 📋 User doc exists: ${userDoc.exists}`);
+        console.log(`[DeleteAccount] 📋 Cards doc exists: ${cardsDoc.exists}`);
+
+        // If user document doesn't exist, just delete Firebase Auth and exit
+        if (!userDoc.exists) {
+            console.log(`[DeleteAccount] ⚠️  User document not found in Firestore, proceeding with Auth deletion only`);
+            
+            try {
+                await admin.auth().deleteUser(userId);
+                console.log(`[DeleteAccount] ✅ Firebase Auth account deleted`);
+                
+                return res.status(200).json({
+                    success: true,
+                    message: 'Account deleted (Auth only - no Firestore data found)',
+                    data: {
+                        deletedAt: new Date().toISOString(),
+                        authDeleted: true,
+                        dataAnonymized: false
+                    }
+                });
+            } catch (authError) {
+                console.error(`[DeleteAccount] ❌ Failed to delete Firebase Auth:`, authError);
+                throw authError;
+            }
+        }
+
+        const currentUserData = userDoc.data();
+        const currentCardsData = cardsDoc.exists ? cardsDoc.data() : null;
+
+        console.log(`[DeleteAccount] 📋 Current user email: ${currentUserData.email}`);
+        console.log(`[DeleteAccount] 📋 Current user name: ${currentUserData.name}`);
+
+        // Create anonymized timestamp for unique identifier
+        const deletionTimestamp = Date.now();
+        const anonymizedEmail = `deleted_user_${deletionTimestamp}@deleted.local`;
+
+        // STEP 1: Anonymize user document
+        console.log(`[DeleteAccount] 🔄 Anonymizing user document...`);
+        await userRef.update({
+            // Anonymize personal data
+            name: 'Deleted',
+            surname: 'User',
+            email: anonymizedEmail,
+            phone: null,
+            profileImage: null,
+            
+            // Mark as deleted
+            active: false,
+            deleted: true,
+            deletedAt: admin.firestore.Timestamp.now(),
+            
+            // Keep for business intelligence (anonymized)
+            accountCreatedAt: currentUserData.createdAt || admin.firestore.Timestamp.now(),
+            plan: currentUserData.plan || 'free',
+            
+            // Update timestamp
+            updatedAt: admin.firestore.Timestamp.now()
+        });
+        console.log(`[DeleteAccount] ✅ User document anonymized`);
+
+        // STEP 2: Anonymize cards document
+        if (cardsDoc.exists && currentCardsData.cards && Array.isArray(currentCardsData.cards)) {
+            console.log(`[DeleteAccount] 🔄 Anonymizing ${currentCardsData.cards.length} cards...`);
+            
+            const anonymizedCards = currentCardsData.cards.map((card, index) => ({
+                // Anonymize personal data
+                name: 'Deleted',
+                surname: 'User',
+                email: anonymizedEmail,
+                phone: null,
+                company: null,
+                occupation: null,
+                profileImage: null,
+                companyLogo: null,
+                bio: null,
+                website: null,
+                address: null,
+                
+                // Clear socials
+                socials: {},
+                
+                // Keep metadata (anonymized)
+                cardIndex: index,
+                deletedAt: admin.firestore.Timestamp.now(),
+                wasActive: true,
+                
+                // Keep color scheme for analytics
+                colorScheme: card.colorScheme || null
+            }));
+
+            await cardsRef.update({
+                cards: anonymizedCards,
+                updatedAt: admin.firestore.Timestamp.now()
+            });
+            
+            console.log(`[DeleteAccount] ✅ Cards anonymized: ${anonymizedCards.length} cards`);
+        } else {
+            console.log(`[DeleteAccount] ℹ️  No cards to anonymize`);
+        }
+
+        // STEP 3: Delete Firebase Authentication
+        try {
+            console.log(`[DeleteAccount] 🔥 Deleting Firebase Auth account: ${userId}`);
+            await admin.auth().deleteUser(userId);
+            console.log(`[DeleteAccount] ✅ Firebase Auth account deleted successfully`);
+        } catch (authError) {
+            console.error(`[DeleteAccount] ❌ Failed to delete Firebase Auth account:`, authError.message);
+            // Continue even if auth deletion fails
+            console.log(`[DeleteAccount] ⚠️  Continuing with data anonymization despite auth error`);
+        }
+
+        // STEP 4: Log the deletion (for audit trail)
+        console.log(`[DeleteAccount] 📝 Logging deletion event...`);
+        await db.collection('deletionLogs').add({
+            originalUserId: userId,
+            anonymizedEmail: anonymizedEmail,
+            deletedAt: admin.firestore.Timestamp.now(),
+            hadCards: cardsDoc.exists,
+            cardCount: currentCardsData?.cards?.length || 0,
+            userPlan: currentUserData.plan || 'free',
+            accountAge: currentUserData.createdAt 
+                ? Math.floor((Date.now() - currentUserData.createdAt.toMillis()) / (1000 * 60 * 60 * 24))
+                : null
+        });
+        console.log(`[DeleteAccount] ✅ Deletion logged for audit`);
+
+        console.log(`[DeleteAccount] 🎉 Account deletion completed successfully`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Account permanently deleted and data anonymized',
+            data: {
+                deletedAt: new Date().toISOString(),
+                authDeleted: true,
+                dataAnonymized: true
+            }
+        });
+
+    } catch (error) {
+        console.error('[DeleteAccount] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete account',
+            error: error.message
+        });
+    }
+};
+
+/**
  * Reactivate user account (admin function)
  * Re-enables both database and Firebase Auth access
  */

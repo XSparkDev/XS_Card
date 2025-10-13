@@ -43,6 +43,11 @@ router.post('/test-token-refresh-success', userController.testTokenRefreshSucces
 router.post('/logout', userController.logout);
 router.post('/resend-verification/:uid', userController.resendVerification);
 router.get('/Users', userController.getAllUsers);
+
+// Account deletion endpoint (permanent - deletes auth & anonymizes data)
+// MUST be before /Users/:id to avoid route conflict
+router.delete('/Users/delete-account', authenticateUser, userController.deleteUserAccount);
+
 router.get('/Users/:id', userController.getUserById);
 router.patch('/UpdateUser/:id', handleSingleUpload('profileImage'), userController.updateUser);
 router.delete('/Users/:id', userController.deleteUser);
