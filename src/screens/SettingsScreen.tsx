@@ -267,7 +267,12 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <Header title="Settings" />
       
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        bounces={true}
+      >
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -393,7 +398,14 @@ export default function SettingsScreen() {
           {renderSettingItem(
             'security',
             'Privacy & Security',
-            'Manage your privacy settings',
+            'Manage your privacy and security settings',
+            () => navigation.navigate('PrivacySecurity')
+          )}
+
+          {renderSettingItem(
+            'help',
+            'Help & Support',
+            'Get help and contact support',
             undefined,
             false
           )}
@@ -459,6 +471,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 100,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   section: {
     marginBottom: 24,
@@ -545,6 +560,6 @@ const styles = StyleSheet.create({
     color: COLORS.error,
   },
   bottomSpacing: {
-    height: 40,
+    height: 100,
   },
 }); 

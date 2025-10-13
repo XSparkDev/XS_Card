@@ -21,6 +21,10 @@ export const REVENUECAT_CONFIG = {
  */
 export const getRevenueCatApiKey = (): string => {
   const { Platform } = require('react-native');
+
+  if (__DEV__) {
+    return 'test_HfrWLhYfwFCLigMSxEpwiFqXRfx';
+  }
   
   return Platform.OS === 'ios' 
     ? REVENUECAT_CONFIG.IOS_PUBLIC_KEY

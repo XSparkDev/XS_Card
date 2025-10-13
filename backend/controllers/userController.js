@@ -890,6 +890,89 @@ exports.resetPassword = async (req, res) => {
     }
 };
 
+// Change password function (reuses reset password logic but for authenticated users)
+exports.changePassword = async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.uid; // From auth middleware
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).send({ message: 'Current password and new password are required' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8) {
+        return res.status(400).send({ message: 'Password must be at least 8 characters long' });
+    }
+
+    // Additional password validation
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
+    
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+        return res.status(400).send({ 
+            message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&*)' 
+        });
+    }
+
+    try {
+        // Get user document
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        const userData = userDoc.data();
+
+        // Verify current password using Firebase REST API
+        try {
+            const response = await axios.post(AUTH_ENDPOINTS.signIn, {
+                email: userData.email,
+                password: currentPassword,
+                returnSecureToken: true
+            });
+            
+            // If we get here, the password is correct
+            console.log('Current password verified successfully');
+        } catch (authError) {
+            console.log('Current password verification failed:', authError.response?.data?.error?.message);
+            return res.status(400).send({ message: 'Current password is incorrect' });
+        }
+
+        // Update password in Firebase Auth
+        await admin.auth().updateUser(userId, {
+            password: newPassword
+        });
+
+        // Send confirmation email
+        await sendMailWithStatus({
+            to: userData.email,
+            subject: 'XS Card - Password Successfully Changed',
+            html: `
+                <h1>Password Successfully Changed</h1>
+                <p>Hello ${userData.name || userData.surname || 'User'},</p>
+                <p>Your password has been successfully changed.</p>
+                <p>If you didn't make this change, please contact us immediately.</p>
+                <p>For security, please sign in with your new password.</p>
+            `
+        });
+
+        res.status(200).send({ 
+            message: 'Password changed successfully. You can now sign in with your new password.'
+        });
+
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).send({ 
+            message: 'Failed to change password',
+            error: error.message 
+        });
+    }
+};
+
 // Add new function to get user info for reset page
 exports.getResetUserInfo = async (req, res) => {
     const { token, uid } = req.query;
@@ -1412,6 +1495,19 @@ exports.deactivateUser = async (req, res) => {
         });
         console.log(`[DeactivateUser] ✅ Database update completed`);
 
+        // DISABLE Firebase Auth account (NOT delete - just disable)
+        try {
+            console.log(`[DeactivateUser] 🔒 Disabling Firebase Auth account: ${userId}`);
+            await admin.auth().updateUser(userId, {
+                disabled: true
+            });
+            console.log(`[DeactivateUser] ✅ Firebase Auth account disabled successfully`);
+        } catch (authError) {
+            console.error(`[DeactivateUser] ❌ Failed to disable Firebase Auth account:`, authError.message);
+            // Don't fail the entire operation if auth disable fails
+            console.log(`[DeactivateUser] ⚠️ Continuing with database deactivation despite auth error`);
+        }
+
         // Verify the update by reading the document again
         const updatedDoc = await userRef.get();
         const updatedData = updatedDoc.data();
@@ -1432,6 +1528,71 @@ exports.deactivateUser = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to deactivate user account',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Reactivate user account (admin function)
+ * Re-enables both database and Firebase Auth access
+ */
+exports.reactivateUser = async (req, res) => {
+    try {
+        const userId = req.user.uid;
+        const { targetUserId } = req.body; // Admin can reactivate other users
+
+        const targetUser = targetUserId || userId;
+        console.log(`[ReactivateUser] 🔄 Reactivating user: ${targetUser}`);
+
+        const userRef = db.collection('users').doc(targetUser);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            console.log(`[ReactivateUser] ❌ User not found: ${targetUser}`);
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Update user active status
+        console.log(`[ReactivateUser] 🔄 Updating active field to: true`);
+        await userRef.update({
+            active: true,
+            reactivatedAt: admin.firestore.Timestamp.now(),
+            updatedAt: admin.firestore.Timestamp.now()
+        });
+        console.log(`[ReactivateUser] ✅ Database update completed`);
+
+        // ENABLE Firebase Auth account
+        try {
+            console.log(`[ReactivateUser] 🔓 Enabling Firebase Auth account: ${targetUser}`);
+            await admin.auth().updateUser(targetUser, {
+                disabled: false
+            });
+            console.log(`[ReactivateUser] ✅ Firebase Auth account enabled successfully`);
+        } catch (authError) {
+            console.error(`[ReactivateUser] ❌ Failed to enable Firebase Auth account:`, authError.message);
+            // Don't fail the entire operation if auth enable fails
+            console.log(`[ReactivateUser] ⚠️ Continuing with database reactivation despite auth error`);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Account reactivated successfully',
+            data: {
+                userId: targetUser,
+                active: true,
+                reactivatedAt: new Date().toISOString()
+            }
+        });
+
+    } catch (error) {
+        console.error('Reactivate user error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reactivate account',
             error: error.message
         });
     }

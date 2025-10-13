@@ -2042,9 +2042,39 @@ const renderEventDate = (dateStr: string) => {
           onDayPress={(day: DateData) => setSelectedDate(day.dateString)}
         />
 
+        {/* Schedule Meeting Button */}
+        <TouchableOpacity
+          style={[
+            styles.scheduleMeetingButton,
+            selectedDate && styles.scheduleMeetingButtonActive
+          ]}
+          onPress={() => {
+            if (selectedDate) {
+              setIsTimeModalVisible(true);
+            }
+          }}
+        >
+          <MaterialCommunityIcons 
+            name="calendar-plus" 
+            size={20} 
+            color={selectedDate ? COLORS.white : COLORS.primary} 
+            style={styles.scheduleMeetingIcon}
+          />
+          <Text style={[
+            styles.scheduleMeetingText,
+            selectedDate && styles.scheduleMeetingTextActive
+          ]}>
+            Schedule Meeting
+          </Text>
+        </TouchableOpacity>
+
+
         <View style={styles.eventsSection}>
-          <Text style={styles.upcomingTitle}>Upcoming Events</Text>
-          {events.length > 0 ? (
+          <Text style={styles.upcomingTitle}>
+            Upcoming Meetings
+          </Text>
+          {(() => {
+            return events.length > 0 ? (
             Platform.OS === 'ios' ? (
               <View style={styles.eventsWrapper}>
                 <ScrollView 
@@ -2073,26 +2103,11 @@ const renderEventDate = (dateStr: string) => {
               </View>
             )
           ) : (
-            <Text style={styles.emptyEventsMessage}>No events scheduled</Text>
-          )}
-          <TouchableOpacity
-            style={[
-              styles.createEventButton,
-              selectedDate && styles.createEventButtonActive
-            ]}
-            onPress={() => {
-              if (selectedDate) {
-                setIsTimeModalVisible(true);
-              }
-            }}
-          >
-            <Text style={[
-              styles.createEventText,
-              selectedDate && styles.createEventTextActive            ]}>
-              + Create Events
+              <Text style={styles.emptyEventsMessage}>
+                No meetings scheduled
             </Text>
-          </TouchableOpacity>
-          
+            );
+          })()}
         </View>
       </ScrollView>
 
@@ -2363,6 +2378,35 @@ const styles = StyleSheet.create({
   },
   createEventTextActive: {
     color: 'white',
+  },
+  scheduleMeetingButton: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  scheduleMeetingButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  scheduleMeetingIcon: {
+    marginRight: 8,
+  },
+  scheduleMeetingText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  scheduleMeetingTextActive: {
+    color: 'white',
+    fontWeight: '600',
   },
   modalContainer: {
     flex: 1,

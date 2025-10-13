@@ -126,13 +126,13 @@ router.get('/products', authenticateUser, (req, res) => {
             platform: isAndroid ? 'android' : 'ios'
         });
         
-    } catch (error) {
+  } catch (error) {
         console.error('[RevenueCat Products] Error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to get product IDs'
         });
-    }
+  }
 });
 
 module.exports = router;

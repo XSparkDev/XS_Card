@@ -38,7 +38,21 @@ async function cleanupOldSubscriptions() {
         console.log('\n🔄 Step 2: Resetting users to free plan...');
         const batch = db.batch();
         
+        // Users to exclude from cleanup (preserve their subscriptions)
+        const excludedEmails = [
+            'sapho@xspark.co.za',
+            'khaya@xspark.co.za',
+            'themba@everynationel.org'
+        ];
+        
         for (const user of usersWithSubscriptions) {
+            const isExcluded = excludedEmails.includes(user.email);
+            
+            if (isExcluded) {
+                console.log(`   🛡️ EXCLUDED: ${user.email} (${user.plan}) - keeping subscription`);
+                continue;
+            }
+            
             const userRef = db.collection('users').doc(user.id);
             
             // Reset to free plan, remove subscription fields

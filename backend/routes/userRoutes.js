@@ -62,4 +62,10 @@ router.post('/user/subscription-level', userController.setUserSubscriptionLevel)
 // Account deactivation endpoint
 router.patch('/Users', userController.deactivateUser);
 
+// Account reactivation endpoint (admin function)
+router.patch('/Users/reactivate', authenticateUser, userController.reactivateUser);
+
+// Change password endpoint
+router.post('/change-password', userController.changePassword);
+
 module.exports = router;

@@ -21,6 +21,7 @@ import { useAuth } from '../../context/AuthContext';
 import { shouldUseRevenueCat, getPlatformConfig } from '../../utils/paymentPlatform';
 import revenueCatService, { SubscriptionPackage, SubscriptionStatus } from '../../services/revenueCatService';
 import { getRevenueCatApiKey } from '../../config/revenueCatConfig';
+import { PRICING, DEFAULT_CURRENCY, getUserCurrency, getPricing } from '../../config/pricing';
 
 type UnlockPremiumStackParamList = {
   UnlockPremium: undefined;
@@ -33,7 +34,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const [isProcessing, setIsProcessing] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [currency, setCurrency] = useState<'ZAR' | 'USD'>('ZAR');
+  const [currency, setCurrency] = useState<'ZAR' | 'USD'>(DEFAULT_CURRENCY as 'ZAR' | 'USD');
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
   const [loadingSubscriptionData, setLoadingSubscriptionData] = useState(false);
   const { logout } = useAuth(); // Use our centralized auth context
@@ -43,15 +44,18 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const [revenueCatStatus, setRevenueCatStatus] = useState<SubscriptionStatus | null>(null);
   const [loadingRevenueCat, setLoadingRevenueCat] = useState(false);
 
-  // Define pricing for both currencies
+  // Get current pricing based on selected currency
+  const currentPricing = getPricing(currency);
+  
+  // Format pricing for display - maintain the expected structure
   const pricing = {
-    ZAR: {
-      annually: { total: 1800, monthly: 150, save: 120 },
-      monthly: { total: 159.99 }
-    },
-    USD: {
-      annually: { total: 99, monthly: 8.25, save: 7 },
-      monthly: { total: 8.99 }
+    [currency]: {
+      annually: { 
+        total: currentPricing.annual, 
+        monthly: currentPricing.annual / 12, 
+        save: Math.round((currentPricing.monthly * 12) - currentPricing.annual) 
+      },
+      monthly: { total: currentPricing.monthly }
     }
   };
 
@@ -62,6 +66,11 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   };
 
   useEffect(() => {
+    // Auto-detect user's preferred currency
+    const detectedCurrency = getUserCurrency();
+    setCurrency(detectedCurrency as 'ZAR' | 'USD');
+    console.log(`Auto-detected currency: ${detectedCurrency}`);
+
     const getUserData = async () => {
       try {
         const userData = await AsyncStorage.getItem('userData');
@@ -138,23 +147,32 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const checkSubscriptionStatus = async () => {
     setLoadingSubscriptionData(true);
     try {
-      const response = await authenticatedFetchWithRefresh(ENDPOINTS.SUBSCRIPTION_STATUS, {
+      // CENTRALIZED RBAC: Only check users.plan field from GET_USER endpoint
+      const userId = await getUserId();
+      if (!userId) {
+        console.log('UnlockPremium: No user ID found');
+        return;
+      }
+      
+      const response = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_USER}/${userId}`, {
         method: 'GET',
       });
       
       if (response.ok) {
         const data = await response.json();
-        if (data.status && data.data?.isActive) {
-          setUserPlan('premium');
-          setSubscriptionData(data.data);
-          
-          // Update local storage with current subscription status
-          const userData = await AsyncStorage.getItem('userData');
-          if (userData) {
-            const parsedUserData = JSON.parse(userData);
-            parsedUserData.plan = 'premium';
-            await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
-          }
+        
+        // Get plan from users collection (single source of truth)
+        const userPlanFromDB = data.plan || 'free';
+        console.log('UnlockPremium: User plan from database:', userPlanFromDB);
+        
+        setUserPlan(userPlanFromDB);
+        
+        // Update local storage with current plan
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const parsedUserData = JSON.parse(userData);
+          parsedUserData.plan = userPlanFromDB;
+          await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
         }
       }
     } catch (error) {
@@ -238,69 +256,12 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     }
   };
 
-  // iOS restore purchases handler
-  const handleRestorePurchases = async () => {
-    if (!shouldUseRevenueCat()) {
-      return;
-    }
 
-    try {
-      setIsLoading(true);
-      
-      const result = await revenueCatService.restorePurchases();
-      
-      if (result.success) {
-        // Check if any subscriptions were restored
-        const status = await revenueCatService.getSubscriptionStatus();
-        setRevenueCatStatus(status);
-        
-        if (status?.isActive) {
-          Alert.alert(
-            'Purchases Restored!',
-            'Your premium subscription has been restored.',
-            [
-              {
-                text: 'Continue',
-                onPress: () => {
-                  checkSubscriptionStatus();
-                }
-              }
-            ]
-          );
-        } else {
-          Alert.alert('No Purchases Found', 'No previous purchases were found to restore.');
-        }
-      } else {
-        Alert.alert('Restore Failed', result.error || 'Could not restore purchases.');
-      }
-      
-    } catch (error) {
-      console.error('Restore purchases error:', error);
-      Alert.alert('Error', 'Failed to restore purchases. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Currency Toggle Component
+  // Currency Toggle Component - USD first (bigger market)
   const CurrencyToggle = () => (
     <View style={styles.currencyToggleContainer}>
       <Text style={styles.currencyToggleLabel}>Currency:</Text>
       <View style={styles.toggleContainer}>
-        <TouchableOpacity
-          style={[
-            styles.toggleOption,
-            currency === 'ZAR' && styles.toggleOptionActive
-          ]}
-          onPress={() => setCurrency('ZAR')}
-        >
-          <Text style={[
-            styles.toggleText,
-            currency === 'ZAR' && styles.toggleTextActive
-          ]}>
-            ZAR (R)
-          </Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={[
             styles.toggleOption,
@@ -313,6 +274,20 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             currency === 'USD' && styles.toggleTextActive
           ]}>
             USD ($)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.toggleOption,
+            currency === 'ZAR' && styles.toggleOptionActive
+          ]}
+          onPress={() => setCurrency('ZAR')}
+        >
+          <Text style={[
+            styles.toggleText,
+            currency === 'ZAR' && styles.toggleTextActive
+          ]}>
+            ZAR (R)
           </Text>
         </TouchableOpacity>
       </View>
@@ -368,58 +343,19 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     }
   };
 
-  const handleCancelSubscription = async () => {
+  const handleManageSubscription = () => {
     Alert.alert(
-      'Cancel Subscription',
-      'Are you sure you want to cancel your premium subscription? You will lose access to premium features at the end of your billing period.',
+      'Manage Subscription',
+      'To manage your subscription, you\'ll need to go to your device\'s app store.',
       [
-        {
-          text: 'No, Keep Premium',
-          style: 'cancel',
-        },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              const response = await authenticatedFetchWithRefresh(ENDPOINTS.CANCEL_SUBSCRIPTION, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                }
-              });
-              
-              if (response.ok) {
-                const result = await response.json();
-                console.log('Cancellation result:', result);
-                
-                if (result.status) {
-                  Alert.alert(
-                    'Subscription Cancelled', 
-                    'Your subscription has been cancelled successfully. You will now be logged out.',
-                    [
-                      {
-                        text: 'OK',
-                        onPress: () => logoutUser()
-                      }
-                    ]
-                  );
-                } else {
-                  Alert.alert('Error', result.message || 'Failed to cancel subscription.');
-                }
-              } else {
-                const errorResult = await response.json().catch(() => ({}));
-                Alert.alert('Error', errorResult.message || 'Failed to cancel subscription. Please try again.');
-              }
-            } catch (error) {
-              console.error('Error cancelling subscription:', error);
-              Alert.alert('Error', 'An error occurred while cancelling your subscription. Please try again or contact support.');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Open Store', 
+          onPress: () => {
+            // Navigate to subscription management screen
+            navigation.navigate('SubscriptionManagement' as never);
+          }
+        }
       ]
     );
   };
@@ -427,8 +363,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const handlePaymentInitiation = async () => {
     try {
       setIsProcessing(true);
-      const currentPricing = pricing[currency];
-      const amount = selectedPlan === 'annually' ? currentPricing.annually.total : currentPricing.monthly.total;
+      const amount = selectedPlan === 'annually' ? pricing[currency].annually.total : pricing[currency].monthly.total;
 
       const response = await authenticatedFetchWithRefresh(ENDPOINTS.INITIALIZE_PAYMENT, {
         method: 'POST',
@@ -560,19 +495,18 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
         ) : null}
         
         <TouchableOpacity
-          style={[styles.cancelButton, isLoading && styles.disabledButton]}
-          onPress={handleCancelSubscription}
+          style={[styles.manageButton, isLoading && styles.disabledButton]}
+          onPress={handleManageSubscription}
           disabled={isLoading}
         >
-          <Text style={styles.cancelButtonText}>
-            {isLoading ? 'Processing...' : 'Cancel Subscription'}
+          <Text style={styles.manageButtonText}>
+            Manage Subscription
           </Text>
         </TouchableOpacity>
       </View>
     );
   };
 
-  const currentPricing = pricing[currency];
   const symbol = currencySymbols[currency];
 
   return (
@@ -619,11 +553,11 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
               onPress={() => setSelectedPlan('annually')}
             >
               <View style={styles.saveBadge}>
-                <Text style={styles.saveText}>Save {symbol}{currentPricing.annually.save}</Text>
+                <Text style={styles.saveText}>Save {symbol}{pricing[currency].annually.save}</Text>
               </View>
               <Text style={styles.planType}>Annually</Text>
-              <Text style={styles.price}>{symbol}{currentPricing.annually.total.toFixed(2)}</Text>
-              <Text style={styles.monthlyPrice}>{symbol}{currentPricing.annually.monthly.toFixed(2)}/month</Text>
+              <Text style={styles.price}>{symbol}{pricing[currency].annually.total.toFixed(2)}</Text>
+              <Text style={styles.monthlyPrice}>{symbol}{pricing[currency].annually.monthly.toFixed(2)}/month</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -634,7 +568,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
               onPress={() => setSelectedPlan('monthly')}
             >
               <Text style={styles.planType}>Monthly</Text>
-              <Text style={styles.price}>{symbol}{currentPricing.monthly.total.toFixed(2)}</Text>
+              <Text style={styles.price}>{symbol}{pricing[currency].monthly.total.toFixed(2)}</Text>
             </TouchableOpacity>
           </View>
 
@@ -768,18 +702,6 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             </Text>
           </TouchableOpacity>
           
-          {/* iOS Restore Purchases Button */}
-          {shouldUseRevenueCat() && (
-            <TouchableOpacity 
-              style={styles.restoreButton}
-              onPress={handleRestorePurchases}
-              disabled={isLoading}
-            >
-              <Text style={styles.restoreButtonText}>
-                {isLoading ? 'Restoring...' : 'Restore Purchases'}
-              </Text>
-            </TouchableOpacity>
-          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -996,17 +918,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 30,
   },
-  cancelButton: {
-    backgroundColor: '#FF4444',
+  manageButton: {
+    backgroundColor: COLORS.primary,
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 25,
     marginTop: 10,
   },
-  cancelButtonText: {
+  manageButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   disabledButton: {
     opacity: 0.6,

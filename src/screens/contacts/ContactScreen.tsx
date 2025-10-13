@@ -31,7 +31,8 @@ import {
   API_BASE_URL, 
   ENDPOINTS, 
   getUserId, 
-  authenticatedFetchWithRefresh 
+  authenticatedFetchWithRefresh,
+  useToast 
 } from '../../utils/api';
 import { formatTimestamp } from '../../utils/dateFormatter';
 import { AuthManager } from '../../utils/authManager';
@@ -303,8 +304,7 @@ export default function ContactsScreen() {
   const [pendingShareContact, setPendingShareContact] = useState<Contact | null>(null);
   
   // Toast
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+  const toast = useToast();
   
   // Swipeable refs
   const swipeableRefs = useRef<Map<number, Swipeable | null>>(new Map());
@@ -324,12 +324,6 @@ export default function ContactsScreen() {
 
   // ============= CORE FUNCTIONS =============
   
-  // Toast utility
-  const showToast = useCallback((message: string) => {
-    setToastMessage(message);
-    setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 3000);
-  }, []);
 
   // Share functionality - moved before useEffect that uses it
   const handleShare = useCallback(async (contact?: Contact) => {
@@ -354,9 +348,9 @@ export default function ContactsScreen() {
       console.log('🚀 Share modal state should now be: visible=true, contact=', contact ? `${contact.name} ${contact.surname}` : 'null');
     } catch (error) {
       console.error('🚀 Error preparing share:', error);
-      showToast('Failed to prepare sharing');
+      toast.error('Sharing Failed', 'Failed to prepare sharing');
     }
-  }, [remainingContacts, showToast, isShareModalVisible, selectedContact]);
+  }, [remainingContacts, isShareModalVisible, selectedContact]);
 
   // Handle pending share when contact options modal is fully closed
   useEffect(() => {
@@ -410,6 +404,18 @@ export default function ContactsScreen() {
       const contactList = Array.isArray(contactData?.contactList) ? contactData.contactList : [];
       setContacts(contactList);
 
+      // Cache contacts data in AsyncStorage with timestamp
+      try {
+        const cacheData = {
+          data: contactList,
+          timestamp: Date.now()
+        };
+        await AsyncStorage.setItem('cachedContacts', JSON.stringify(cacheData));
+        console.log('✅ Cached contacts data for Dashboard reuse');
+      } catch (cacheError) {
+        console.error('Error caching contacts:', cacheError);
+      }
+
       // Set remaining contacts based on plan
       if (userData.plan === 'free') {
         const remaining = Math.max(0, FREE_PLAN_CONTACT_LIMIT - contactList.length);
@@ -422,11 +428,11 @@ export default function ContactsScreen() {
       console.error('Error loading contacts:', error);
       setContacts([]);
       setRemainingContacts('unlimited');
-      showToast('Unable to load contacts. Please try again.');
+      toast.error('Loading Failed', 'Unable to load contacts. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, []);
 
   // Delete contact
   const handleDeleteContact = useCallback(async (index: number) => {
@@ -470,17 +476,17 @@ export default function ContactsScreen() {
                   setRemainingContacts(remainingContacts + 1);
                 }
                 
-                showToast('Contact deleted successfully');
+                toast.success('Contact Deleted', 'Contact deleted successfully');
               } catch (error) {
                 console.error('Error deleting contact:', error);
-                showToast(error instanceof Error ? error.message : 'Failed to delete contact');
+                toast.error('Delete Failed', error instanceof Error ? error.message : 'Failed to delete contact');
               }
             }
           }
         ]
       );
     }, 300);
-  }, [contacts, remainingContacts, showToast]);
+  }, [contacts, remainingContacts]);
 
 
   // Contact press handler
@@ -537,10 +543,10 @@ export default function ContactsScreen() {
                 await Linking.openURL(contactUrl);
                 
                 // Show success message
-                showToast('Contact export initiated. Check your downloads.');
+                toast.success('Export Initiated', 'Contact export initiated. Check your downloads.');
               } catch (error) {
                 console.error('Error opening contact export URL:', error);
-                showToast('Failed to open export page. Please try again.');
+                toast.error('Export Failed', 'Failed to open export page. Please try again.');
                 // Clear export flag on error
                 AuthManager.setContactExporting(false);
               }
@@ -550,9 +556,9 @@ export default function ContactsScreen() {
       );
     } catch (error) {
       console.error('Export contact error:', error);
-      showToast('Failed to export contact. Please try again.');
+      toast.error('Export Failed', 'Failed to export contact. Please try again.');
     }
-  }, [showToast]);
+  }, []);
 
   // ============= SHARE OPTIONS =============
   
@@ -566,7 +572,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -582,7 +588,7 @@ export default function ContactsScreen() {
           
           await Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`);
         } catch (error) {
-          showToast('WhatsApp is not installed on your device');
+          toast.error('App Not Found', 'WhatsApp is not installed on your device');
         }
       }
     },
@@ -595,7 +601,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -611,7 +617,7 @@ export default function ContactsScreen() {
 
           await Linking.openURL(`tg://msg?text=${encodeURIComponent(message)}`);
         } catch (error) {
-          showToast('Telegram is not installed on your device');
+          toast.error('App Not Found', 'Telegram is not installed on your device');
         }
       }
     },
@@ -624,7 +630,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -644,7 +650,7 @@ export default function ContactsScreen() {
           
           await Linking.openURL(emailUrl);
         } catch (error) {
-          showToast('Could not open email client');
+          toast.error('Email Failed', 'Could not open email client');
         }
       }
     },
@@ -657,7 +663,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -677,7 +683,7 @@ export default function ContactsScreen() {
           const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url || '')}&summary=${encodeURIComponent(message)}`;
           await Linking.openURL(linkedinUrl);
         } catch (error) {
-          showToast('Could not open LinkedIn');
+          toast.error('LinkedIn Failed', 'Could not open LinkedIn');
         }
       }
     },
@@ -690,7 +696,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -713,7 +719,7 @@ export default function ContactsScreen() {
             title: contact ? `Contact: ${contact.name} ${contact.surname}` : 'My Digital Business Card'
           });
         } catch (error) {
-          showToast('Could not open share options');
+          toast.error('Share Failed', 'Could not open share options');
         }
       }
     }
@@ -731,9 +737,9 @@ export default function ContactsScreen() {
       setSelectedContact(null);
     } catch (error) {
       console.error('Error sharing:', error);
-      showToast('Failed to share');
+      toast.error('Share Failed', 'Failed to share');
     }
-  }, [selectedContact, shareOptions, showToast]);
+  }, [selectedContact, shareOptions]);
 
   // ============= COMPUTED VALUES =============
   
@@ -1211,12 +1217,6 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
-        {/* Toast Notification */}
-        {toastVisible && (
-          <View style={styles.toastContainer}>
-            <Text style={styles.toastText}>{toastMessage}</Text>
-          </View>
-        )}
       </View>
     </GestureHandlerRootView>
   );
@@ -1607,22 +1607,5 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: COLORS.white,
     fontWeight: 'bold',
-  },
-  toastContainer: {
-    position: 'absolute',
-    top: 100,
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    zIndex: 1000,
-  },
-  toastText: {
-    color: COLORS.white,
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
   },
 });

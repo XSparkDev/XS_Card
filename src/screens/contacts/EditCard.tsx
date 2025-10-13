@@ -14,6 +14,7 @@ import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigat
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import PhoneNumberInput from '../../components/PhoneNumberInput';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -26,6 +27,7 @@ interface FormData {
   company: string;
   email: string;
   phoneNumber: string;
+  countryCode: string; // Add country code field
   // Social media fields
   whatsapp?: string;
   x?: string;
@@ -47,6 +49,7 @@ interface FormData {
 export default function EditCard() {
   const route = useRoute<EditCardScreenRouteProp>();
   const cardIndex = route.params?.cardIndex ?? 0; // Provide default value of 0
+  const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -57,6 +60,7 @@ export default function EditCard() {
     company: '',
     email: '',
     phoneNumber: '',
+    countryCode: '+27', // Default to South Africa
     whatsapp: '',
     x: '',
     facebook: '',
@@ -84,11 +88,84 @@ export default function EditCard() {
   const [customColor, setCustomColor] = useState('#1B2B5B');
   const [showQuickColors, setShowQuickColors] = useState(false);
 
-  useEffect(() => {
-    loadUserData();
-    getUserPlan();
-  }, []);
+  // Helper function to parse phone number and extract country code
+  const parsePhoneNumber = (phone: string) => {
+    if (!phone) return { countryCode: '+27', number: '' };
+    
+    // If phone starts with +, try to find matching country code
+    if (phone.startsWith('+')) {
+      // Common country codes to check (sorted by length, longest first)
+      const countryCodes = ['+27', '+44', '+33', '+49', '+86', '+91', '+81', '+61', '+55', '+39', '+34', '+31', '+46', '+47', '+45', '+41', '+43', '+32', '+351', '+30', '+48', '+420', '+36', '+40', '+359', '+385', '+386', '+421', '+370', '+371', '+372', '+358', '+353', '+354', '+352', '+7', '+380', '+90', '+82', '+65', '+60', '+66', '+84', '+63', '+62', '+880', '+92', '+98', '+972', '+966', '+971', '+20', '+234', '+254', '+52', '+54', '+56', '+57', '+51', '+64', '+1'];
+      
+      for (const code of countryCodes) {
+        if (phone.startsWith(code)) {
+          return {
+            countryCode: code,
+            number: phone.substring(code.length)
+          };
+        }
+      }
+    }
+    
+    // Default to South Africa if no match found
+    return { countryCode: '+27', number: phone };
+  };
 
+  useEffect(() => {
+    // Use passed card data if available, otherwise fall back to API call
+    if (cardData) {
+      loadCardDataFromProps();
+    } else {
+    loadUserData();
+    }
+    getUserPlan();
+  }, [cardData]);
+
+  // New function to load data from passed props (no API call)
+  const loadCardDataFromProps = () => {
+    try {
+      if (!cardData) {
+        setError('No card data provided');
+        return;
+      }
+
+      console.log('Loading card data from props:', cardData);
+      
+      setSelectedColor(cardData.colorScheme || '#1B2B5B');
+      setCustomColor(cardData.colorScheme || '#1B2B5B');
+      setFormData({
+        firstName: cardData.name || '',
+        lastName: cardData.surname || '',
+        occupation: cardData.occupation || '',
+        company: cardData.company || '',
+        email: cardData.email || '',
+        phoneNumber: parsePhoneNumber(cardData.phone || '').number,
+        countryCode: parsePhoneNumber(cardData.phone || '').countryCode,
+        ...Object.keys(cardData.socials || {}).reduce((acc, key) => ({
+          ...acc,
+          [key]: cardData.socials[key]
+        }), {}),
+        profileImage: cardData.profileImage || '',
+        companyLogo: cardData.companyLogo || '',
+        logoZoomLevel: cardData.logoZoomLevel || 1.0,
+      });
+
+      // Set zoom level if it exists in the card data
+      if (cardData.logoZoomLevel) {
+        console.log('Setting zoom level from passed data:', cardData.logoZoomLevel);
+        setZoomLevel(cardData.logoZoomLevel);
+      } else {
+        console.log('No saved zoom level found, using default 1.0');
+        setZoomLevel(1.0);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading card data from props:', error);
+      setError('Failed to load card data');
+      setLoading(false);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -129,7 +206,8 @@ export default function EditCard() {
           occupation: userData.occupation || '',
           company: userData.company || '',
           email: userData.email || '',
-          phoneNumber: userData.phone || '',
+          phoneNumber: parsePhoneNumber(userData.phone || '').number,
+          countryCode: parsePhoneNumber(userData.phone || '').countryCode,
           ...Object.keys(userData.socials || {}).reduce((acc, key) => ({
             ...acc,
             [key]: userData.socials[key]
@@ -245,7 +323,7 @@ export default function EditCard() {
         occupation: formData.occupation,
         company: formData.company,
         email: formData.email,
-        phone: formData.phoneNumber,
+        phone: `${formData.countryCode}${formData.phoneNumber}`,
         socials: socialFields,
         colorScheme: selectedColor,
         profileImage: formData.profileImage,
@@ -969,13 +1047,11 @@ export default function EditCard() {
               keyboardType="email-address"
               editable={userPlan !== 'enterprise'}
             />
-            <TextInput 
-              style={styles.input}
-              placeholder="Phone number"
-              placeholderTextColor="#999"
+            <PhoneNumberInput
               value={formData.phoneNumber}
               onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-              keyboardType="phone-pad"
+              onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
+              placeholder="Phone number"
             />
 
             {/* Social Media URL Inputs */}
@@ -1252,7 +1328,7 @@ export default function EditCard() {
               
               <TouchableOpacity style={previewStyles.contactSection}>
                 <MaterialCommunityIcons name="phone-outline" size={24} color={selectedColor} />
-                <Text style={previewStyles.contactText}>{formData.phoneNumber}</Text>
+                <Text style={previewStyles.contactText}>{`${formData.countryCode}${formData.phoneNumber}`}</Text>
               </TouchableOpacity>
               
               {/* Social Links - SHOULD use the color scheme */}
@@ -1454,13 +1530,14 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   form: {
-    gap: 12,
+    // Spacing handled by individual input marginBottom
   },
   input: {
-    backgroundColor: '#F8F8F8',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+    padding: 15,
     fontSize: 16,
+    marginBottom: 15,
   },
   actionButtons: {
     flexDirection: 'row',
