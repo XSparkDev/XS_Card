@@ -108,6 +108,7 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [totalContacts, setTotalContacts] = useState(0);
   const [totalCards, setTotalCards] = useState(0);
+  const [hasData, setHasData] = useState(false);
   const [monthlyData, setMonthlyData] = useState({
     labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
     datasets: [{
@@ -186,13 +187,72 @@ export default function AdminDashboard() {
       const userId = await getUserId();
       if (!userId) return;
 
-      const [contactsResponse, cardsResponse] = await Promise.all([
-        authenticatedFetchWithRefresh(`/contacts/${userId}`),
-        authenticatedFetchWithRefresh(`/Cards/${userId}`)
-      ]);
+      // Cache expiry time: 5 minutes (300,000 milliseconds)
+      const CACHE_EXPIRY_TIME = 5 * 60 * 1000;
+      const currentTime = Date.now();
 
-      const contactsData = await contactsResponse.json();
-      const cardsResponseData = await cardsResponse.json();
+      // Try to load from cache first
+      let contactsData = null;
+      let cardsResponseData = null;
+      let usedCache = false;
+
+      try {
+        const [cachedContactsStr, cachedCardsStr] = await Promise.all([
+          AsyncStorage.getItem('cachedContacts'),
+          AsyncStorage.getItem('cachedCards')
+        ]);
+
+        // Check if cached contacts are valid and not expired
+        if (cachedContactsStr) {
+          const cachedContacts = JSON.parse(cachedContactsStr);
+          const cacheAge = currentTime - cachedContacts.timestamp;
+          
+          if (cacheAge < CACHE_EXPIRY_TIME) {
+            contactsData = { contactList: cachedContacts.data };
+            console.log('✅ Using cached contacts (age:', Math.floor(cacheAge / 1000), 'seconds)');
+            usedCache = true;
+          } else {
+            console.log('⏰ Cached contacts expired (age:', Math.floor(cacheAge / 1000), 'seconds)');
+          }
+        }
+
+        // Check if cached cards are valid and not expired
+        if (cachedCardsStr) {
+          const cachedCards = JSON.parse(cachedCardsStr);
+          const cacheAge = currentTime - cachedCards.timestamp;
+          
+          if (cacheAge < CACHE_EXPIRY_TIME) {
+            cardsResponseData = { 
+              cards: cachedCards.data,
+              analytics: cachedCards.analytics 
+            };
+            console.log('✅ Using cached cards (age:', Math.floor(cacheAge / 1000), 'seconds)');
+            usedCache = true;
+          } else {
+            console.log('⏰ Cached cards expired (age:', Math.floor(cacheAge / 1000), 'seconds)');
+          }
+        }
+      } catch (cacheError) {
+        console.log('📦 No valid cache found, fetching from API');
+      }
+
+      // If cache is missing or expired, fetch from API
+      if (!contactsData || !cardsResponseData) {
+        console.log('🌐 Fetching fresh data from API...');
+        const [contactsResponse, cardsResponse] = await Promise.all([
+          contactsData ? Promise.resolve({ ok: true, json: async () => contactsData }) : authenticatedFetchWithRefresh(`/contacts/${userId}`),
+          cardsResponseData ? Promise.resolve({ ok: true, json: async () => cardsResponseData }) : authenticatedFetchWithRefresh(`/Cards/${userId}`)
+        ]);
+
+        if (!contactsData) {
+          contactsData = await contactsResponse.json();
+        }
+        if (!cardsResponseData) {
+          cardsResponseData = await cardsResponse.json();
+        }
+      } else {
+        console.log('💾 Dashboard loaded entirely from cache - no API calls made!');
+      }
 
       // Handle new response structure for cards
       let cardsArray;
@@ -252,6 +312,9 @@ export default function AdminDashboard() {
         setCardsList(cardsArray);
       }
 
+      // Mark that we have data
+      setHasData(true);
+
     } catch (error) {
       console.error('Error fetching data:', error);
       setIsLoading(false);
@@ -262,9 +325,114 @@ export default function AdminDashboard() {
 
   useFocusEffect(
     React.useCallback(() => {
-      setIsLoading(true);
-      fetchData();
-    }, [])
+      const checkCacheAndFetch = async () => {
+        try {
+          const [cachedContactsStr, cachedCardsStr] = await Promise.all([
+            AsyncStorage.getItem('cachedContacts'),
+            AsyncStorage.getItem('cachedCards')
+          ]);
+
+          const CACHE_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes
+          const currentTime = Date.now();
+          let shouldRefresh = false;
+          let hasValidCache = false;
+
+          // Check if we have valid cache
+          if (cachedContactsStr && cachedCardsStr) {
+            try {
+              const cachedContacts = JSON.parse(cachedContactsStr);
+              const cachedCards = JSON.parse(cachedCardsStr);
+              
+              const contactsAge = currentTime - cachedContacts.timestamp;
+              const cardsAge = currentTime - cachedCards.timestamp;
+              
+              if (contactsAge < CACHE_EXPIRY_TIME && cardsAge < CACHE_EXPIRY_TIME) {
+                hasValidCache = true;
+                console.log('💾 Valid cache found, loading from cache...');
+                
+                // Load data from cache without API calls
+                const contactsData = { contactList: cachedContacts.data };
+                const cardsResponseData = { 
+                  cards: cachedCards.data,
+                  analytics: cachedCards.analytics 
+                };
+                
+                // Process the cached data (same logic as fetchData)
+                let cardsArray;
+                if (cardsResponseData.cards) {
+                  cardsArray = cardsResponseData.cards;
+                } else if (Array.isArray(cardsResponseData)) {
+                  cardsArray = cardsResponseData;
+                } else {
+                  cardsArray = [];
+                }
+
+                const contactDates = contactsData?.contactList
+                  ?.map((contact: Contact) => contact?.createdAt)
+                  ?.filter(Boolean) || [];
+                
+                const cardDates = cardsArray
+                  ?.map((card: Card) => card?.createdAt)
+                  ?.filter(Boolean) || [];
+
+                const cardCounts = countByMonth(cardDates);
+                const contactCounts = countByMonth(contactDates);
+
+                const recentMonths = getRecentMonths();
+                setMonthlyData({
+                  labels: recentMonths,
+                  datasets: [
+                    {
+                      data: recentMonths.map(month => cardCounts[month] || 0),
+                      color: () => '#FF526D'
+                    },
+                    {
+                      data: recentMonths.map(month => contactCounts[month] || 0),
+                      color: () => '#1B2559'
+                    }
+                  ]
+                });
+
+                setTotalContacts(contactsData?.contactList?.length || 0);
+                setTotalCards(cardsArray?.length || 0);
+
+                if (contactsData?.contactList) {
+                  setContactsList(contactsData.contactList);
+                }
+                if (cardsArray) {
+                  setCardsList(cardsArray);
+                }
+
+                setHasData(true);
+                setIsLoading(false);
+                console.log('✅ Dashboard loaded entirely from cache - no API calls made!');
+                return;
+              } else {
+                console.log('⏰ Cache expired, refreshing...');
+                shouldRefresh = true;
+              }
+            } catch (parseError) {
+              console.log('Error parsing cache:', parseError);
+              shouldRefresh = true;
+            }
+          } else {
+            console.log('📦 No cache found, fetching from API...');
+            shouldRefresh = true;
+          }
+
+          if (shouldRefresh) {
+            setIsLoading(true);
+            fetchData();
+          }
+        } catch (error) {
+          console.log('Error checking cache:', error);
+          setIsLoading(true);
+          fetchData();
+        }
+      };
+
+      checkCacheAndFetch();
+    }, [timeRange])
   );
 
   useEffect(() => {
@@ -343,23 +511,20 @@ export default function AdminDashboard() {
     };
   };
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <AdminHeader title="Dashboard" />
       
-      <ScrollView 
-        style={styles.content}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      ) : (
+        <ScrollView 
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         <Text style={styles.sectionTitle}>Overview</Text>
         
         {/* Overview Cards - Removed ellipses icon */}
@@ -492,7 +657,8 @@ export default function AdminDashboard() {
           </View>
         </View>
         */}
-      </ScrollView>
+        </ScrollView>
+      )}
 
       <ContactsModal 
         visible={showContactsModal}
@@ -646,8 +812,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingTop: 50,
   },
   modalContainer: {
     flex: 1,

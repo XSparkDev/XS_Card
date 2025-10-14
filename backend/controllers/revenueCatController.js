@@ -88,9 +88,10 @@ const updateSubscriptionAtomic = async (userId, subscriptionData, eventType) => 
             userUpdateData.revenueCat.unsubscribeDetectedAt = subscriptionData.unsubscribeDetectedAt;
         }
         
-        // Update user document
+        // Update user document (use set with merge to avoid update failures)
         const userRef = db.collection('users').doc(userId);
-        batch.update(userRef, userUpdateData);
+        batch.set(userRef, userUpdateData, { merge: true });
+        console.log(`[RevenueCat Controller] 📝 Queuing user update: plan=${userUpdateData.plan}, status=${userUpdateData.subscriptionStatus}`);
         
         // Prepare subscription document data
         const subscriptionDocData = {
@@ -502,6 +503,7 @@ const syncUserSubscription = async (req, res) => {
         
         // Get latest data from RevenueCat
         const verification = await verifyActiveEntitlement(userId);
+        console.log(`[RevenueCat API] 📊 Verification result: isActive=${verification.isActive}, product=${verification.productIdentifier}`);
         
         // Update database atomically
         const subscriptionData = {
@@ -509,6 +511,7 @@ const syncUserSubscription = async (req, res) => {
             appUserId: userId,
             status: verification.isActive ? 'active' : 'expired'
         };
+        console.log(`[RevenueCat API] 📦 Subscription data prepared: isActive=${subscriptionData.isActive}, status=${subscriptionData.status}`);
         
         await updateSubscriptionAtomic(userId, subscriptionData, 'manual_sync');
         

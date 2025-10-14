@@ -15,7 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, API_BASE_URL } from '../utils/api';
 import { useToast } from '../hooks/useToast';
 import Header from '../components/Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -166,7 +166,7 @@ export default function SettingsScreen() {
   const handleDeactivateAccount = () => {
     Alert.alert(
       'Deactivate Account',
-      'Are you sure you want to deactivate your account? This action cannot be undone and you will lose access to all your data.',
+      'This will temporarily disable your account. Your data will be preserved and you can contact support to reactivate.\n\nFor permanent deletion, use "Delete Account" instead.',
       [
         {
           text: 'Cancel',
@@ -220,6 +220,68 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This action cannot be undone and you will lose access to all your data.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: confirmDeleteAccount,
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = async () => {
+    console.log('🗑️ confirmDeleteAccount called');
+    console.log('🗑️ Endpoint:', ENDPOINTS.DELETE_ACCOUNT);
+    console.log('🗑️ API Base URL:', API_BASE_URL);
+    
+    setDeactivating(true);
+    try {
+      console.log('🗑️ Sending DELETE request...');
+      const response = await authenticatedFetchWithRefresh(ENDPOINTS.DELETE_ACCOUNT, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('🗑️ Response status:', response.status);
+      console.log('🗑️ Response ok:', response.ok);
+
+      if (response.ok) {
+        toast.success('Account Deleted', 'Your account has been permanently deleted.');
+        
+        // Clear local storage
+        await AsyncStorage.clear();
+        
+        // Navigate to sign in
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'SignIn' }],
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete account');
+      }
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      toast.error(
+        'Deletion Failed',
+        error instanceof Error ? error.message : 'Failed to delete account. Please try again.'
+      );
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
   const renderSettingItem = (
     icon: string,
     title: string,
@@ -267,7 +329,12 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <Header title="Settings" />
       
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        bounces={true}
+      >
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -393,9 +460,8 @@ export default function SettingsScreen() {
           {renderSettingItem(
             'security',
             'Privacy & Security',
-            'Manage your privacy settings',
-            undefined,
-            false
+            'Manage your privacy and security settings',
+            () => navigation.navigate('PrivacySecurity')
           )}
         </View>
 
@@ -433,10 +499,19 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           
           {renderSettingItem(
-            'delete-forever',
+            'block',
             'Deactivate Account',
-            'Permanently deactivate your account',
+            'Temporarily disable your account',
             handleDeactivateAccount,
+            false,
+            true
+          )}
+
+          {renderSettingItem(
+            'delete-forever',
+            'Delete Account',
+            'Permanently delete account and data',
+            handleDeleteAccount,
             false,
             true
           )}
@@ -459,6 +534,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 100,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   section: {
     marginBottom: 24,
@@ -545,6 +623,6 @@ const styles = StyleSheet.create({
     color: COLORS.error,
   },
   bottomSpacing: {
-    height: 40,
+    height: 100,
   },
 }); 

@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from '../context/ColorSchemeContext';
-import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS } from '../utils/api';
+import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
 // Update this type to match your actual navigation type
@@ -41,57 +41,38 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const { logout } = useAuth(); // Use our centralized auth context
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
-  useEffect(() => {
-    const syncUserPlan = async () => {
-      try {
-        // First, get cached plan from AsyncStorage
-        const userData = await AsyncStorage.getItem('userData');
-        if (userData) {
-          const { plan } = JSON.parse(userData);
-          setUserPlan(plan);
-          console.log('Header: Loaded cached plan:', plan);
-        }
+  const syncUserPlan = async () => {
+    try {
+      // First, get cached plan from AsyncStorage
+      const userData = await AsyncStorage.getItem('userData');
+      if (userData) {
+        const { plan } = JSON.parse(userData);
+        setUserPlan(plan);
+        console.log('Header: Loaded cached plan:', plan);
+      }
 
         // Then, sync with backend to ensure accuracy
+        // CENTRALIZED RBAC: Only check users.plan field from GET_USER endpoint
         try {
-          const response = await authenticatedFetchWithRefresh(ENDPOINTS.SUBSCRIPTION_STATUS, {
+          // Get current user ID
+          const userId = await getUserId();
+          if (!userId) {
+            console.log('Header: No user ID found, using cached plan');
+            return;
+          }
+          
+          // Get current user's data (not all users)
+          const userResponse = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_USER}/${userId}`, {
             method: 'GET',
           });
           
-          if (response.ok) {
-            const data = await response.json();
-            console.log('Header: Subscription status check:', data);
+          if (userResponse.ok) {
+            const userResponseData = await userResponse.json();
+            console.log('Header: User data check:', userResponseData);
             
-            let actualPlan = 'free'; // Default
-            
-            // Check if user has active subscription
-            if (data.status && data.data?.isActive) {
-              actualPlan = 'premium';
-              console.log('Header: User has active subscription status - setting to premium');
-            }
-            
-            // 🔥 ADDITIONAL CHECK: Also check the user's plan field directly from GET_USER endpoint
-            try {
-              const userResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_USER, {
-                method: 'GET',
-              });
-              
-              if (userResponse.ok) {
-                const userResponseData = await userResponse.json();
-                console.log('Header: User data check:', userResponseData);
-                
-                // Check if user data indicates premium plan
-                const userPlan = userResponseData.user?.plan || userResponseData.plan;
-                if (userPlan === 'premium' || userPlan === 'enterprise') {
-                  actualPlan = userPlan;
-                  console.log(`Header: User data shows plan: ${userPlan} - overriding subscription check`);
-                }
-              }
-            } catch (userError) {
-              console.log('Header: Could not fetch user data for plan check:', userError instanceof Error ? userError.message : 'Unknown error');
-            }
-            
-            console.log('Header: Final determined plan:', actualPlan);
+            // Get plan from users collection (single source of truth)
+            const actualPlan = userResponseData.plan || 'free';
+            console.log(`Header: User plan from database: ${actualPlan}`);
             
             // Update UI immediately
             setUserPlan(actualPlan);
@@ -111,19 +92,30 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
               }
             }
           } else {
-            console.log('Header: Could not check subscription status, using cached plan');
+            console.log('Header: Could not check user data, using cached plan');
           }
         } catch (syncError) {
           console.log('Header: Sync failed, using cached plan:', syncError instanceof Error ? syncError.message : 'Unknown error');
           // Continue with cached plan if sync fails
         }
-      } catch (error) {
-        console.error('Header: Error in plan synchronization:', error);
-      }
-    };
+    } catch (error) {
+      console.error('Header: Error in plan synchronization:', error);
+    }
+  };
 
+  // Initial load
+  useEffect(() => {
     syncUserPlan();
   }, []);
+
+  // 🔥 CRITICAL FIX: Refresh plan when screen comes into focus
+  // This ensures RBAC updates when database changes
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('Header: Screen focused - refreshing user plan...');
+      syncUserPlan();
+    }, [])
+  );
 
   const handleAddPress = () => {
     navigation.navigate('AddCards');

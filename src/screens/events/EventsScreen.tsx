@@ -539,7 +539,7 @@ export default function EventsScreen() {
               <MaterialIcons 
                 name={showFilters ? "filter-list-off" : "filter-list"} 
                 size={24} 
-                color={COLORS.black} 
+                color={COLORS.white} 
               />
             </TouchableOpacity>
           </View>

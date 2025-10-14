@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { COLORS } from '../../constants/colors';
+import { Animated } from 'react-native';
+import ColorPicker from 'react-native-wheel-color-picker';
+import { COLORS, CARD_COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../types';
 import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE_URL } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { pickImage, requestPermissions } from '../../utils/imageUtils';
+import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import PhoneNumberInput from '../../components/PhoneNumberInput';
 
 type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -23,9 +26,35 @@ export default function AddCards() {
     company: '',
     email: '',
     phoneNumber: '',
+    countryCode: '+27', // Default to South Africa
+    // Social media fields
+    whatsapp: '',
+    x: '',
+    facebook: '',
+    linkedin: '',
+    website: '',
+    tiktok: '',
+    instagram: '',
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [selectedColor, setSelectedColor] = useState('#1B2B5B'); // Default color
+  const [selectedSocials, setSelectedSocials] = useState<string[]>([]);
+  const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
+  const [customColor, setCustomColor] = useState('#1B2B5B');
+  const [showQuickColors, setShowQuickColors] = useState(false);
+  const [socialNotification, setSocialNotification] = useState<string | null>(null);
+
+  // Social media platforms data
+  const socials = [
+    { id: 'whatsapp', icon: 'whatsapp', label: 'WhatsApp', color: '#25D366' },
+    { id: 'x', icon: 'twitter', label: 'X', color: '#000000' },
+    { id: 'facebook', icon: 'facebook', label: 'Facebook', color: '#1877F2' },
+    { id: 'linkedin', icon: 'linkedin', label: 'LinkedIn', color: '#0A66C2' },
+    { id: 'website', icon: 'web', label: 'Website', color: '#4285F4' },
+    { id: 'tiktok', icon: 'music-note', label: 'TikTok', color: '#000000' },
+    { id: 'instagram', icon: 'instagram', label: 'Instagram', color: '#E4405F' },
+  ];
 
   // Keyboard event listeners
   React.useEffect(() => {
@@ -47,7 +76,7 @@ export default function AddCards() {
   };
 
   const validateForm = () => {
-    if (!formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
+    if (!formData.firstName || !formData.lastName || !formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
       setError('Please fill in all required fields');
       return false;
     }
@@ -56,101 +85,289 @@ export default function AddCards() {
   };
 
   const handleProfileImagePick = async () => {
-    const { cameraGranted, galleryGranted } = await requestPermissions();
-    
-    if (!cameraGranted || !galleryGranted) {
+    if (Platform.OS === 'android') {
+      // Android: NO custom permission modals, just direct picker
+      Alert.alert(
+        'Select Profile Picture',
+        'Choose where you want to get your profile picture from.',
+        [
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      // iOS: Keep the existing custom permission flow (Apple requires it)
+      const currentPermissions = await checkPermissions();
+      
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        Alert.alert(
+          'Select Profile Picture',
+          'Choose where you want to get your profile picture from.',
+          [
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Show permission request modal for iOS only
       Alert.alert(
         'Permission Required', 
         'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
         [
           { text: 'Cancel', style: 'cancel' },
           { 
-            text: 'Settings', 
-            onPress: () => {
+              text: 'Grant Permission', 
+              onPress: async () => {
+                const permissions = await requestPermissions();
+                if (permissions.cameraGranted && permissions.galleryGranted) {
+                  // Show picker after permissions granted
               Alert.alert(
-                'Enable Permissions',
-                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
-              );
+                    'Select Profile Picture',
+                    'Choose where you want to get your profile picture from.',
+                    [
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ]
+                  );
+                }
+              }
             }
-          }
+          ]
+        );
+      }
+    }
+  };
+
+  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
+    try {
+      console.log(`[Image Picker] Starting ${source} selection...`);
+      
+      let imageUri: string | null = null;
+      
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Image Picker] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(source === 'camera');
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Image Picker] iOS: Permission check then pick');
+        const { cameraGranted, galleryGranted } = await requestPermissions();
+        
+        if (source === 'camera' && !cameraGranted) {
+          Alert.alert(
+            'Camera Permission Required', 
+            'Please enable camera access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Camera');
+              }}
         ]
       );
       return;
     }
 
+        if (source === 'gallery' && !galleryGranted) {
     Alert.alert(
-      'Select Profile Picture',
-      'Choose where you want to get your profile picture from. This will be displayed on your digital business card.',
-      [
-        {
-          text: 'Camera',
-          onPress: async () => {
-            const imageUri = await pickImage(true);
-            if (imageUri) setProfileImage(imageUri);
-          },
-        },
-        {
-          text: 'Gallery',
-          onPress: async () => {
-            const imageUri = await pickImage(false);
-            if (imageUri) setProfileImage(imageUri);
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
+            'Photo Library Permission Required', 
+            'Please enable photo library access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Photos');
+              }}
+            ]
+          );
+          return;
+        }
+
+        console.log('[Image Picker] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(source === 'camera');
+      }
+      
+      if (imageUri) {
+        console.log('[Image Picker] Image selected successfully');
+        setProfileImage(imageUri);
+      } else {
+        console.log('[Image Picker] User canceled selection');
+      }
+    } catch (error) {
+      console.error('[Image Picker] Error during image selection:', error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Permission')) {
+          Alert.alert('Permission Error', 'Unable to access camera or photo library. Please check your device settings.');
+        } else {
+          Alert.alert('Error', `Image selection failed: ${error.message}`);
+        }
+      } else {
+        Alert.alert('Error', 'There was a problem with the image picker. Please try again.');
+      }
+    }
   };
 
   const handleLogoUpload = async () => {
-    const { cameraGranted, galleryGranted } = await requestPermissions();
-    
-    if (!cameraGranted || !galleryGranted) {
+    if (Platform.OS === 'android') {
+      // Android: NO custom permission modals, just direct picker
+      Alert.alert(
+        'Select Company Logo',
+        'Choose where you want to get your company logo from.',
+        [
+          { text: 'Camera', onPress: () => pickLogo('camera') },
+          { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      // iOS: Keep the existing custom permission flow (Apple requires it)
+      const currentPermissions = await checkPermissions();
+      
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        Alert.alert(
+          'Select Company Logo',
+          'Choose where you want to get your company logo from.',
+          [
+            { text: 'Camera', onPress: () => pickLogo('camera') },
+            { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Show permission request modal for iOS only
       Alert.alert(
         'Permission Required', 
         'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
         [
           { text: 'Cancel', style: 'cancel' },
           { 
-            text: 'Settings', 
-            onPress: () => {
+              text: 'Grant Permission', 
+              onPress: async () => {
+                const permissions = await requestPermissions();
+                if (permissions.cameraGranted && permissions.galleryGranted) {
+                  // Show picker after permissions granted
               Alert.alert(
-                'Enable Permissions',
-                'Please go to your device Settings > XSCard and enable Camera and Photos permissions to continue.'
-              );
+                    'Select Company Logo',
+                    'Choose where you want to get your company logo from.',
+                    [
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
+                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ]
+                  );
+                }
+              }
             }
-          }
+          ]
+        );
+      }
+    }
+  };
+
+  const pickLogo = async (source: 'camera' | 'gallery') => {
+    try {
+      console.log(`[Logo Picker] Starting ${source} selection...`);
+      
+      let imageUri: string | null = null;
+      
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Logo Picker] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(source === 'camera');
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Logo Picker] iOS: Permission check then pick');
+        const { cameraGranted, galleryGranted } = await requestPermissions();
+        
+        if (source === 'camera' && !cameraGranted) {
+          Alert.alert(
+            'Camera Permission Required', 
+            'Please enable camera access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Camera');
+              }}
         ]
       );
       return;
     }
 
+        if (source === 'gallery' && !galleryGranted) {
     Alert.alert(
-      'Select Company Logo',
-      'Choose where you want to get your company logo from. This will be displayed on your digital business card.',
-      [
-        {
-          text: 'Camera',
-          onPress: async () => {
-            const imageUri = await pickImage(true);
-            if (imageUri) setCompanyLogo(imageUri);
-          },
-        },
-        {
-          text: 'Gallery',
-          onPress: async () => {
-            const imageUri = await pickImage(false);
-            if (imageUri) setCompanyLogo(imageUri);
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
+            'Photo Library Permission Required', 
+            'Please enable photo library access in your device settings to use this feature.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Photos');
+              }}
+            ]
+          );
+          return;
+        }
+
+        console.log('[Logo Picker] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(source === 'camera');
+      }
+      
+      if (imageUri) {
+        console.log('[Logo Picker] Logo selected successfully');
+        setCompanyLogo(imageUri);
+      } else {
+        console.log('[Logo Picker] User canceled selection');
+      }
+    } catch (error) {
+      console.error('[Logo Picker] Error during logo selection:', error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Permission')) {
+          Alert.alert('Permission Error', 'Unable to access camera or photo library. Please check your device settings.');
+        } else {
+          Alert.alert('Error', `Logo selection failed: ${error.message}`);
+        }
+      } else {
+        Alert.alert('Error', 'There was a problem with the image picker. Please try again.');
+      }
+    }
+  };
+
+  const handleSocialSelect = (socialId: string) => {
+    if (selectedSocials.includes(socialId)) {
+      setSelectedSocials(selectedSocials.filter(id => id !== socialId));
+    } else {
+      setSelectedSocials([...selectedSocials, socialId]);
+      
+      // Show notification for the added social link
+      const socialName = socials.find(s => s.id === socialId)?.label || socialId;
+      setSocialNotification(`A ${socialName} textbox has been added below.`);
+      
+      // Clear notification after 3 seconds
+      setTimeout(() => {
+        setSocialNotification(null);
+      }, 3000);
+    }
+  };
+
+  const handleRemoveSocial = (socialId: string) => {
+    setSelectedSocials(selectedSocials.filter(id => id !== socialId));
+    setFormData(prev => ({
+      ...prev,
+      [socialId]: ''
+    }));
+  };
+
+  const handleColorSelect = (color: string) => {
+    setSelectedColor(color);
+    setShowQuickColors(false);
+  };
+
+  const handleCustomColorSelect = (color: string) => {
+    setCustomColor(color);
+    setSelectedColor(color);
+    setIsCustomColorModalVisible(false);
   };
 
   const handleAdd = async () => {
@@ -171,10 +388,22 @@ export default function AddCards() {
       // Use formData state to append values
       form.append('company', formData.company);
       form.append('email', formData.email);
-      form.append('phone', formData.phoneNumber);
+      form.append('phone', `${formData.countryCode}${formData.phoneNumber}`);
       form.append('title', formData.occupation);
       form.append('name', formData.firstName);
       form.append('surname', formData.lastName);
+
+      // Add social media fields
+      const socialFields: { [key: string]: string } = {};
+      selectedSocials.forEach(socialId => {
+        if (formData[socialId as keyof typeof formData]) {
+          socialFields[socialId] = formData[socialId as keyof typeof formData] as string;
+        }
+      });
+      form.append('socials', JSON.stringify(socialFields));
+
+      // Add color scheme
+      form.append('colorScheme', selectedColor);
 
       if (profileImage) {
         const imageName = profileImage.split('/').pop() || 'profile.jpg';
@@ -299,73 +528,53 @@ export default function AddCards() {
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>First Name *</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter first name"
+              placeholder="First name"
                 placeholderTextColor="#999"
                 value={formData.firstName}
                 onChangeText={(text) => setFormData({...formData, firstName: text})}
               />
-            </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Last Name *</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter last name"
+              placeholder="Last name"
                 placeholderTextColor="#999"
                 value={formData.lastName}
                 onChangeText={(text) => setFormData({...formData, lastName: text})}
               />
-            </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Occupation *</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter occupation"
+              placeholder="Occupation"
                 placeholderTextColor="#999"
                 value={formData.occupation}
                 onChangeText={(text) => setFormData({...formData, occupation: text})}
               />
-            </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Company Name *</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter company name"
+              placeholder="Company name"
                 placeholderTextColor="#999"
                 value={formData.company}
                 onChangeText={(text) => setFormData({...formData, company: text})}
               />
-            </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email *</Text>
               <TextInput 
                 style={styles.input}
-                placeholder="Enter email address"
+              placeholder="Email address"
                 placeholderTextColor="#999"
                 value={formData.email}
                 onChangeText={(text) => setFormData({...formData, email: text})}
                 keyboardType="email-address"
               />
-            </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number *</Text>
-              <TextInput 
-                style={styles.input}
-                placeholder="Enter phone number"
-                placeholderTextColor="#999"
+            <PhoneNumberInput
                 value={formData.phoneNumber}
                 onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-                keyboardType="phone-pad"
+              onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
+              placeholder="Phone number"
               />
-            </View>
           </View>
 
           {/* Add Button - Now inside ScrollView */}
@@ -455,24 +664,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   form: {
-    gap: 12,
-  },
-  inputGroup: {
-    marginBottom: 0,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.black,
-    marginBottom: 8,
+    // Spacing handled by individual input marginBottom
   },
   input: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+    padding: 15,
     fontSize: 16,
-    backgroundColor: COLORS.white,
+    marginBottom: 15,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -484,7 +683,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 1,
     paddingVertical: 0,
-    backgroundColor: COLORS.white,
   },
   cancelButton: {
     color: '#666',

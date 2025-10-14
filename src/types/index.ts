@@ -44,8 +44,10 @@ export type RootStackParamList = {
   QRScanner: { event: any };
   SaveContact: { cardId: string; cardIndex?: number };
   AddCards: undefined;
-  EditCard: undefined;
+  EditCard: { cardIndex: number; cardData?: any };
   UnlockPremium: undefined;
+  SubscriptionManagement: undefined;
+  PrivacySecurity: undefined; // NEW
   Events: undefined;
   EventDetails: { eventId: string; event?: any };
   EventPreferences: undefined;

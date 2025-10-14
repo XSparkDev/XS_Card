@@ -57,7 +57,7 @@ const getBaseUrl = () => {
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
- // return 'http://192.168.68.108:8383';
+ // return 'http://localhost:8383';
   //return 'https://e5f9e391e0f2.ngrok-free.app';
   
 };
@@ -89,9 +89,10 @@ export const ENDPOINTS = {
     UPGRADE_USER: '/Users/:id/upgrade',
     INITIALIZE_PAYMENT: '/payment/initialize',
     SUBSCRIPTION_STATUS: '/subscription/status',
-    CANCEL_SUBSCRIPTION: '/subscription/cancel',
+    REVENUECAT_SYNC: '/api/revenuecat/sync',
     FORGOT_PASSWORD: '/forgot-password',
     RESET_PASSWORD: '/reset-password',
+    CHANGE_PASSWORD: '/change-password',
     RESEND_VERIFICATION: '/resend-verification',
     RESEND_VERIFICATION_PUBLIC: '/public/resend-verification',
     // New authentication endpoints for Phase 4
@@ -150,6 +151,7 @@ export const ENDPOINTS = {
     
     // User Management
     DEACTIVATE_USER: '/Users',
+    DELETE_ACCOUNT: '/Users/delete-account',
 };
 
 export const buildUrl = (endpoint: string) => `${API_BASE_URL}${endpoint}`;

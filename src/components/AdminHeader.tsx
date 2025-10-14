@@ -27,6 +27,12 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
         index: 0,
         routes: [{ name: 'MainApp' }],
       });
+    } else if (screen === 'Events') {
+      navigation.navigate('Events');
+    } else if (screen === 'ContactScreen') {
+      navigation.navigate('MainTabs', { screen: 'Contacts' });
+    } else if (screen === 'Settings') {
+      navigation.navigate('Settings');
     } else {
       navigation.navigate(screen);
     }
@@ -133,6 +139,30 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
             >
               <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.menuItem}
+              onPress={() => handleNavigate('Events')}
+            >
+              <MaterialIcons name="event" size={24} color={COLORS.secondary} />
+              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Events</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.menuItem}
+              onPress={() => handleNavigate('ContactScreen')}
+            >
+              <MaterialIcons name="contacts" size={24} color={COLORS.secondary} />
+              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Contacts</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.menuItem}
+              onPress={() => handleNavigate('Settings')}
+            >
+              <MaterialIcons name="settings" size={24} color={COLORS.secondary} />
+              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Settings</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 

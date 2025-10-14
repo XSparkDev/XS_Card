@@ -190,6 +190,19 @@ export default function CardsScreen() {
           analytics: analytics // Store analytics for future use
         });
 
+        // Cache cards data in AsyncStorage with timestamp
+        try {
+          const cacheData = {
+            data: cardsArray,
+            analytics: analytics,
+            timestamp: Date.now()
+          };
+          await AsyncStorage.setItem('cachedCards', JSON.stringify(cacheData));
+          console.log('✅ Cached cards data for Dashboard reuse');
+        } catch (cacheError) {
+          console.error('Error caching cards:', cacheError);
+        }
+
         // Set card color from the first card (index 0)
         if (cardsArray[0].colorScheme) {
           updateColorScheme(cardsArray[0].colorScheme);
@@ -617,9 +630,14 @@ export default function CardsScreen() {
   };
 
   const handleEditCard = () => {
-    navigation.navigate('EditCard', { 
-      cardIndex: currentPage // Ensure currentPage is passed
-    });
+    // Pass the actual card data instead of just the index
+    const currentCardData = userData?.cards?.[currentPage];
+    if (currentCardData) {
+      navigation.navigate('EditCard', { 
+        cardIndex: currentPage,
+        cardData: currentCardData // Pass the full card data
+      } as any);
+    }
   };
 
   // Update the dynamic styles for the share button
