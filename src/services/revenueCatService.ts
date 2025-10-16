@@ -345,8 +345,15 @@ class RevenueCatService {
 
       // Initiate purchase through RevenueCat SDK using the package directly
       // This is the CORRECT way - purchase the package, not the product
-      const { customerInfo } = await Purchases.purchasePackage(rcPackage);
+      console.log('RevenueCat: About to call Purchases.purchasePackage...');
       
+      // Add timeout to prevent infinite hanging
+      const purchasePromise = Purchases.purchasePackage(rcPackage);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Purchase timeout after 2 minutes')), 30000)
+      );
+      
+      const { customerInfo } = await Promise.race([purchasePromise, timeoutPromise]) as any;
       console.log('RevenueCat: Purchase transaction completed');
       console.log(`RevenueCat: Customer Info received, checking entitlements...`);
       

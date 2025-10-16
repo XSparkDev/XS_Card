@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { revenueCatService } from '../services/revenueCatService';
 import { authenticatedFetchWithRefresh } from '../utils/api';
 import { COLORS } from '../constants/colors';
@@ -36,6 +37,7 @@ interface SubscriptionStatus {
 
 export default function SubscriptionManagementScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +180,7 @@ export default function SubscriptionManagementScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -289,7 +291,14 @@ export default function SubscriptionManagementScreen() {
             • Cancellations take effect at the end of your current billing period{'\n'}
             • You'll keep access to premium features until your subscription expires{'\n'}
             • Refunds are handled through your app store{'\n'}
-            • Contact support if you have billing issues
+            • Contact{' '}
+            <Text 
+              style={styles.supportLink}
+              onPress={() => Linking.openURL('https://xscard.co.za/support')}
+            >
+              support
+            </Text>
+            {' '}if you have billing issues
           </Text>
         </View>
       </View>
@@ -495,5 +504,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textSecondary,
     lineHeight: 20,
+  },
+  supportLink: {
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
   },
 });

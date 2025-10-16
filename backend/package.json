@@ -7,6 +7,7 @@
     "migrate-images": "node scripts/migrateImages.js",
     "migrate-images:dry": "node scripts/migrateImages.js --dry-run",
     "migrate-user": "node scripts/migrateImages.js --userId",
+    "check-anonymized": "node jobs/checkAnonymizedData.js",
     "android": "expo run:android",
     "ios": "expo run:ios"
   },

@@ -401,8 +401,8 @@ export default function SettingsScreen() {
           {userData?.plan === 'premium' && (
             renderSettingItem(
               'settings',
-              'Manage Subscription',
-              'Update your subscription settings',
+              'View Subscription Details',
+              'See your plan and manage it',
               () => navigation.navigate('UnlockPremium')
             )
           )}

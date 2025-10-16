@@ -35,6 +35,10 @@ ios/DerivedData/
 *.key
 *.mobileprovision
 
+# Android Release Keystore Info (contains sensitive passwords)
+**/keystore-info.txt
+android/app/release-key.keystore
+
 # Metro
 .metro-health-check*
 
