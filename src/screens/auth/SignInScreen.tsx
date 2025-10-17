@@ -65,6 +65,11 @@ export default function SignInScreen() {
     setKeepLoggedIn(!keepLoggedIn);
   };
 
+  // Optimized password visibility toggle to prevent shaking
+  const handleTogglePasswordVisibility = () => {
+    setShowPassword(prev => !prev);
+  };
+
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -297,13 +302,7 @@ export default function SignInScreen() {
         style={[styles.input, errors.email ? styles.inputError : null]}
         placeholder="Email"
         value={email}
-        onChangeText={(text) => {
-          setEmail(text);
-          // Only clear error if there's actually an error to clear
-          if (errors.email) {
-            setErrors(prev => ({ ...prev, email: '' }));
-          }
-        }}
+        onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
         placeholderTextColor="#999"
@@ -315,19 +314,13 @@ export default function SignInScreen() {
           style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
           placeholder="Password"
           value={password}
-          onChangeText={(text) => {
-            setPassword(text);
-            // Only clear error if there's actually an error to clear
-            if (errors.password) {
-              setErrors(prev => ({ ...prev, password: '' }));
-            }
-          }}
+          onChangeText={setPassword}
           secureTextEntry={!showPassword}
           placeholderTextColor="#999"
         />
         <TouchableOpacity 
           style={styles.eyeIcon}
-          onPress={() => setShowPassword(!showPassword)}
+          onPress={handleTogglePasswordVisibility}
         >
           <MaterialIcons 
             name={showPassword ? "visibility" : "visibility-off"} 

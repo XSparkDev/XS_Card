@@ -9,7 +9,7 @@ import {
   Linking,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CommonActions } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -29,6 +29,7 @@ type UnlockPremiumStackParamList = {
 };
 
 const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStackParamList, 'UnlockPremium'>) => {
+  const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState('annually');
   const [userPlan, setUserPlan] = useState<string>('free');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -367,20 +368,8 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   };
 
   const handleManageSubscription = () => {
-    Alert.alert(
-      'Manage Subscription',
-      'To manage your subscription, you\'ll need to go to your device\'s app store.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Open Store', 
-          onPress: () => {
-            // Navigate to subscription management screen
-            navigation.navigate('SubscriptionManagement' as never);
-          }
-        }
-      ]
-    );
+    // Navigate directly to subscription management screen
+    navigation.navigate('SubscriptionManagement' as never);
   };
 
   const handlePaymentInitiation = async () => {
@@ -556,14 +545,17 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
 
   // Determine if we're using RevenueCat pricing
   const useRevenueCat = shouldUseRevenueCat() && revenueCatPackages.length > 0;
+  
+  // Show loading state while RevenueCat initializes
+  const isLoadingPricing = shouldUseRevenueCat() && loadingRevenueCat;
 
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity 
-        style={styles.closeButton} 
+        style={[styles.closeButton, { top: Math.max(insets.top, 25) }]} 
         onPress={() => navigation.goBack()}
       >
-        <Text style={styles.closeButtonText}>✕</Text>
+        <MaterialIcons name="arrow-back" size={24} color={COLORS.text} />
       </TouchableOpacity>
 
       {userPlan === 'premium' ? (
@@ -574,104 +566,164 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             Be a better networker, upgrade to XS Card premium
           </Text>
 
-          <TouchableOpacity 
-            style={[
-              styles.trialButton, 
-              { marginVertical: 20 },
-              isProcessing && styles.disabledButton
-            ]}
-            onPress={handlePayment}
-            disabled={isProcessing}
-          >
-            <Text style={styles.trialButtonText}>
-              {isProcessing ? 'Processing...' : (() => {
-                const currentPackage = selectedPlan === 'annually' ? annualPackage : monthlyPackage;
-                const trialText = currentPackage?.product.introPrice 
-                  ? `Start your ${getTrialText(currentPackage)}`
-                  : 'Subscribe Now';
-                return trialText;
-              })()}
-            </Text>
-          </TouchableOpacity>
+          {isLoadingPricing ? (
+            <View style={[styles.trialButton, { marginVertical: 20, justifyContent: 'center' }]}>
+              <Text style={styles.trialButtonText}>Loading pricing...</Text>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={[
+                styles.trialButton, 
+                { marginVertical: 20 },
+                isProcessing && styles.disabledButton
+              ]}
+              onPress={handlePayment}
+              disabled={isProcessing}
+            >
+              <Text style={styles.trialButtonText}>
+                {isProcessing ? 'Processing...' : (() => {
+                  const currentPackage = selectedPlan === 'annually' ? annualPackage : monthlyPackage;
+                  const trialText = currentPackage?.product.introPrice 
+                    ? `Start your ${getTrialText(currentPackage)}`
+                    : 'Subscribe Now';
+                  return trialText;
+                })()}
+              </Text>
+            </TouchableOpacity>
+          )}
 
-          {/* Currency Toggle - Only show for non-RevenueCat platforms */}
-          {!useRevenueCat && <CurrencyToggle />}
+          {/* Subscription Information - Required by Apple */}
+          <View style={styles.subscriptionInfoContainer}>
+            <Text style={styles.subscriptionInfoTitle}>XS Card Premium Subscription</Text>
+            <Text style={styles.subscriptionInfoText}>
+              • {selectedPlan === 'annually' ? 'Annual' : 'Monthly'} subscription{'\n'}
+              • Price: {currencySymbols[currency]}{selectedPlan === 'annually' ? pricing[currency].annually.total : pricing[currency].monthly.total}{'\n'}
+              • Auto-renewable subscription{'\n'}
+              • Cancel anytime in your device settings
+            </Text>
+            
+            <View style={styles.legalLinksContainer}>
+              <TouchableOpacity 
+                style={styles.legalLink}
+                onPress={() => Linking.openURL('https://xscard.co.za/terms')}
+              >
+                <Text style={styles.legalLinkText}>Terms of Use</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalSeparator}> • </Text>
+              <TouchableOpacity 
+                style={styles.legalLink}
+                onPress={() => Linking.openURL('https://xscard.co.za/privacy')}
+              >
+                <Text style={styles.legalLinkText}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Currency Toggle - Show for all platforms */}
+          <CurrencyToggle />
 
           {/* Pricing Options */}
           <View style={styles.pricingContainer}>
-            {/* Annual Plan */}
-            {useRevenueCat && annualPackage ? (
-              <TouchableOpacity 
-                style={[
-                  styles.planOption,
-                  selectedPlan === 'annually' && styles.selectedPlan
-                ]}
-                onPress={() => setSelectedPlan('annually')}
-              >
-                {monthlyPackage && (
-                  <View style={styles.saveBadge}>
-                    <Text style={styles.saveText}>
-                      Save {annualPackage.product.currencyCode === 'USD' ? '$' : ''}{(monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
+            {isLoadingPricing ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Loading subscription options...</Text>
+              </View>
+            ) : (
+              <>
+                {/* Annual Plan */}
+                {useRevenueCat && annualPackage && (
+                  <TouchableOpacity 
+                    style={[
+                      styles.planOption,
+                      selectedPlan === 'annually' && styles.selectedPlan
+                    ]}
+                    onPress={() => setSelectedPlan('annually')}
+                  >
+                    {monthlyPackage && (
+                      <View style={styles.saveBadge}>
+                        <Text style={styles.saveText}>
+                          Save {currency === 'ZAR' ? 'R' : '$'}{currency === 'ZAR' ? 
+                            '119.99' : 
+                            (monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.planType}>Annually</Text>
+                    <Text style={styles.price}>
+                      {currency === 'ZAR' ? 
+                        'R1,799.99' : 
+                        annualPackage.product.priceString}
                     </Text>
-                  </View>
+                    <Text style={styles.monthlyPrice}>
+                      {currency === 'ZAR' ? 
+                        'R149.99/month' : 
+                        `${(annualPackage.product.price / 12).toFixed(2)} ${annualPackage.product.currencyCode}/month`}
+                    </Text>
+                    {annualPackage.product.introPrice && (
+                      <Text style={styles.trialBadge}>{getTrialText(annualPackage)}</Text>
+                    )}
+                  </TouchableOpacity>
                 )}
-                <Text style={styles.planType}>Annually</Text>
-                <Text style={styles.price}>{annualPackage.product.priceString}</Text>
-                <Text style={styles.monthlyPrice}>
-                  {(annualPackage.product.price / 12).toFixed(2)} {annualPackage.product.currencyCode}/month
-                </Text>
-                {annualPackage.product.introPrice && (
-                  <Text style={styles.trialBadge}>{getTrialText(annualPackage)}</Text>
-                )}
-              </TouchableOpacity>
-            ) : !useRevenueCat && (
-              <TouchableOpacity 
-                style={[
-                  styles.planOption,
-                  selectedPlan === 'annually' && styles.selectedPlan
-                ]}
-                onPress={() => setSelectedPlan('annually')}
-              >
-                <View style={styles.saveBadge}>
-                  <Text style={styles.saveText}>Save {symbol}{pricing[currency].annually.save}</Text>
-                </View>
-                <Text style={styles.planType}>Annually</Text>
-                <Text style={styles.price}>{symbol}{pricing[currency].annually.total.toFixed(2)}</Text>
-                <Text style={styles.monthlyPrice}>{symbol}{pricing[currency].annually.monthly.toFixed(2)}/month</Text>
-              </TouchableOpacity>
-            )}
 
-            {/* Monthly Plan */}
-            {useRevenueCat && monthlyPackage ? (
-              <TouchableOpacity 
-                style={[
-                  styles.planOption,
-                  selectedPlan === 'monthly' && styles.selectedPlan
-                ]}
-                onPress={() => setSelectedPlan('monthly')}
-              >
-                <Text style={styles.planType}>Monthly</Text>
-                <Text style={styles.price}>{monthlyPackage.product.priceString}</Text>
-                {monthlyPackage.product.introPrice && (
-                  <Text style={styles.trialBadge}>{getTrialText(monthlyPackage)}</Text>
+                {/* Monthly Plan */}
+                {useRevenueCat && monthlyPackage && (
+                  <TouchableOpacity 
+                    style={[
+                      styles.planOption,
+                      selectedPlan === 'monthly' && styles.selectedPlan
+                    ]}
+                    onPress={() => setSelectedPlan('monthly')}
+                  >
+                    <Text style={styles.planType}>Monthly</Text>
+                    <Text style={styles.price}>
+                      {currency === 'ZAR' ? 
+                        'R159.99' : 
+                        monthlyPackage.product.priceString}
+                    </Text>
+                    {monthlyPackage.product.introPrice && (
+                      <Text style={styles.trialBadge}>{getTrialText(monthlyPackage)}</Text>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-            ) : !useRevenueCat && (
-              <TouchableOpacity 
-                style={[
-                  styles.planOption,
-                  selectedPlan === 'monthly' && styles.selectedPlan
-                ]}
-                onPress={() => setSelectedPlan('monthly')}
-              >
-                <Text style={styles.planType}>Monthly</Text>
-                <Text style={styles.price}>{symbol}{pricing[currency].monthly.total.toFixed(2)}</Text>
-              </TouchableOpacity>
+
+                {/* FALLBACK PRICING - COMMENTED OUT FOR NOW, PRESERVED FOR FUTURE USE */}
+                {/* 
+                {!useRevenueCat && (
+                  <>
+                    <TouchableOpacity 
+                      style={[
+                        styles.planOption,
+                        selectedPlan === 'annually' && styles.selectedPlan
+                      ]}
+                      onPress={() => setSelectedPlan('annually')}
+                    >
+                      <View style={styles.saveBadge}>
+                        <Text style={styles.saveText}>Save {symbol}{pricing[currency].annually.save}</Text>
+                      </View>
+                      <Text style={styles.planType}>Annually</Text>
+                      <Text style={styles.price}>{symbol}{pricing[currency].annually.total.toFixed(2)}</Text>
+                      <Text style={styles.monthlyPrice}>{symbol}{pricing[currency].annually.monthly.toFixed(2)}/month</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[
+                        styles.planOption,
+                        selectedPlan === 'monthly' && styles.selectedPlan
+                      ]}
+                      onPress={() => setSelectedPlan('monthly')}
+                    >
+                      <Text style={styles.planType}>Monthly</Text>
+                      <Text style={styles.price}>{symbol}{pricing[currency].monthly.total.toFixed(2)}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                */}
+              </>
             )}
           </View>
 
           {/* Trial text - Dynamic based on selected plan */}
-          {useRevenueCat ? (
+          {!isLoadingPricing && useRevenueCat && (
             <Text style={styles.cancelText}>
               {selectedPlan === 'annually' && annualPackage?.product.introPrice
                 ? `${getTrialText(annualPackage)}. Cancel anytime`
@@ -679,8 +731,6 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
                 ? `${getTrialText(monthlyPackage)}. Cancel anytime`
                 : 'Cancel anytime'}
             </Text>
-          ) : (
-            <Text style={styles.cancelText}>7-day free trial. Cancel anytime</Text>
           )}
 
           {/* Feature Comparison */}
@@ -824,15 +874,11 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   closeButton: {
-    padding: 15,
+    padding: 8,
     position: 'absolute',
     top: 25,
     left: 10,
     zIndex: 1,
-  },
-  closeButtonText: {
-    fontSize: 24,
-    color: '#000',
   },
   content: {
     padding: 20,
@@ -1139,6 +1185,56 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  subscriptionInfoContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginVertical: 15,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  subscriptionInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subscriptionInfoText: {
+    fontSize: 14,
+    color: COLORS.gray,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  legalLinksContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  legalLink: {
+    paddingVertical: 4,
+  },
+  legalLinkText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
+  },
+  legalSeparator: {
+    fontSize: 14,
+    color: COLORS.gray,
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
     textAlign: 'center',
   },
 });
