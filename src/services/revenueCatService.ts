@@ -351,7 +351,7 @@ class RevenueCatService {
       // Add timeout to prevent infinite hanging
       const purchasePromise = Purchases.purchasePackage(rcPackage);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Purchase timeout after 30 seconds')), 30000)
+        setTimeout(() => reject(new Error('Purchase timeout after 2 minutes')), 120000)
       );
       
       const { customerInfo } = await Promise.race([purchasePromise, timeoutPromise]) as any;
