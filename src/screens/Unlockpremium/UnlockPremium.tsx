@@ -619,8 +619,8 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             </View>
           </View>
 
-          {/* Currency Toggle - Only show for non-RevenueCat platforms */}
-          {!useRevenueCat && <CurrencyToggle />}
+          {/* Currency Toggle - Show for all platforms */}
+          <CurrencyToggle />
 
           {/* Pricing Options */}
           <View style={styles.pricingContainer}>
@@ -642,14 +642,22 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
                     {monthlyPackage && (
                       <View style={styles.saveBadge}>
                         <Text style={styles.saveText}>
-                          Save {annualPackage.product.currencyCode === 'USD' ? '$' : ''}{(monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
+                          Save {currency === 'ZAR' ? 'R' : '$'}{currency === 'ZAR' ? 
+                            '119.99' : 
+                            (monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
                         </Text>
                       </View>
                     )}
                     <Text style={styles.planType}>Annually</Text>
-                    <Text style={styles.price}>{annualPackage.product.priceString}</Text>
+                    <Text style={styles.price}>
+                      {currency === 'ZAR' ? 
+                        'R1,799.99' : 
+                        annualPackage.product.priceString}
+                    </Text>
                     <Text style={styles.monthlyPrice}>
-                      {(annualPackage.product.price / 12).toFixed(2)} {annualPackage.product.currencyCode}/month
+                      {currency === 'ZAR' ? 
+                        'R149.99/month' : 
+                        `${(annualPackage.product.price / 12).toFixed(2)} ${annualPackage.product.currencyCode}/month`}
                     </Text>
                     {annualPackage.product.introPrice && (
                       <Text style={styles.trialBadge}>{getTrialText(annualPackage)}</Text>
@@ -667,7 +675,11 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
                     onPress={() => setSelectedPlan('monthly')}
                   >
                     <Text style={styles.planType}>Monthly</Text>
-                    <Text style={styles.price}>{monthlyPackage.product.priceString}</Text>
+                    <Text style={styles.price}>
+                      {currency === 'ZAR' ? 
+                        'R159.99' : 
+                        monthlyPackage.product.priceString}
+                    </Text>
                     {monthlyPackage.product.introPrice && (
                       <Text style={styles.trialBadge}>{getTrialText(monthlyPackage)}</Text>
                     )}

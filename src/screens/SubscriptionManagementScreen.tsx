@@ -20,7 +20,6 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { revenueCatService } from '../services/revenueCatService';
 import { authenticatedFetchWithRefresh } from '../utils/api';
 import { COLORS } from '../constants/colors';
 
@@ -108,6 +107,7 @@ export default function SubscriptionManagementScreen() {
       ]
     );
   };
+
 
   const handleRefresh = () => {
     loadSubscriptionStatus();
@@ -301,6 +301,7 @@ export default function SubscriptionManagementScreen() {
             {' '}if you have billing issues
           </Text>
         </View>
+
       </View>
     </ScrollView>
   );
