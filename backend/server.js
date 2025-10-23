@@ -54,6 +54,7 @@ const eventOrganiserRoutes = require('./routes/eventOrganiserRoutes'); // Add ev
 const bulkRegistrationRoutes = require('./routes/bulkRegistrationRoutes'); // Add bulk registration routes
 const revenueCatRoutes = require('./routes/revenueCatRoutes'); // Add RevenueCat routes
 const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple receipt validation routes
+const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -65,6 +66,57 @@ app.get('/saveContact', (req, res) => {
 
 // Define public endpoints that need to be accessible without authentication
 // These MUST be defined before any routes that might have authentication middleware
+
+// Public video endpoint - accessible without authentication
+app.get('/api/feature-videos', async (req, res) => {
+    try {
+        console.log('Fetching all feature videos (public)');
+
+        const videosRef = db.collection('feature_videos');
+        const snapshot = await videosRef.orderBy('uploadDate', 'desc').get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({
+                success: true,
+                message: 'No videos found',
+                videos: []
+            });
+        }
+
+        const videos = [];
+        snapshot.forEach(doc => {
+            const videoData = doc.data();
+            videos.push({
+                id: doc.id,
+                ...videoData,
+                uploadDate: videoData.uploadDate ? new Date(videoData.uploadDate._seconds * 1000).toLocaleString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    timeZone: 'UTC',
+                    timeZoneName: 'short'
+                }).replace(',', '').replace(/\s+/g, ' ') : null
+            });
+        });
+
+        console.log(`Found ${videos.length} videos`);
+
+        res.status(200).json({
+            success: true,
+            videos: videos
+        });
+    } catch (error) {
+        console.error('Error in public getAllVideos:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching videos',
+            error: error.message
+        });
+    }
+});
 
 // Modified public endpoint to get specific card by userId and cardIndex - MOVED TO VERY TOP
 app.get('/public/cards/:id', async (req, res) => {
@@ -200,9 +252,16 @@ app.post('/submit-query', async (req, res) => {
     
     const { name, email, message, to, type, captchaToken, ...rest } = req.body;
     
-    // Verify hCaptcha first
-    const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
-    const captchaValid = await verifyHCaptcha(captchaToken, clientIP);
+    // Validate required fields first
+    if (!name || !email || !message || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields (name, email, message, to)',
+      });
+    }
+    
+    // Environment-aware captcha verification
+    const captchaValid = await verifyCaptchaEnvironmentAware(captchaToken);
     if (!captchaValid) {
       return res.status(400).json({
         success: false,
@@ -210,17 +269,10 @@ app.post('/submit-query', async (req, res) => {
       });
     }
     
-    if (!name || !email || !message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields (name, email, message)',
-      });
-    }
-    
     const mailOptions = {
       from: process.env.EMAIL_USER, // Use system email as from address
       replyTo: email, // Set reply-to as the user's email address
-      to: to || 'xscard@xspark.co.za', // Use provided destination or default
+      to: to || 'support@xscard.co.za', // Use provided destination or default
       subject: `New Contact Query from ${name}`,
       html: `
         <h2>New Query from XS Card Website</h2>
@@ -258,21 +310,19 @@ app.post('/submit-query', async (req, res) => {
     if (result.success) {
       res.json({
         success: true,
-        message: 'Your message has been sent successfully'
+        message: 'Submitted'
       });
     } else {
       res.status(500).json({
         success: false,
-        message: 'Failed to send your message',
-        details: result
+        message: 'Internal server error'
       });
     }
   } catch (error) {
     console.error('Query submission error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to process your message',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 });
@@ -503,6 +553,7 @@ app.use('/', apkRoutes); // Add APK routes for public download
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
 app.use('/', userRoutes); // Move user routes to public section so SignIn works
 app.use('/', contactRoutes); // Move contact routes to public section to keep save contact public
+app.use('/api/feature-videos', videoRoutes); // Add video routes BEFORE other /api routes
 app.use('/api', contactRequestRoutes); // Add contact request routes
 app.use('/api', eventOrganiserRoutes); // Add event organiser routes
 app.use('/api', bulkRegistrationRoutes); // Add bulk registration routes
@@ -861,6 +912,54 @@ const recordFailedAttempt = (ip) => {
  * @param {string} ip - The client IP address for rate limiting
  * @returns {Promise<boolean>} - Whether the captcha is valid
  */
+/**
+ * Environment-aware captcha verification
+ * Supports development bypass, dummy tokens, and real hCaptcha verification
+ * @param {string} token - The captcha token from the frontend
+ * @returns {Promise<boolean>} - Whether the captcha is valid
+ */
+const verifyCaptchaEnvironmentAware = async (token) => {
+  const HCAPTCHA_VERIFY_URL = 'https://hcaptcha.com/siteverify';
+  const DUMMY_SITE_TOKEN = '10000000-aaaa-bbbb-cccc-000000000001';
+  const DUMMY_SECRET = '0x0000000000000000000000000000000000000000';
+  const BYPASS_TOKEN = 'BYPASSED_FOR_DEV';
+
+  try {
+    // Development bypass - ONLY in development environment
+    if (process.env.NODE_ENV === 'development' && (token === BYPASS_TOKEN || process.env.ALLOW_CAPTCHA_BYPASS === 'true')) {
+      console.log('Bypassing captcha for development environment');
+      return true;
+    }
+
+    // Determine which secret to use
+    const secret = token === DUMMY_SITE_TOKEN ? DUMMY_SECRET : process.env.HCAPTCHA_SECRET_KEY;
+    
+    if (!secret) {
+      console.error('No hCaptcha secret available for verification');
+      return false;
+    }
+
+    console.log('Using hCaptcha secret key:', secret.substring(0, 10) + '...');
+    console.log('Verifying token:', token.substring(0, 20) + '...');
+
+    const formData = new URLSearchParams();
+    formData.append('secret', secret);
+    formData.append('response', token);
+
+    const response = await axios.post(HCAPTCHA_VERIFY_URL, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    console.log('hCaptcha verification response:', response.data);
+    return response.data.success === true;
+  } catch (error) {
+    console.error('Captcha verification error:', error);
+    return false;
+  }
+};
+
 const verifyHCaptcha = async (token, ip) => {
   try {
     // Check rate limiting first

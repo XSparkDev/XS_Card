@@ -67,12 +67,15 @@ export default function SignUpScreen() {
       isValid = false;
     }
 
-    if (!email.trim()) {
+    // Trim email for validation
+    const trimmedEmail = email.trim();
+    
+    if (!trimmedEmail) {
       setErrorMessage('Email is required');
       setShowError(true);
       newErrors.email = 'Email is required';
       isValid = false;
-    } else if (!validateEmail(email)) {
+    } else if (!validateEmail(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address');
       setShowError(true);
       newErrors.email = 'Please enter a valid email address';
@@ -107,7 +110,7 @@ export default function SignUpScreen() {
       const userData = {
         name: firstName,
         surname: lastName,
-        email,
+        email: email.trim(), // 🔥 FIX: Trim email before sending to backend
         password,
         status: 'active',
       };
