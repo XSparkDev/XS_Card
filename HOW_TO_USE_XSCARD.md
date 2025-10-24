@@ -333,3 +333,5 @@ Make sure the app has access to:
 ---
 
 *This guide covers all the main features of XSCard. For additional help or advanced features, please contact our support team or check the in-app help section.*
+
+

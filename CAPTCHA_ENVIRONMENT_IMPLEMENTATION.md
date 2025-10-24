@@ -87,3 +87,5 @@ The frontend can now send any of these captcha tokens:
 - Real hCaptcha token - For production verification
 
 All tokens will be handled appropriately by the backend without frontend changes needed.
+
+
