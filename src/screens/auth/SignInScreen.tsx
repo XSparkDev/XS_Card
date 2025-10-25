@@ -97,8 +97,14 @@ export default function SignInScreen() {
 
     let isValid = true;
 
-    if (!email.trim()) {
+    // Trim email for validation
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
       newErrors.email = 'Email is required';
+      isValid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      newErrors.email = 'Please enter a valid email address';
       isValid = false;
     }
 
@@ -123,8 +129,9 @@ export default function SignInScreen() {
     try {
       console.log('SignIn: Starting Firebase authentication...');
       
-      // Use Firebase client SDK for authentication
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // 🔥 FIX: Trim email before Firebase authentication
+      const trimmedEmail = email.trim();
+      const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
       const firebaseUser = userCredential.user;
       
       console.log('SignIn: Firebase authentication successful:', firebaseUser.uid);

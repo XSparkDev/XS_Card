@@ -42,6 +42,9 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
       if (fileType === 'apk') {
         // Store APK files in a dedicated apk-files folder
         filePath = `apk-files/${filename}`;
+      } else if (fileType === 'video') {
+        // Store feature videos in a dedicated feature-videos folder
+        filePath = `feature-videos/${filename}`;
       } else if (fileType === 'bannerImage' || fileType === 'eventImages') {
         // Store event-related images in events folder
         filePath = `events/${userId}/${filename}`;
@@ -86,6 +89,8 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
       let uploadsDir;
       if (fileType === 'apk') {
         uploadsDir = path.join(__dirname, '..', 'public', 'downloads');
+      } else if (fileType === 'video') {
+        uploadsDir = path.join(__dirname, '..', 'public', 'feature-videos');
       } else if (fileType === 'bannerImage' || fileType === 'eventImages') {
         uploadsDir = path.join(__dirname, '..', 'public', 'events');
       } else {
@@ -97,8 +102,8 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
       }
       
       let userDir;
-      if (fileType === 'apk') {
-        // APK files don't need user-specific directories in local storage
+      if (fileType === 'apk' || fileType === 'video') {
+        // APK files and videos don't need user-specific directories in local storage
         userDir = uploadsDir;
       } else {
         // Create user directory for other images
@@ -121,6 +126,8 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
       let relativePath;
       if (fileType === 'apk') {
         relativePath = `/downloads/${filename}`;
+      } else if (fileType === 'video') {
+        relativePath = `/feature-videos/${filename}`;
       } else if (fileType === 'bannerImage' || fileType === 'eventImages') {
         relativePath = `/events/${userId}/${filename}`;
       } else {
@@ -142,6 +149,8 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
         let uploadsDir;
         if (fileType === 'apk') {
           uploadsDir = path.join(__dirname, '..', 'public', 'downloads');
+        } else if (fileType === 'video') {
+          uploadsDir = path.join(__dirname, '..', 'public', 'feature-videos');
         } else if (fileType === 'bannerImage' || fileType === 'eventImages') {
           uploadsDir = path.join(__dirname, '..', 'public', 'events');
         } else {
@@ -153,8 +162,8 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
         }
         
         let userDir;
-        if (fileType === 'apk') {
-          // APK files don't need user-specific directories in local storage
+        if (fileType === 'apk' || fileType === 'video') {
+          // APK files and videos don't need user-specific directories in local storage
           userDir = uploadsDir;
         } else {
           // Create user directory for other images
@@ -177,6 +186,8 @@ const uploadFile = async (fileBuffer, originalName, userId, fileType) => {
         let relativePath;
         if (fileType === 'apk') {
           relativePath = `/downloads/${filename}`;
+        } else if (fileType === 'video') {
+          relativePath = `/feature-videos/${filename}`;
         } else if (fileType === 'bannerImage' || fileType === 'eventImages') {
           relativePath = `/events/${userId}/${filename}`;
         } else {
@@ -235,7 +246,10 @@ const getContentType = (extension) => {
     '.gif': 'image/gif',
     '.webp': 'image/webp',
     '.svg': 'image/svg+xml',
-    '.apk': 'application/vnd.android.package-archive'
+    '.apk': 'application/vnd.android.package-archive',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo'
   };
   
   return types[extension.toLowerCase()] || 'application/octet-stream';

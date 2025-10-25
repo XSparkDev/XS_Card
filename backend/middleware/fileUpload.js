@@ -12,17 +12,20 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 120 * 1024 * 1024, // Increased to 50MB for APK files
+    fileSize: 150 * 1024 * 1024, // 150MB for video files
   },
   fileFilter: (req, file, cb) => {
-    // Accept image files and APK files
+    // Accept image files, APK files, and video files
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else if (file.mimetype === 'application/vnd.android.package-archive' || 
                file.originalname.toLowerCase().endsWith('.apk')) {
       cb(null, true);
+    } else if (file.mimetype.startsWith('video/') || 
+               ['.mp4', '.mov', '.avi'].includes(file.originalname.toLowerCase().slice(-4))) {
+      cb(null, true);
     } else {
-      cb(new Error('Only image files and APK files are allowed!'), false);
+      cb(new Error('Only image files, APK files, and video files (MP4, MOV, AVI) are allowed!'), false);
     }
   }
 });
@@ -59,10 +62,10 @@ const handleSingleUpload = (fieldName) => {
                      req.query.userId ||
                      (req.body.email ? `temp_${req.body.email}` : null);
         
-        // For APK files, use a system/default userId since APKs are global
-        if (fieldName === 'apk') {
-          userId = 'system_apk_uploads';
-          console.log('Using system userId for APK upload');
+        // For APK files and videos, use a system/default userId since they are global
+        if (fieldName === 'apk' || fieldName === 'video') {
+          userId = 'system_uploads';
+          console.log(`Using system userId for ${fieldName} upload`);
         } else if (!userId) {
           return res.status(400).json({
             success: false,
@@ -129,10 +132,10 @@ const handleMultipleUploads = (fields) => {
                      req.query.userId ||
                      (req.body.email ? `temp_${req.body.email}` : null);
         
-        // For APK files, use a system/default userId since APKs are global
-        if (Object.keys(req.files).includes('apk')) {
-          userId = 'system_apk_uploads';
-          console.log('Using system userId for APK upload in multiple files');
+        // For APK files and videos, use a system/default userId since they are global
+        if (Object.keys(req.files).includes('apk') || Object.keys(req.files).includes('video')) {
+          userId = 'system_uploads';
+          console.log('Using system userId for global file upload in multiple files');
         } else if (!userId) {
           return res.status(400).json({
             success: false,

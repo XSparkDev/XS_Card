@@ -13,7 +13,7 @@ async function testSubmitQuery() {
   const mailOptions = {
     from: process.env.EMAIL_USER, // Use system email as from address
     replyTo: 'test@example.com', // Set reply-to as the user's email address
-    to: 'xscard@xspark.co.za', // Use provided destination or default
+    to: 'support@xscard.co.za', // Use provided destination or default
     subject: `New Contact Query from Test User`,
     html: `
       <h2>New Query from XS Card Website</h2>
