@@ -261,8 +261,13 @@ app.post('/submit-query', async (req, res) => {
     }
     
     // Environment-aware captcha verification
+    console.log('Environment check - NODE_ENV:', process.env.NODE_ENV);
+    console.log('Environment check - ALLOW_CAPTCHA_BYPASS:', process.env.ALLOW_CAPTCHA_BYPASS);
+    console.log('Captcha token received:', captchaToken);
+    
     const captchaValid = await verifyCaptchaEnvironmentAware(captchaToken);
     if (!captchaValid) {
+      console.log('Captcha verification failed for token:', captchaToken);
       return res.status(400).json({
         success: false,
         message: 'Captcha verification failed. Please try again.',
@@ -925,14 +930,43 @@ const verifyCaptchaEnvironmentAware = async (token) => {
   const BYPASS_TOKEN = 'BYPASSED_FOR_DEV';
 
   try {
-    // Development bypass - ONLY in development environment
-    if (process.env.NODE_ENV === 'development' && (token === BYPASS_TOKEN || process.env.ALLOW_CAPTCHA_BYPASS === 'true')) {
-      console.log('Bypassing captcha for development environment');
-      return true;
+    // Handle bypass token - should only work in development or when explicitly allowed
+    if (token === BYPASS_TOKEN) {
+      // Only allow bypass in development environment or when explicitly configured
+      const isDevelopment = process.env.NODE_ENV === 'development' || 
+                           process.env.NODE_ENV === 'dev' || 
+                           process.env.ALLOW_CAPTCHA_BYPASS === 'true';
+      
+      if (isDevelopment) {
+        console.log('Bypassing captcha for development environment');
+        return true;
+      } else {
+        console.log('Bypass token received in production - rejecting');
+        return false;
+      }
     }
 
-    // Determine which secret to use
-    const secret = token === DUMMY_SITE_TOKEN ? DUMMY_SECRET : process.env.HCAPTCHA_SECRET_KEY;
+    // Handle dummy token for testing
+    if (token === DUMMY_SITE_TOKEN) {
+      console.log('Using dummy token for testing');
+      const secret = DUMMY_SECRET;
+      
+      const formData = new URLSearchParams();
+      formData.append('secret', secret);
+      formData.append('response', token);
+
+      const response = await axios.post(HCAPTCHA_VERIFY_URL, formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      console.log('hCaptcha verification response:', response.data);
+      return response.data.success === true;
+    }
+
+    // Handle real hCaptcha tokens
+    const secret = process.env.HCAPTCHA_SECRET_KEY;
     
     if (!secret) {
       console.error('No hCaptcha secret available for verification');
