@@ -57,7 +57,8 @@ exports.uploadVideo = async (req, res) => {
             uploadDate: admin.firestore.Timestamp.now(),
             uploadedBy: email || uid,
             description: description || '',
-            uploaderUid: uid
+            uploaderUid: uid,
+            isDemo: false  // Default to false for new uploads
         };
 
         const videoRef = db.collection('feature_videos').doc();
@@ -136,7 +137,7 @@ exports.getAllVideos = async (req, res) => {
 exports.updateVideoMetadata = async (req, res) => {
     try {
         const { videoId } = req.params;
-        const { filename, description } = req.body;
+        const { filename, description, isDemo } = req.body;
 
         console.log(`Updating video metadata for ID: ${videoId}`);
 
@@ -155,12 +156,32 @@ exports.updateVideoMetadata = async (req, res) => {
         const updateData = {};
         if (filename !== undefined) updateData.filename = filename;
         if (description !== undefined) updateData.description = description;
+        if (isDemo !== undefined) updateData.isDemo = isDemo;
 
         if (Object.keys(updateData).length === 0) {
             return res.status(400).json({
                 success: false,
                 message: 'No valid fields provided for update'
             });
+        }
+
+        // Handle isDemo validation: only ONE video can have isDemo=true at a time
+        if (isDemo === true) {
+            console.log('Setting isDemo=true, ensuring no other videos have isDemo=true');
+            
+            // First, set all other videos to isDemo=false
+            const allVideosRef = db.collection('feature_videos');
+            const allVideosSnapshot = await allVideosRef.get();
+            
+            const batch = db.batch();
+            allVideosSnapshot.forEach(doc => {
+                if (doc.id !== videoId) {
+                    batch.update(doc.ref, { isDemo: false });
+                }
+            });
+            await batch.commit();
+            
+            console.log('All other videos set to isDemo=false');
         }
 
         // Update the document

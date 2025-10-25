@@ -39,7 +39,8 @@ router.use(authenticateUser);
  *     mimeType: string,
  *     uploadDate: string,
  *     uploadedBy: string,
- *     description: string
+ *     description: string,
+ *     isDemo: boolean
  *   }
  * }
  */
@@ -51,7 +52,8 @@ router.post('/upload', handleSingleUpload('video'), videoController.uploadVideo)
  * 
  * Body: {
  *   filename?: string,
- *   description?: string
+ *   description?: string,
+ *   isDemo?: boolean
  * }
  * 
  * Response: {
@@ -65,7 +67,8 @@ router.post('/upload', handleSingleUpload('video'), videoController.uploadVideo)
  *     mimeType: string,
  *     uploadDate: string,
  *     uploadedBy: string,
- *     description: string
+ *     description: string,
+ *     isDemo: boolean
  *   }
  * }
  */
