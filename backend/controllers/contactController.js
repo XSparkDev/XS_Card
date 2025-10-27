@@ -57,6 +57,13 @@ exports.getContactById = async (req, res) => {
         console.log('Raw contact data:', data); // Debug log
 
         if (data.contactList) {
+            // Sort by createdAt descending (newest first)
+            data.contactList.sort((a, b) => {
+                const aTime = a.createdAt?.seconds || 0;
+                const bTime = b.createdAt?.seconds || 0;
+                return bTime - aTime; // Descending order
+            });
+            
             data.contactList = data.contactList.map(contact => ({
                 ...contact,
                 createdAt: formatDate(contact.createdAt) // Format for display
