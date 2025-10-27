@@ -20,7 +20,11 @@ try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   console.log('Firebase client initialized for project:', firebaseConfig.projectId);
-} catch (error) {
+  
+  // Note: Firebase will show a warning about memory persistence
+  // However, we handle session persistence via AsyncStorage in AuthContext and authStorage
+  // The token and user data are stored in AsyncStorage, which persists across app restarts
+} catch (error: any) {
   console.error('Firebase initialization failed:', error);
   console.error('Firebase config:', firebaseConfig);
   throw error;
