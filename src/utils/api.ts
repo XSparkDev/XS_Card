@@ -57,7 +57,7 @@ const getBaseUrl = () => {
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-  // return 'http://localhost:8383';
+  // return 'http://192.168.68.113:8383';
  // return 'https://2f0c56695d5a.ngrok-free.app';
   
 };
