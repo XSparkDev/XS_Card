@@ -1418,16 +1418,21 @@
                 return;
             }
 
-            if (!userData || !userData.id) {
-                console.warn('Cannot track scan: user data not available');
+            // Get userId from URL params (source of truth)
+            const urlParams = new URLSearchParams(window.location.search);
+            const userIdFromUrl = urlParams.get('userId');
+            const cardIndex = parseInt(urlParams.get('cardIndex')) || 0;
+            
+            // Use URL userId as source of truth, fallback to userData.id
+            const trackingUserId = userIdFromUrl || userData?.id;
+            
+            if (!trackingUserId) {
+                console.warn('Cannot track scan: userId not available from URL or userData');
                 return;
             }
 
-            const urlParams = new URLSearchParams(window.location.search);
-            const cardIndex = parseInt(urlParams.get('cardIndex')) || 0;
-
             // Check if this scan was already tracked recently
-            const storageKey = `xscard_scan_${userData.id}_${cardIndex}`;
+            const storageKey = `xscard_scan_${trackingUserId}_${cardIndex}`;
             let lastScan = null;
             
             try {
@@ -1459,10 +1464,10 @@
             }
 
             try {
-                console.log(`Tracking ${scanType} scan for user ${userData.id}, card ${cardIndex}`);
+                console.log(`Tracking ${scanType} scan for user ${trackingUserId}, card ${cardIndex}`);
                 
                 const trackingData = {
-                    userId: userData.id,
+                    userId: trackingUserId,
                     cardIndex: cardIndex,
                     scanType: scanType,
                     sessionId: sessionId,
@@ -1780,8 +1785,12 @@ END:VCARD`;
         // Parse URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const userId = urlParams.get('userId');
-        const cardIndex = urlParams.get('cardIndex') || 0;
+        const cardIndex = parseInt(urlParams.get('cardIndex')) || 0;
         let userData = null;
+        
+        // Debug logging for URL params
+        console.log('URL params extracted:', { userId, cardIndex });
+        console.log('Full URL:', window.location.href);
 
         // Initialize session for scan tracking
         initializeSession();
@@ -2149,8 +2158,15 @@ END:VCARD`;
             }
 
             // Use EXACTLY the same payload structure that works in Postman
+            // Use URL param userId first; fallback to userData.id only if needed
+            const targetUserId = userId || userData?.id;
+            
+            console.log('Debug - userId from URL:', userId);
+            console.log('Debug - userData:', userData);
+            console.log('Debug - Using targetUserId:', targetUserId);
+            
             const payload = {
-                userId: userData.id,
+                userId: targetUserId,
                 contactInfo: {
                     name: scannerName,
                     surname: scannerSurname,

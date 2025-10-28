@@ -87,19 +87,21 @@ export class AuthManager {
           }
         }
         
-        // Check if Firebase user is still authenticated
-        const firebaseUser = auth.currentUser;
-        if (firebaseUser) {
-          console.log('Firebase user is still authenticated:', firebaseUser.uid);
-          // AuthContext Firebase listener will handle token refresh automatically
-          // Just ensure token refresh service is active
+        // ✅ FIX: Don't require Firebase user when keepLoggedIn is true
+        // Firebase may lose its in-memory session after app termination,
+        // but we have the token in AsyncStorage which persists
+        const storedAuthData = await getStoredAuthData();
+        
+        if (storedAuthData && storedAuthData.userToken) {
+          console.log('Stored auth data found, maintaining session');
+          // AuthContext will restore the session from AsyncStorage
           console.log('AuthManager: Ensuring token refresh service is active');
           scheduleTokenRefresh();
           
           // Update last activity time
           await updateLastLoginTime();
         } else {
-          console.log('No Firebase user found, performing auto logout');
+          console.log('No stored auth data found, performing auto logout');
           await this.performAutoLogout();
         }
       } else {
