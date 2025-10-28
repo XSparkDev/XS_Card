@@ -7,6 +7,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "lint": "echo 'No linter configured' && exit 0",
+    "test": "echo 'No tests configured' && exit 0",
+    "ci:predeploy": "node backend/test-addcontact-route.js",
     "version:bump": "node version-adjuster.js",
     "version:check": "node version-adjuster.js check"
   },

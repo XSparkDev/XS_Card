@@ -57,12 +57,195 @@ const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple 
 const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// ========================================================================
+// CRITICAL: Add Contact Handler - MUST be mounted at top to prevent 404s
+// Static middleware moved AFTER routes to prevent interference
+// ========================================================================
+
+// Extract handler function for reuse across multiple route aliases
+const addContactHandler = async (req, res) => {
+    const { userId, contactInfo } = req.body;
+    
+    // Detailed logging
+    console.log('Add Contact called - Public endpoint in server.js');
+    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
+    
+    if (!userId || !contactInfo) {
+        return res.status(400).send({ 
+            success: false,
+            message: 'User ID and contact info are required'
+        });
+    }
+
+    // Validate that email is provided (required for user detection)
+    if (!contactInfo.email || !contactInfo.email.trim()) {
+        return res.status(400).send({ 
+            success: false,
+            message: 'Email is required for contact saving'
+        });
+    }
+
+    try {
+        // Get user's plan information
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        const userData = userDoc.data();
+
+        if (!userData) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        const contactRef = db.collection('contacts').doc(userId);
+        const doc = await contactRef.get();
+
+        let currentContacts = [];
+        if (doc.exists) {
+            currentContacts = doc.data().contactList || [];
+        }
+
+        // Free plan contact limit
+        const FREE_PLAN_CONTACT_LIMIT = 20;
+
+        // Check if free user has reached contact limit
+        if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
+            console.log(`Contact limit reached for free user ${userId}. Current contacts: ${currentContacts.length}`);
+            return res.status(403).send({
+                message: 'Contact limit reached',
+                error: 'FREE_PLAN_LIMIT_REACHED',
+                currentContacts: currentContacts.length,
+                limit: FREE_PLAN_CONTACT_LIMIT
+            });
+        }
+
+        // Create base contact
+        const baseContact = {
+            ...contactInfo,
+            email: contactInfo.email || '', // Add email field with fallback
+            createdAt: admin.firestore.Timestamp.now()
+        };
+
+        // Check if the contact email belongs to an existing XS Card user
+        let newContact = baseContact;
+        try {
+            console.log('Checking if contact is an XS Card user...');
+            const existingUser = await checkUserExistsByEmail(contactInfo.email);
+            
+            if (existingUser) {
+                console.log(`Contact is XS Card user: ${existingUser.userId}`);
+                // Link the contact to the XS Card user (using card index 0 as primary)
+                // Make linking non-blocking for better performance
+                setImmediate(async () => {
+                    try {
+                        const linkedContact = await linkContactToXsCardUser(baseContact, existingUser.userId, 0);
+                        console.log('Linked contact created in background');
+                        // Update the contact in the database with linking info
+                        const updatedContacts = [...currentContacts];
+                        const contactIndex = updatedContacts.findIndex(c => c.email === baseContact.email);
+                        if (contactIndex !== -1) {
+                            updatedContacts[contactIndex] = linkedContact;
+                            await contactRef.set({
+                                userId: db.doc(`users/${userId}`),
+                                contactList: updatedContacts
+                            }, { merge: true });
+                            console.log('Contact updated with linking info');
+                        }
+                    } catch (linkingError) {
+                        console.error('Error during background linking:', linkingError);
+                    }
+                });
+                console.log('Contact saved, linking will happen in background');
+            } else {
+                console.log('Contact is not an XS Card user, saving as regular contact');
+            }
+        } catch (linkingError) {
+            console.error('Error during user detection (non-blocking):', linkingError);
+            // Continue with regular contact if linking fails
+            newContact = baseContact;
+        }
+
+        currentContacts.push(newContact);
+
+        await contactRef.set({
+            userId: db.doc(`users/${userId}`),
+            contactList: currentContacts
+        }, { merge: true });
+        
+        // Send email notification if user has email (non-blocking)
+        if (userData.email) {
+            // Send email in background - don't wait for it
+            setImmediate(async () => {
+                try {
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: userData.email,
+                        subject: 'Someone Saved Your Contact Information',
+                        html: `
+                            <h2>New Contact Added</h2>
+                            <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
+                            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                                <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
+                                    <li><strong>Name:</strong> ${contactInfo.name}</li>
+                                    <li><strong>Surname:</strong> ${contactInfo.surname}</li>
+                                    <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
+                                    <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
+                                    ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
+                                    <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
+                                </ul>
+                            </div>
+                            <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
+                            ${userData.plan === 'free' ? 
+                                `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
+                                : ''}
+                        `
+                    };
+
+                    const mailResult = await sendMailWithStatus(mailOptions);
+                    if (!mailResult.success) {
+                        console.error('Failed to send email notification:', mailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('Email sending error:', emailError);
+                }
+            });
+        }
+        
+        res.status(201).send({ 
+            success: true,
+            message: 'Contact added successfully',
+            contactList: currentContacts.map(contact => ({
+                ...contact,
+                createdAt: contact.createdAt ? contact.createdAt.toDate().toISOString() : new Date().toISOString()
+            })),
+            remainingContacts: userData.plan === 'free' ? 
+                FREE_PLAN_CONTACT_LIMIT - currentContacts.length : 
+                'unlimited'
+        });
+    } catch (error) {
+        console.error('Error adding contact:', error);
+        res.status(500).send({ 
+            success: false,
+            message: 'Internal Server Error', 
+            error: error.message 
+        });
+    }
+};
+
+// Mount all aliases for AddContact at TOP (critical for saveContact.html)
+app.post('/AddContact', addContactHandler);
+app.post('/public/saveContact', addContactHandler);
+app.post('/saveContact', addContactHandler);
 
 // Define critical public routes FIRST to avoid middleware conflicts
 app.get('/saveContact', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
 });
+app.get('/saveContact.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
+});
+
+// Now mount static middleware AFTER critical routes
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Define public endpoints that need to be accessible without authentication
 // These MUST be defined before any routes that might have authentication middleware
@@ -140,9 +323,10 @@ app.get('/public/cards/:id', async (req, res) => {
         }
 
         // Get the specific card and add user ID
+        // Ensure the returned id is ALWAYS the userId by assigning it LAST
         const card = {
-            id: userId,
-            ...userData.cards[cardIndex]
+            ...userData.cards[cardIndex],
+            id: userId
         };
 
         // Log image URLs for debugging
@@ -332,174 +516,7 @@ app.post('/submit-query', async (req, res) => {
   }
 });
 
-// Add the AddContact endpoint directly to server.js - MOVED TO TOP
-// This bypasses any router or authentication middleware issues
-app.post('/AddContact', async (req, res) => {
-    const { userId, contactInfo } = req.body;
-    
-    // Detailed logging
-    console.log('Add Contact called - Public endpoint in server.js');
-    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
-    
-    if (!userId || !contactInfo) {
-        return res.status(400).send({ 
-            success: false,
-            message: 'User ID and contact info are required'
-        });
-    }
-
-    // Validate that email is provided (required for user detection)
-    if (!contactInfo.email || !contactInfo.email.trim()) {
-        return res.status(400).send({ 
-            success: false,
-            message: 'Email is required for contact saving'
-        });
-    }
-
-    try {
-        // Get user's plan information
-        const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
-        const userData = userDoc.data();
-
-        if (!userData) {
-            return res.status(404).send({ message: 'User not found' });
-        }
-
-        const contactRef = db.collection('contacts').doc(userId);
-        const doc = await contactRef.get();
-
-        let currentContacts = [];
-        if (doc.exists) {
-            currentContacts = doc.data().contactList || [];
-        }
-
-        // Free plan contact limit
-        const FREE_PLAN_CONTACT_LIMIT = 20;
-
-        // Check if free user has reached contact limit
-        if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
-            console.log(`Contact limit reached for free user ${userId}. Current contacts: ${currentContacts.length}`);
-            return res.status(403).send({
-                message: 'Contact limit reached',
-                error: 'FREE_PLAN_LIMIT_REACHED',
-                currentContacts: currentContacts.length,
-                limit: FREE_PLAN_CONTACT_LIMIT
-            });
-        }
-
-        // Create base contact
-        const baseContact = {
-            ...contactInfo,
-            email: contactInfo.email || '', // Add email field with fallback
-            createdAt: admin.firestore.Timestamp.now()
-        };
-
-        // Check if the contact email belongs to an existing XS Card user
-        let newContact = baseContact;
-        try {
-            console.log('Checking if contact is an XS Card user...');
-            const existingUser = await checkUserExistsByEmail(contactInfo.email);
-            
-            if (existingUser) {
-                console.log(`Contact is XS Card user: ${existingUser.userId}`);
-                // Link the contact to the XS Card user (using card index 0 as primary)
-                // Make linking non-blocking for better performance
-                setImmediate(async () => {
-                    try {
-                        const linkedContact = await linkContactToXsCardUser(baseContact, existingUser.userId, 0);
-                        console.log('Linked contact created in background');
-                        // Update the contact in the database with linking info
-                        const updatedContacts = [...currentContacts];
-                        const contactIndex = updatedContacts.findIndex(c => c.email === baseContact.email);
-                        if (contactIndex !== -1) {
-                            updatedContacts[contactIndex] = linkedContact;
-                            await contactRef.set({
-                                userId: db.doc(`users/${userId}`),
-                                contactList: updatedContacts
-                            }, { merge: true });
-                            console.log('Contact updated with linking info');
-                        }
-                    } catch (linkingError) {
-                        console.error('Error during background linking:', linkingError);
-                    }
-                });
-                console.log('Contact saved, linking will happen in background');
-            } else {
-                console.log('Contact is not an XS Card user, saving as regular contact');
-            }
-        } catch (linkingError) {
-            console.error('Error during user detection (non-blocking):', linkingError);
-            // Continue with regular contact if linking fails
-            newContact = baseContact;
-        }
-
-        currentContacts.push(newContact);
-
-        await contactRef.set({
-            userId: db.doc(`users/${userId}`),
-            contactList: currentContacts
-        }, { merge: true });
-        
-        // Send email notification if user has email (non-blocking)
-        if (userData.email) {
-            // Send email in background - don't wait for it
-            setImmediate(async () => {
-                try {
-                    const mailOptions = {
-                        from: process.env.EMAIL_USER,
-                        to: userData.email,
-                        subject: 'Someone Saved Your Contact Information',
-                        html: `
-                            <h2>New Contact Added</h2>
-                            <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-                            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                                <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
-                                    <li><strong>Name:</strong> ${contactInfo.name}</li>
-                                    <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                                    <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
-                                    <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
-                                    ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
-                                    <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
-                                </ul>
-                            </div>
-                            <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-                            ${userData.plan === 'free' ? 
-                                `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
-                                : ''}
-                        `
-                    };
-
-                    const mailResult = await sendMailWithStatus(mailOptions);
-                    if (!mailResult.success) {
-                        console.error('Failed to send email notification:', mailResult.error);
-                    }
-                } catch (emailError) {
-                    console.error('Email sending error:', emailError);
-                }
-            });
-        }
-        
-        res.status(201).send({ 
-            success: true,
-            message: 'Contact added successfully',
-            contactList: currentContacts.map(contact => ({
-                ...contact,
-                createdAt: contact.createdAt ? contact.createdAt.toDate().toISOString() : new Date().toISOString()
-            })),
-            remainingContacts: userData.plan === 'free' ? 
-                FREE_PLAN_CONTACT_LIMIT - currentContacts.length : 
-                'unlimited'
-        });
-    } catch (error) {
-        console.error('Error adding contact:', error);
-        res.status(500).send({ 
-            success: false,
-            message: 'Internal Server Error', 
-            error: error.message 
-        });
-    }
-});
+// NOTE: AddContact handler moved to top of file (line 67) for route priority
 
 // Profile image endpoint - public
 app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
@@ -549,7 +566,7 @@ app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
 });
 
 // Public routes - must be before authentication middleware
-app.use(express.static(path.join(__dirname, 'public')));
+// NOTE: express.static moved to line 248 (after critical routes, before other endpoints)
 app.use('/', paymentRoutes); // Add this line before protected routes
 app.use('/', subscriptionRoutes); // Add subscription routes
 app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
@@ -566,86 +583,7 @@ app.use('/api', testRoutes); // Add test routes for debugging
 
 
 
-// Add new contact saving endpoint
-app.post('/saveContact', async (req, res) => {
-    const { userId, contactInfo } = req.body;
-    
-    if (!userId || !contactInfo) {
-        return res.status(400).send({ message: 'User ID and contact info are required' });
-    }
-
-    try {
-        // Save contact to database
-        const contactsRef = db.collection('contacts').doc(userId);
-        const contactsDoc = await contactsRef.get();
-
-        let contactList = contactsDoc.exists ? (contactsDoc.data().contactList || []) : [];
-        if (!Array.isArray(contactList)) contactList = [];
-
-        // Add new contact with Firestore Timestamp
-        contactList.push({
-            name: contactInfo.name,
-            surname: contactInfo.surname,
-            phone: contactInfo.phone,
-            howWeMet: contactInfo.howWeMet,
-            createdAt: admin.firestore.Timestamp.now()
-        });
-
-        await contactsRef.set({
-            contactList: contactList
-        }, { merge: true });
-
-        // Send email notification
-        const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
-        const userData = userDoc.data();
-
-        if (userData && userData.email) {
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: userData.email,
-                subject: 'Someone Saved Your Contact Information',
-                html: `
-                    <h2>New Contact Added</h2>
-                    <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-                    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                        <p><strong>Contact Details:</strong></p>
-                        <ul style="list-style: none; padding-left: 0;">
-                            <li><strong>Name:</strong> ${contactInfo.name}</li>
-                            <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                            <li><strong>Phone Number:</strong> ${contactInfo.phone}</li>
-                            <li><strong>How You Met:</strong> ${contactInfo.howWeMet}</li>
-                        </ul>
-                    </div>
-                    <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-                `
-            };
-
-            const mailResult = await sendMailWithStatus(mailOptions);
-            console.log('Email sending result:', mailResult);
-
-            if (!mailResult.success) {
-                console.error('Failed to send email:', mailResult.error);
-            }
-        }
-
-        // Send success response
-        res.status(200).send({ 
-            success: true,
-            message: 'Contact saved successfully',
-            contact: contactList[contactList.length - 1],
-            emailSent: userData?.email ? true : false
-        });
-
-    } catch (error) {
-        console.error('Error saving contact:', error);
-        res.status(500).send({ 
-            success: false,
-            message: 'Failed to save contact',
-            error: error.message 
-        });
-    }
-});
+// NOTE: saveContact handler moved to top of file (line 67) for route priority
 
 
 
@@ -1101,6 +1039,32 @@ global.socketService = socketService;
 console.log('🚀 WebSocket service initialized and ready for Phase 2 event broadcasting');
 
 // Graceful shutdown handling
+// ========================================================================
+// 404 Logger - Catch-all for unmatched routes
+// ========================================================================
+app.use((req, res) => {
+    // Don't log 404s for known static file extensions (common static files)
+    const path = req.path;
+    const staticExtensions = ['.html', '.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.json', '.xml', '.pdf', '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.flv', '.webm'];
+    const isStaticFile = staticExtensions.some(ext => path.toLowerCase().endsWith(ext));
+    
+    // Log non-static 404s to help diagnose broken public endpoints
+    if (!isStaticFile) {
+        console.log(`⚠️  404 NOT FOUND: ${req.method} ${path}`);
+        if (req.headers.referer) {
+            console.log(`   Referer: ${req.headers.referer}`);
+        }
+        console.log(`   Headers: ${JSON.stringify(req.headers, null, 2)}`);
+    }
+    
+    res.status(404).json({ 
+        success: false,
+        message: 'Not found',
+        path: path
+    });
+});
+
+// Mount AddContact routes AFTER 404 to force failure (temporary test)
 process.on('SIGINT', () => {
     console.log('\n🛑 Shutting down gracefully...');
     server.close(() => {
