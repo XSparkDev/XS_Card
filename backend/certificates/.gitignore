@@ -1,0 +1,13 @@
+# Certificate files for Apple Wallet and Google Wallet
+# These files contain sensitive information and should NOT be committed to Git
+
+# Apple Wallet Certificates
+*.pem
+*.p12
+*.cer
+
+# Google Wallet Service Account
+*.json
+
+# Keep this file to maintain directory structure
+!.gitkeep

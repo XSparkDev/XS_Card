@@ -7,6 +7,8 @@ import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRef
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import { useColorScheme } from '../../context/ColorSchemeContext';
@@ -109,6 +111,10 @@ export default function CardsScreen() {
   const [modalType, setModalType] = useState<'email' | 'phone' | null>(null);
   const [showProfileCompletionModal, setShowProfileCompletionModal] = useState(false);
   const [modalData, setModalData] = useState<string>('');
+  
+  // Mock pass preview states
+  const [showPassPreview, setShowPassPreview] = useState(false);
+  const [passPreviewData, setPassPreviewData] = useState<any>(null);
 
   // Update the cards state definition
   const [cards, setCards] = useState<Card[]>([]);
@@ -445,65 +451,73 @@ export default function CardsScreen() {
 
   const handleAddToWallet = async () => {
     try {
-      // First check if any images are missing
+      // Check if card data is available
       const currentCard = userData?.cards?.[currentPage];
       if (!currentCard) {
         Alert.alert('Error', 'Card data not available');
         return;
       }
 
-      const missingImages = [];
-      if (!currentCard.profileImage) missingImages.push('Profile image');
-      if (!currentCard.companyLogo) missingImages.push('Company logo');
-
-      // If images are missing, show warning and confirmation
-      if (missingImages.length > 0) {
-        Alert.alert(
-          'Missing Images',
-          `Your wallet pass will be created without the following: ${missingImages.join(', ')}. This may reduce the visual appeal of your digital card in the wallet. Would you like to continue?`,
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel'
-            },
-            {
-              text: 'Continue anyway',
-              onPress: () => createWalletPass(true)
-            }
-          ]
-        );
-        return;
-      }
-
-      // If all images are present, check if we're in a local environment
-      const isLocalEnvironment = API_BASE_URL.match(/localhost|127\.0\.0\.1|192\.168\.|10\./);
-      if (isLocalEnvironment) {
-        Alert.alert(
-          'Development Environment',
-          'You are in a development environment. Images may not be accessible to the wallet service. Continue?',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel'
-            },
-            {
-              text: 'Continue',
-              onPress: () => createWalletPass(false)
-            }
-          ]
-        );
-        return;
-      }
-      
-      // No issues detected, proceed normally
-      await createWalletPass(false);
+      // Show mock mode options
+      Alert.alert(
+        '🔧 Mock Wallet Mode',
+        'Choose how you want to test the wallet pass:',
+        [
+          {
+            text: 'Preview Pass',
+            onPress: () => previewWalletPass()
+          },
+          {
+            text: 'Generate File',
+            onPress: () => createWalletPass()
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          }
+        ]
+      );
     } catch (error) {
       console.error('Error preparing wallet pass:', error);
       Alert.alert('Error', 'Failed to prepare wallet pass');
     }
   };
 
-  const createWalletPass = async (skipImages: boolean) => {
+  const previewWalletPass = async () => {
+    try {
+      const userId = await getUserId();
+      if (!userId) {
+        Alert.alert('Error', 'User ID not found');
+        return;
+      }
+
+      const endpoint = `${ENDPOINTS.ADD_TO_WALLET
+        .replace(':userId', userId)
+        .replace(':cardIndex', currentPage.toString())}/preview`;
+
+      console.log('Fetching pass preview from:', endpoint);
+
+      const response = await authenticatedFetchWithRefresh(endpoint, {
+        method: 'GET'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch pass preview');
+      }
+
+      const previewData = await response.json();
+      console.log('[Preview] Received data:', JSON.stringify(previewData, null, 2));
+      setPassPreviewData(previewData);
+      setShowPassPreview(true);
+
+    } catch (error) {
+      console.error('Error fetching pass preview:', error);
+      Alert.alert('Error', 'Failed to fetch pass preview');
+    }
+  };
+
+  const createWalletPass = async () => {
     setIsWalletLoading(true);
     try {
       const userId = await getUserId();
@@ -512,11 +526,12 @@ export default function CardsScreen() {
         return;
       }
 
-      // Build the endpoint with userId, card index, and skipImages flag
+      // Build the endpoint with userId, card index, and platform detection
+      const platform = Platform.OS === 'ios' ? 'ios' : 'android';
       const endpoint = ENDPOINTS.ADD_TO_WALLET
         .replace(':userId', userId)
         .replace(':cardIndex', currentPage.toString()) + 
-        (skipImages ? '?skipImages=true' : '');
+        `?platform=${platform}`;
 
       console.log('Making wallet request to:', endpoint);
 
@@ -525,23 +540,57 @@ export default function CardsScreen() {
         method: 'POST'
       });
 
-      const data = await response.json();
+      // Check if we're in mock mode
+      const isMockMode = response.headers.get('X-Mock-Mode') === 'true';
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to add to wallet');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add to wallet');
       }
 
-      console.log('Wallet pass created:', data);
-
-      // Check if there's a warning about images
-      if (data.warning) {
-        console.log('Wallet warning:', data.warning);
+      // Handle mock mode
+      if (isMockMode) {
+        console.log('[Mock Mode] Received mock wallet pass');
+        
+        // Get the pass data
+        const passData = await response.arrayBuffer();
+        const currentCard = userData?.cards?.[currentPage];
+        const filename = `${currentCard?.name || 'card'}_${currentPage}${Platform.OS === 'ios' ? '.pkpass' : '.json'}`;
+        
+        // Save to device
+        await saveMockPassToDevice(passData, filename);
+        return;
       }
 
-      if (data.passPageUrl) {
-        await Linking.openURL(data.passPageUrl);
+      // Handle production mode platform-specific responses
+      if (Platform.OS === 'ios') {
+        // For iOS, we expect a .pkpass file
+        const passData = await response.arrayBuffer();
+        const filename = `${userData?.cards?.[currentPage]?.name || 'card'}_${currentPage}.pkpass`;
+        
+        // Create a blob URL and trigger download
+        const blob = new Blob([passData], { type: 'application/vnd.apple.pkpass' });
+        const url = URL.createObjectURL(blob);
+        
+        // Open the pass URL which should trigger Apple Wallet
+        await Linking.openURL(url);
+        
+        // Clean up the blob URL after a short delay
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        
+        console.log('Apple Wallet pass created and opened');
+        
       } else {
-        throw new Error('No pass page URL received');
+        // For Android, we expect a Google Wallet save URL
+        const data = await response.json();
+        
+        if (data.saveUrl) {
+          // Open the Google Wallet save URL
+          await Linking.openURL(data.saveUrl);
+          console.log('Google Wallet pass created and opened');
+        } else {
+          throw new Error('No save URL received from server');
+        }
       }
 
     } catch (error) {
@@ -558,6 +607,72 @@ export default function CardsScreen() {
       );
     } finally {
       setIsWalletLoading(false);
+    }
+  };
+
+  const saveMockPassToDevice = async (passData: ArrayBuffer, filename: string) => {
+    try {
+      // Convert ArrayBuffer to base64
+      const uint8Array = new Uint8Array(passData);
+      let binary = '';
+      for (let i = 0; i < uint8Array.byteLength; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+      }
+      const base64 = btoa(binary);
+
+      // Create directory for wallet passes
+      const dirPath = `${FileSystem.documentDirectory}wallet-passes/`;
+      const dirInfo = await FileSystem.getInfoAsync(dirPath);
+      
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
+      }
+
+      // Save file
+      const filePath = `${dirPath}${filename}`;
+      await FileSystem.writeAsStringAsync(filePath, base64, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+
+      console.log('[Mock Mode] Pass saved to:', filePath);
+
+      // Show success message with options
+      Alert.alert(
+        '🔧 Mock Pass Saved!',
+        `File saved to:\n${Platform.OS === 'ios' ? 'Documents/wallet-passes/' : 'Files/wallet-passes/'}\n\nThis is a mock pass for testing. You can inspect the file structure.\n\nNote: Mock passes won't open in ${Platform.OS === 'ios' ? 'Apple' : 'Google'} Wallet.`,
+        [
+          {
+            text: 'Share File',
+            onPress: () => sharePassFile(filePath, filename)
+          },
+          {
+            text: 'OK',
+            style: 'default'
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('[Mock Mode] Error saving pass:', error);
+      Alert.alert('Error', 'Failed to save mock pass to device');
+    }
+  };
+
+  const sharePassFile = async (filePath: string, filename: string) => {
+    try {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(filePath, {
+          mimeType: Platform.OS === 'ios' ? 'application/vnd.apple.pkpass' : 'application/json',
+          dialogTitle: `Share ${filename}`,
+          UTI: Platform.OS === 'ios' ? 'com.apple.pkpass' : undefined
+        });
+      } else {
+        Alert.alert('Error', 'Sharing is not available on this device');
+      }
+    } catch (error) {
+      console.error('Error sharing file:', error);
+      Alert.alert('Error', 'Failed to share file');
     }
   };
 
@@ -1056,6 +1171,185 @@ export default function CardsScreen() {
           });
         }}
       />
+
+      {/* Pass Preview Modal */}
+      <Modal
+        visible={showPassPreview}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowPassPreview(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '90%', height: '80%' }]}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowPassPreview(false)}
+            >
+              <MaterialIcons name="close" size={24} color={COLORS.black} />
+            </TouchableOpacity>
+
+            <Text style={styles.modalTitle}>🔧 Wallet Pass Preview</Text>
+            
+            <Text style={{ fontSize: 12, color: COLORS.gray, textAlign: 'center', marginBottom: 10 }}>
+              Debug: passPreviewData exists: {passPreviewData ? 'YES' : 'NO'}
+              {passPreviewData && ` | primary fields: ${passPreviewData.passStructure?.primary?.length || 0}`}
+            </Text>
+            
+            {/* Debug: Show raw data */}
+            {passPreviewData && (
+              <Text style={{ fontSize: 10, color: COLORS.gray, textAlign: 'center', marginBottom: 10 }}>
+                Name: {passPreviewData.cardData?.name} | Company: {passPreviewData.cardData?.company}
+              </Text>
+            )}
+            
+            {passPreviewData ? (
+              <View style={{ flex: 1 }}>
+                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                  {/* Mock Mode Notice */}
+                  <View style={[styles.noticeBox, { backgroundColor: '#fff3cd', borderColor: '#ffeaa7' }]}>
+                    <MaterialIcons name="info" size={20} color="#856404" />
+                    <Text style={[styles.noticeText, { color: '#856404' }]}>
+                      This is a preview of your wallet pass. In production, this will open in {Platform.OS === 'ios' ? 'Apple' : 'Google'} Wallet.
+                    </Text>
+                  </View>
+
+                  {/* Pass Preview Card */}
+                  <View style={[styles.passPreviewCard, { 
+                    backgroundColor: passPreviewData.cardData?.colorScheme || '#1B2B5B',
+                    borderColor: passPreviewData.cardData?.colorScheme || '#1B2B5B'
+                  }]}>
+                    {/* Gradient overlay for depth */}
+                    <View style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: '30%',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      borderTopLeftRadius: 16,
+                      borderTopRightRadius: 16,
+                    }} />
+                    {/* Header */}
+                    <View style={styles.passHeader}>
+                      <Text style={[styles.passTitle, { color: passPreviewData.template?.foregroundColor || '#ffffff' }]}>
+                        {passPreviewData.cardData?.name} {passPreviewData.cardData?.surname}
+                      </Text>
+                      <Text style={[styles.passSubtitle, { color: passPreviewData.template?.foregroundColor || '#ffffff' }]}>
+                        {passPreviewData.cardData?.occupation}
+                      </Text>
+                      <Text style={[styles.passCompany, { color: passPreviewData.template?.foregroundColor || '#ffffff' }]}>
+                        {passPreviewData.cardData?.company}
+                      </Text>
+                    </View>
+
+                    {/* Images */}
+                    <View style={styles.passImages}>
+                      {passPreviewData.cardData?.companyLogo && (
+                        <Image
+                          source={{ uri: passPreviewData.cardData.companyLogo }}
+                          style={styles.passLogo}
+                          resizeMode="contain"
+                        />
+                      )}
+                      {passPreviewData.cardData?.profileImage && (
+                        <Image
+                          source={{ uri: passPreviewData.cardData.profileImage }}
+                          style={styles.passProfileImage}
+                          resizeMode="cover"
+                        />
+                      )}
+                    </View>
+
+                    {/* Fields */}
+                    <View style={styles.passFields}>
+                      {passPreviewData.passStructure?.primary?.map((field: any, index: number) => (
+                        <View key={index} style={styles.passField}>
+                          <Text style={[styles.passFieldLabel, { color: passPreviewData.template?.foregroundColor || '#ffffff' }]}>
+                            {field.label}
+                          </Text>
+                          <Text style={[styles.passFieldValue, { color: passPreviewData.template?.foregroundColor || '#ffffff' }]}>
+                            {field.value}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    {/* QR Code */}
+                    {passPreviewData.barcode?.dataUrl && (
+                      <View style={styles.passQRContainer}>
+                        <Image
+                          source={{ uri: passPreviewData.barcode.dataUrl }}
+                          style={styles.passQRCode}
+                          resizeMode="contain"
+                        />
+                        <Text style={[styles.passQRText, { color: passPreviewData.template?.foregroundColor || '#ffffff' }]}>
+                          Scan to save contact
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Pass Data Summary */}
+                  <View style={styles.passDataSummary}>
+                    <Text style={styles.summaryTitle}>Pass Data Summary</Text>
+                    
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Template:</Text>
+                      <Text style={styles.summaryValue}>{passPreviewData.template?.name || 'Basic'}</Text>
+                    </View>
+                    
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>User Plan:</Text>
+                      <Text style={styles.summaryValue}>{passPreviewData.userPlan || 'free'}</Text>
+                    </View>
+                    
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Platform:</Text>
+                      <Text style={styles.summaryValue}>{Platform.OS === 'ios' ? 'Apple Wallet' : 'Google Wallet'}</Text>
+                    </View>
+                    
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Mock Mode:</Text>
+                      <Text style={styles.summaryValue}>{passPreviewData.mockMode ? 'Yes' : 'No'}</Text>
+                    </View>
+                  </View>
+                </ScrollView>
+              </View>
+            ) : (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ fontSize: 16, color: COLORS.gray }}>
+                  Loading preview data...
+                </Text>
+                <Text style={{ fontSize: 12, color: COLORS.gray, marginTop: 8 }}>
+                  passPreviewData: {passPreviewData ? 'exists' : 'null'}
+                </Text>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.passActions}>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: COLORS.secondary }]}
+                onPress={() => {
+                  setShowPassPreview(false);
+                  createWalletPass();
+                }}
+              >
+                <MaterialIcons name="download" size={20} color={COLORS.white} />
+                <Text style={styles.actionButtonText}>Generate File</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: COLORS.gray }]}
+                onPress={() => setShowPassPreview(false)}
+              >
+                <MaterialIcons name="close" size={20} color={COLORS.white} />
+                <Text style={styles.actionButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1349,5 +1643,199 @@ qrCode: {
     fontWeight: 'bold',
     fontFamily: 'Montserrat-Bold',
     marginLeft: 5,
+  },
+  // Pass Preview Styles
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+    backgroundColor: '#fff3cd',
+    borderColor: '#ffeaa7',
+  },
+  noticeText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#856404',
+    fontWeight: '500',
+  },
+  passPreviewCard: {
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 24,
+    borderWidth: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 12,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  passHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.2)',
+  },
+  passTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  passSubtitle: {
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 6,
+    opacity: 0.9,
+    fontWeight: '500',
+  },
+  passCompany: {
+    fontSize: 16,
+    textAlign: 'center',
+    opacity: 0.8,
+    fontWeight: '400',
+  },
+  passImages: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 20,
+  },
+  passLogo: {
+    width: 70,
+    height: 70,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: 8,
+  },
+  passProfileImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  passFields: {
+    marginBottom: 24,
+  },
+  passField: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.15)',
+  },
+  passFieldLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    opacity: 0.9,
+    flex: 1,
+  },
+  passFieldValue: {
+    fontSize: 15,
+    flex: 2,
+    textAlign: 'right',
+    fontWeight: '400',
+  },
+  passQRContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+  },
+  passQRCode: {
+    width: 140,
+    height: 140,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  passQRText: {
+    fontSize: 13,
+    marginTop: 12,
+    opacity: 0.9,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  passDataSummary: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  summaryTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
+    color: COLORS.black,
+    textAlign: 'center',
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  summaryLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  summaryValue: {
+    fontSize: 15,
+    color: COLORS.black,
+    fontWeight: '500',
+  },
+  passActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    flex: 1,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  actionButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 8,
   },
 });

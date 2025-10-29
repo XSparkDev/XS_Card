@@ -9,13 +9,26 @@ import { getKeepLoggedInPreference } from './authStorage';
 import { toastService, useToast } from '../hooks/useToast';
 
 // Add these types near the top of the file
-export interface PasscreatorResponse {
-    message: string;
-    passUri: string;
-    passFileUrl: string;
-    passPageUrl: string;
-    identifier: string;
-    colorScheme?: string; // Add default color support
+export interface AppleWalletResponse {
+    passData: ArrayBuffer;
+    filename: string;
+}
+
+export interface GoogleWalletResponse {
+    saveUrl: string;
+    passObject: any;
+}
+
+export interface MockWalletResponse {
+    mockMode: boolean;
+    passData: string;
+    filename: string;
+    platform: 'ios' | 'android';
+    previewData?: {
+        fields: any;
+        images: any;
+        barcode: any;
+    };
 }
 
 // New interfaces for authentication
@@ -51,13 +64,13 @@ export const setGlobalAuthContextRef = (ref: any) => {
 const getBaseUrl = () => {
   // For production, use the deployed server
   //return 'https://xscard-app-8ign.onrender.com';
-    return 'https://baseurl.xscard.co.za';
+  //  return 'https://baseurl.xscard.co.za';
 
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-  //return 'http://localhost:8383';
+  return 'http://192.168.3.12:8383';
  // return 'https://2f0c56695d5a.ngrok-free.app';
   
 };

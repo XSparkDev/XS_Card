@@ -52,7 +52,39 @@ PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxx
 PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxx
 
 # ============================================
-# HCAPTCHA CONFIGURATION
+# WALLET PASS CONFIGURATION
+# ============================================
+
+# Apple Wallet Configuration (using passkit-generator)
+APPLE_PASS_TYPE_ID=pass.com.xscard.businesscard
+APPLE_TEAM_ID=YOUR_TEAM_ID
+APPLE_PASS_CERT_PATH=./certificates/passcert.pem
+APPLE_PASS_KEY_PATH=./certificates/passkey.pem
+APPLE_WWDR_CERT_PATH=./certificates/wwdr.pem
+
+# Google Wallet Configuration
+GOOGLE_WALLET_ISSUER_ID=3388000000012345678
+GOOGLE_WALLET_SERVICE_ACCOUNT_PATH=./certificates/google-wallet-service-account.json
+GOOGLE_WALLET_CLASS_ID=xscard_business_card_v1
+
+# Wallet Public URLs
+DEV_WALLET_PUBLIC_URL=http://localhost:8383
+PROD_WALLET_PUBLIC_URL=https://your-domain.com
+
+# Wallet Mock Mode (for testing without certificates)
+# Set to true to generate unsigned passes for testing
+# Set to false in production with real certificates
+WALLET_MOCK_MODE=true
+
+# ============================================
+# PASSCREATOR CONFIGURATION (DEPRECATED - REMOVE AFTER MIGRATION)
+# ============================================
+# These variables are no longer used but kept for reference during migration
+# PASSCREATOR_BASE_URL=https://api.passcreator.com
+# PASSCREATOR_TEMPLATE_ID=your_template_id
+# PASSCREATOR_API_KEY=your_api_key
+# DEV_PASSCREATOR_PUBLIC_URL=http://localhost:8383
+# PROD_PASSCREATOR_PUBLIC_URL=https://your-domain.com
 # ============================================
 HCAPTCHA_SECRET_KEY=your-hcaptcha-secret-key
 
