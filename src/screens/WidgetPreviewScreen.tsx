@@ -29,6 +29,7 @@ interface CardData {
   surname: string;
   company: string;
   colorScheme: string;
+  jobTitle?: string;
 }
 
 type Platform = 'ios' | 'android';
@@ -39,7 +40,7 @@ export default function WidgetPreviewScreen() {
   const [widgetPreferences, setWidgetPreferences] = useState<{ [key: number]: boolean }>({});
   const [userCards, setUserCards] = useState<CardData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedWidgetSize, setSelectedWidgetSize] = useState<'small' | 'full'>('full');
+  const [selectedWidgetSize, setSelectedWidgetSize] = useState<'small' | 'medium' | 'large' | 'info'>('large');
   const [realUserId, setRealUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -174,20 +175,25 @@ export default function WidgetPreviewScreen() {
     <View style={styles.sizeSelector}>
       <Text style={styles.sectionTitle}>Widget Size</Text>
       <View style={styles.sizeButtons}>
-        {(['small', 'full'] as const).map((size) => (
+        {([
+          { key: 'small', label: 'Small' },
+          { key: 'medium', label: 'Medium' },
+          { key: 'large', label: 'Large Square' },
+          { key: 'info', label: 'Info Card' }
+        ] as const).map((size) => (
           <TouchableOpacity
-            key={size}
+            key={size.key}
             style={[
               styles.sizeButton,
-              selectedWidgetSize === size && styles.sizeButtonActive
+              selectedWidgetSize === size.key && styles.sizeButtonActive
             ]}
-            onPress={() => setSelectedWidgetSize(size)}
+            onPress={() => setSelectedWidgetSize(size.key as any)}
           >
             <Text style={[
               styles.sizeButtonText,
-              selectedWidgetSize === size && styles.sizeButtonTextActive
+              selectedWidgetSize === size.key && styles.sizeButtonTextActive
             ]}>
-              {size.charAt(0).toUpperCase() + size.slice(1)}
+              {size.label}
             </Text>
           </TouchableOpacity>
         ))}
@@ -270,27 +276,14 @@ export default function WidgetPreviewScreen() {
                   key={card.index}
                   style={[
                     styles.widgetPreview,
-                    platform === 'ios' ? styles.iosWidget : styles.androidWidget,
-                    { width: getWidgetWidth(selectedWidgetSize) }
+                    styles.whiteWidget,
+                    { 
+                      width: getWidgetWidth(selectedWidgetSize),
+                      height: getWidgetHeight(selectedWidgetSize)
+                    }
                   ]}
                 >
-                  {selectedWidgetSize === 'small' ? (
-                    // Small widget: 100% QR code - fills entire widget
-                    <QRCode
-                      value={`https://xscard-app-8ign.onrender.com/saveContact?userId=${realUserId || 'user123'}&cardIndex=${card.index}`}
-                      size={getWidgetQRSize(selectedWidgetSize)}
-                      color={COLORS.black}
-                      backgroundColor={COLORS.white}
-                    />
-                  ) : (
-                    // Full widget: 100% QR code - fills entire widget
-                    <QRCode
-                      value={`https://xscard-app-8ign.onrender.com/saveContact?userId=${realUserId || 'user123'}&cardIndex=${card.index}`}
-                      size={getWidgetQRSize(selectedWidgetSize)}
-                      color={COLORS.black}
-                      backgroundColor={COLORS.white}
-                    />
-                  )}
+                  {renderWidgetContent(card)}
                 </View>
               ))
             ) : (
@@ -365,29 +358,122 @@ export default function WidgetPreviewScreen() {
             )}
           </View>
         <Text style={styles.sizeDescription}>
-          {selectedWidgetSize === 'small' && 'Small: 100% QR code'}
-          {selectedWidgetSize === 'full' && 'Full: 100% QR code'}
+          {selectedWidgetSize === 'small' && 'Small: Pure QR code'}
+          {selectedWidgetSize === 'medium' && 'Medium: QR code + XS Card label'}
+          {selectedWidgetSize === 'large' && 'Large Square: Large QR + Branding'}
+          {selectedWidgetSize === 'info' && 'Info Card: QR + User Details'}
         </Text>
       </View>
     </View>
   );
   };
 
-  const getWidgetWidth = (size: 'small' | 'full') => {
+  const getWidgetWidth = (size: 'small' | 'medium' | 'large' | 'info') => {
     const screenWidth = Dimensions.get('window').width - 32;
     switch (size) {
-      case 'small': return screenWidth * 0.375; // 0.5 * 0.75 = 0.375 (25% smaller)
-      case 'full': return screenWidth * 0.525; // 0.7 * 0.75 = 0.525 (25% smaller)
-      default: return screenWidth * 0.525;
+      case 'small': return screenWidth * 0.35;
+      case 'medium': return screenWidth * 0.45;
+      case 'large': return screenWidth * 0.65;
+      case 'info': return screenWidth * 0.85;
+      default: return screenWidth * 0.65;
+    }
+  };
+  
+  const getWidgetHeight = (size: 'small' | 'medium' | 'large' | 'info') => {
+    const screenWidth = Dimensions.get('window').width - 32;
+    switch (size) {
+      case 'small': return screenWidth * 0.35;
+      case 'medium': return screenWidth * 0.45;
+      case 'large': return screenWidth * 0.65;
+      case 'info': return screenWidth * 0.40; // Rectangular
+      default: return screenWidth * 0.65;
     }
   };
 
-  const getWidgetQRSize = (size: 'small' | 'full') => {
+  const getWidgetQRSize = (size: 'small' | 'medium' | 'large' | 'info') => {
     const widgetWidth = getWidgetWidth(size);
     switch (size) {
-      case 'small': return widgetWidth * 0.9; // 90% of widget width
-      case 'full': return widgetWidth * 0.9; // 90% of widget width
-      default: return widgetWidth * 0.9;
+      case 'small': return widgetWidth * 0.85;
+      case 'medium': return widgetWidth * 0.70;
+      case 'large': return widgetWidth * 0.75;
+      case 'info': return 90; // Fixed size for info card
+      default: return widgetWidth * 0.75;
+    }
+  };
+  
+  const renderWidgetContent = (card: CardData) => {
+    const qrData = `https://xscard-app-8ign.onrender.com/saveContact?userId=${realUserId || 'user123'}&cardIndex=${card.index}`;
+    
+    switch (selectedWidgetSize) {
+      case 'small':
+        // Small: Pure QR code
+        return (
+          <View style={styles.widgetContentCenter}>
+            <QRCode
+              value={qrData}
+              size={getWidgetQRSize(selectedWidgetSize)}
+              color={COLORS.black}
+              backgroundColor={COLORS.white}
+            />
+          </View>
+        );
+        
+      case 'medium':
+        // Medium: QR code + XS Card label
+        return (
+          <View style={styles.widgetContentCenter}>
+            <QRCode
+              value={qrData}
+              size={getWidgetQRSize(selectedWidgetSize)}
+              color={COLORS.black}
+              backgroundColor={COLORS.white}
+            />
+            <Text style={styles.widgetLabel}>XS Card</Text>
+          </View>
+        );
+        
+      case 'large':
+        // Large Square: Large QR + XS Card branding
+        return (
+          <View style={styles.widgetContentCenter}>
+            <QRCode
+              value={qrData}
+              size={getWidgetQRSize(selectedWidgetSize)}
+              color={COLORS.black}
+              backgroundColor={COLORS.white}
+            />
+            <Text style={styles.widgetBranding}>XS Card</Text>
+          </View>
+        );
+        
+      case 'info':
+        // Info Card: QR + User details horizontal layout
+        return (
+          <View style={styles.widgetContentHorizontal}>
+            <View style={styles.infoCardQR}>
+              <QRCode
+                value={qrData}
+                size={getWidgetQRSize(selectedWidgetSize)}
+                color={COLORS.black}
+                backgroundColor={COLORS.white}
+              />
+            </View>
+            <View style={styles.infoCardText}>
+              <Text style={styles.infoCardName}>
+                {card.name} {card.surname || ''}
+              </Text>
+              <Text style={styles.infoCardTitle}>
+                {card.jobTitle || 'Digital Business Card'}
+              </Text>
+              <Text style={styles.infoCardCompany}>
+                {card.company}
+              </Text>
+            </View>
+          </View>
+        );
+        
+      default:
+        return null;
     }
   };
 
@@ -545,14 +631,16 @@ const styles = StyleSheet.create({
   },
   sizeButtons: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   sizeButton: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.lightGray,
+    marginBottom: 8,
   },
   sizeButtonActive: {
     backgroundColor: COLORS.primary,
@@ -652,20 +740,74 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   widgetPreview: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    padding: 8,
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  iosWidget: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    backdropFilter: 'blur(20px)',
+  whiteWidget: {
+    backgroundColor: '#FFFFFF',
   },
-  androidWidget: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  widgetContentCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  widgetContentHorizontal: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 12,
+  },
+  widgetLabel: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#333333',
+    opacity: 0.7,
+  },
+  widgetBranding: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#333333',
+    opacity: 0.7,
+    letterSpacing: 0.5,
+  },
+  infoCardQR: {
+    width: 100,
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    marginRight: 16,
+  },
+  infoCardText: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  infoCardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  infoCardTitle: {
+    fontSize: 13,
+    color: '#666666',
+    marginBottom: 2,
+  },
+  infoCardCompany: {
+    fontSize: 13,
+    color: '#666666',
   },
 
   noWidgetsMessage: {

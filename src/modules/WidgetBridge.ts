@@ -14,6 +14,7 @@ export interface WidgetData {
     surname: string;
     company: string;
     colorScheme: string;
+    jobTitle?: string; // Optional job title/role field
   }>;
 }
 

@@ -82,6 +82,7 @@ class WidgetBridgeModule(reactContext: ReactApplicationContext) : ReactContextBa
                         if (card.hasKey("surname")) cardJson.put("surname", card.getString("surname"))
                         if (card.hasKey("company")) cardJson.put("company", card.getString("company"))
                         if (card.hasKey("colorScheme")) cardJson.put("colorScheme", card.getString("colorScheme"))
+                        if (card.hasKey("jobTitle")) cardJson.put("jobTitle", card.getString("jobTitle"))
                     }
                     
                     jsonArray.put(cardJson)

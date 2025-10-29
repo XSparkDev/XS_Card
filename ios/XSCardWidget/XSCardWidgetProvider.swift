@@ -9,9 +9,11 @@ struct XSCardWidgetEntry: TimelineEntry {
     static let placeholder = XSCardWidgetEntry(
         date: Date(),
         cardData: WidgetCardData(
-            name: "John Doe",
-            company: "Tech Corp",
-            colorScheme: "#4CAF50",
+            name: "Sapho",
+            surname: "Maqhwazima",
+            company: "X Spark",
+            jobTitle: "Co-founder | COO",
+            colorScheme: "#FFFFFF",
             cardIndex: 0
         ),
         qrCodeData: "https://xscard-app-8ign.onrender.com/saveContact?userId=sample&cardIndex=0"
@@ -20,7 +22,9 @@ struct XSCardWidgetEntry: TimelineEntry {
 
 struct WidgetCardData {
     let name: String
+    let surname: String
     let company: String
+    let jobTitle: String?
     let colorScheme: String
     let cardIndex: Int
 }
@@ -74,8 +78,10 @@ struct XSCardWidgetProvider: TimelineProvider {
                 
                 let cardData = WidgetCardData(
                     name: firstCard["name"] as? String ?? "",
+                    surname: firstCard["surname"] as? String ?? "",
                     company: firstCard["company"] as? String ?? "",
-                    colorScheme: firstCard["colorScheme"] as? String ?? "#4CAF50",
+                    jobTitle: firstCard["jobTitle"] as? String,
+                    colorScheme: "#FFFFFF", // Always white background now
                     cardIndex: firstCard["index"] as? Int ?? 0
                 )
                 

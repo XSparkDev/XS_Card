@@ -6,63 +6,236 @@ struct XSCardWidgetEntryView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        ZStack {
-            // Background gradient
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(hex: entry.cardData?.colorScheme ?? "#4CAF50"),
-                    Color(hex: entry.cardData?.colorScheme ?? "#4CAF50").opacity(0.8)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            
-            // Widget content
-            VStack {
-                if let qrCodeData = entry.qrCodeData {
-                    QRCodeView(data: qrCodeData, size: qrCodeSize)
-                        .background(Color.white)
-                        .cornerRadius(8)
-                        .shadow(radius: 2)
-                    
-                    // Show name only for medium widgets
-                    if family == .systemMedium, let cardData = entry.cardData {
-                        Text(cardData.name)
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .padding(.top, 4)
-                    }
-                } else {
-                    // Fallback UI when no data is available
-                    VStack {
-                        Image(systemName: "qrcode")
-                            .font(.title2)
-                            .foregroundColor(.white.opacity(0.7))
-                        Text("XSCard")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                }
-            }
-            .padding()
-        }
-    }
-    
-    private var qrCodeSize: CGFloat {
         switch family {
         case .systemSmall:
-            return 80
+            SmallWidgetView(entry: entry)
         case .systemMedium:
-            return 100
-        default:
-            return 80
+            MediumWidgetView(entry: entry)
+        case .systemLarge:
+            LargeSquareWidgetView(entry: entry)
+        case .accessoryRectangular:
+            LockScreenWidgetView(entry: entry)
+        @unknown default:
+            SmallWidgetView(entry: entry)
         }
     }
 }
 
+// MARK: - Small Widget (Pure QR Code)
+struct SmallWidgetView: View {
+    var entry: XSCardWidgetProvider.Entry
+    
+    var body: some View {
+        ZStack {
+            // White background
+            Color.white
+            
+            // QR Code centered
+            if let qrCodeData = entry.qrCodeData {
+                QRCodeView(data: qrCodeData, size: 100)
+                    .padding(12)
+            } else {
+                // Fallback
+                VStack(spacing: 8) {
+                    Image(systemName: "qrcode")
+                        .font(.title2)
+                        .foregroundColor(.gray.opacity(0.5))
+                    Text("XS Card")
+                        .font(.caption2)
+                        .foregroundColor(.gray.opacity(0.7))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Medium Widget (QR Code + Label)
+struct MediumWidgetView: View {
+    var entry: XSCardWidgetProvider.Entry
+    
+    var body: some View {
+        ZStack {
+            // White background
+            Color.white
+            
+            VStack(spacing: 8) {
+                Spacer()
+                
+                // QR Code
+                if let qrCodeData = entry.qrCodeData {
+                    QRCodeView(data: qrCodeData, size: 120)
+                } else {
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 60))
+                        .foregroundColor(.gray.opacity(0.5))
+                }
+                
+                Spacer()
+                
+                // XS Card label
+                Text("XS Card")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(Color(hex: "#333333").opacity(0.7))
+                    .padding(.bottom, 8)
+            }
+            .padding(16)
+        }
+    }
+}
+
+// MARK: - Large Square Widget (Large QR + Branding)
+struct LargeSquareWidgetView: View {
+    var entry: XSCardWidgetProvider.Entry
+    
+    var body: some View {
+        ZStack {
+            // Pure white background
+            Color.white
+            
+            VStack(spacing: 12) {
+                Spacer()
+                
+                // Large QR Code
+                if let qrCodeData = entry.qrCodeData {
+                    QRCodeView(data: qrCodeData, size: 240)
+                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                } else {
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 120))
+                        .foregroundColor(.gray.opacity(0.4))
+                }
+                
+                Spacer()
+                
+                // XS Card Branding
+                Text("XS Card")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(Color(hex: "#333333").opacity(0.7))
+                    .tracking(0.5)
+                    .padding(.bottom, 12)
+            }
+            .padding(20)
+        }
+    }
+}
+
+// MARK: - Medium Info Card (QR + User Info)
+struct MediumInfoCardView: View {
+    var entry: XSCardWidgetProvider.Entry
+    
+    var body: some View {
+        ZStack {
+            // White/light background
+            Color(hex: "#F8F8F8")
+            
+            HStack(spacing: 16) {
+                // Left: QR Code (40%)
+                if let qrCodeData = entry.qrCodeData {
+                    QRCodeView(data: qrCodeData, size: 100)
+                        .frame(width: 100, height: 100)
+                        .background(Color.white)
+                        .cornerRadius(8)
+                        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+                } else {
+                    Rectangle()
+                        .fill(Color.white)
+                        .frame(width: 100, height: 100)
+                        .cornerRadius(8)
+                        .overlay(
+                            Image(systemName: "qrcode")
+                                .foregroundColor(.gray.opacity(0.4))
+                        )
+                }
+                
+                // Right: User Info (60%)
+                VStack(alignment: .leading, spacing: 4) {
+                    // Full Name
+                    if let cardData = entry.cardData {
+                        Text("\(cardData.name) \(cardData.surname)")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(Color(hex: "#1A1A1A"))
+                            .lineLimit(2)
+                        
+                        // Job Title (if available)
+                        if let jobTitle = cardData.jobTitle, !jobTitle.isEmpty {
+                            Text(jobTitle)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(Color(hex: "#666666"))
+                                .lineLimit(1)
+                        }
+                        
+                        // Company
+                        Text(cardData.company)
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(Color(hex: "#666666"))
+                            .lineLimit(1)
+                    } else {
+                        Text("XS Card")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(Color(hex: "#1A1A1A"))
+                        Text("Digital Business Card")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(Color(hex: "#666666"))
+                    }
+                    
+                    Spacer()
+                }
+                
+                Spacer()
+            }
+            .padding(16)
+        }
+    }
+}
+
+// MARK: - Lock Screen Widget (Compact Info Card)
+struct LockScreenWidgetView: View {
+    var entry: XSCardWidgetProvider.Entry
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // QR Code
+            if let qrCodeData = entry.qrCodeData {
+                QRCodeView(data: qrCodeData, size: 48)
+                    .frame(width: 48, height: 48)
+            } else {
+                Image(systemName: "qrcode")
+                    .font(.title3)
+                    .frame(width: 48, height: 48)
+            }
+            
+            // User Info
+            VStack(alignment: .leading, spacing: 2) {
+                if let cardData = entry.cardData {
+                    Text("\(cardData.name) \(cardData.surname)")
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                    
+                    if let jobTitle = cardData.jobTitle, !jobTitle.isEmpty {
+                        Text(jobTitle)
+                            .font(.system(size: 11, weight: .regular))
+                            .opacity(0.8)
+                            .lineLimit(1)
+                    }
+                    
+                    Text(cardData.company)
+                        .font(.system(size: 11, weight: .regular))
+                        .opacity(0.8)
+                        .lineLimit(1)
+                } else {
+                    Text("XS Card")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - QR Code View
 struct QRCodeView: View {
     let data: String
     let size: CGFloat
@@ -90,6 +263,8 @@ struct QRCodeView: View {
         
         if let filter = CIFilter(name: "CIQRCodeGenerator") {
             filter.setValue(data, forKey: "inputMessage")
+            filter.setValue("H", forKey: "inputCorrectionLevel") // High error correction
+            
             let transform = CGAffineTransform(scaleX: 10, y: 10)
             
             if let output = filter.outputImage?.transformed(by: transform) {
@@ -104,6 +279,7 @@ struct QRCodeView: View {
     }
 }
 
+// MARK: - Color Extension
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -118,7 +294,7 @@ extension Color {
         case 8: // ARGB (32-bit)
             (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
         default:
-            (a, r, g, b) = (1, 1, 1, 0)
+            (a, r, g, b) = (255, 255, 255, 255)
         }
 
         self.init(
@@ -130,4 +306,3 @@ extension Color {
         )
     }
 }
-

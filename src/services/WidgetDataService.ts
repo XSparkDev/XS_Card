@@ -9,6 +9,7 @@ export interface CardData {
   surname: string;
   company: string;
   colorScheme: string;
+  jobTitle?: string; // Optional job title/role field
 }
 
 class WidgetDataService {
@@ -118,7 +119,8 @@ class WidgetDataService {
           name: card.name,
           surname: card.surname,
           company: card.company,
-          colorScheme: card.colorScheme
+          colorScheme: card.colorScheme,
+          jobTitle: card.jobTitle || '' // Include job title if available
         }));
 
       if (enabledCards.length === 0) {

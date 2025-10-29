@@ -30,6 +30,11 @@ public class XSCardWidgetProvider extends AppWidgetProvider {
     
     private static final String WIDGET_PREFS = "XSCardWidgetPrefs";
     private static final String ACTION_WIDGET_CLICK = "com.p.zzles.xscard.WIDGET_CLICK";
+    
+    // Widget size thresholds (in dp)
+    private static final int SMALL_WIDGET_THRESHOLD = 150;
+    private static final int MEDIUM_WIDGET_THRESHOLD = 250;
+    private static final int LARGE_WIDGET_THRESHOLD = 300;
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
@@ -58,55 +63,143 @@ public class XSCardWidgetProvider extends AppWidgetProvider {
     private static void updateAppWidget(Context context, AppWidgetManager appWidgetManager, int appWidgetId) {
         WidgetData widgetData = loadWidgetData(context);
         
-        // Determine widget size
+        // Determine widget size and layout
         int widgetWidth = getWidgetWidth(context, appWidgetManager, appWidgetId);
-        boolean isSmallWidget = widgetWidth < 200; // Approximate threshold
+        int widgetHeight = getWidgetHeight(context, appWidgetManager, appWidgetId);
         
-        RemoteViews views;
-        if (isSmallWidget) {
-            views = new RemoteViews(context.getPackageName(), R.layout.widget_small);
-        } else {
-            views = new RemoteViews(context.getPackageName(), R.layout.widget_medium);
-        }
-
+        WidgetSize widgetSize = determineWidgetSize(widgetWidth, widgetHeight);
+        RemoteViews views = getRemoteViews(context, widgetSize);
+        
         if (widgetData != null && widgetData.qrCodeData != null) {
-            // Generate QR code bitmap
-            Bitmap qrBitmap = generateQRCodeBitmap(widgetData.qrCodeData, 200);
+            // Generate high-quality QR code bitmap
+            int qrSize = getQRCodeSize(widgetSize);
+            Bitmap qrBitmap = generateQRCodeBitmap(widgetData.qrCodeData, qrSize);
+            
             if (qrBitmap != null) {
                 views.setImageViewBitmap(R.id.widget_qr_code, qrBitmap);
             }
             
-            // Set background color
-            try {
-                int color = Color.parseColor(widgetData.colorScheme);
-                views.setInt(R.id.widget_background, "setBackgroundColor", color);
-            } catch (IllegalArgumentException e) {
-                views.setInt(R.id.widget_background, "setBackgroundColor", Color.parseColor("#4CAF50"));
-            }
+            // Set white background for all widgets
+            views.setInt(R.id.widget_background, "setBackgroundColor", Color.WHITE);
             
-            // Set card name for medium widgets
-            if (!isSmallWidget && widgetData.name != null) {
-                views.setTextViewText(R.id.widget_card_name, widgetData.name);
-                views.setViewVisibility(R.id.widget_card_name, android.view.View.VISIBLE);
+            // Handle different widget layouts
+            switch (widgetSize) {
+                case SMALL:
+                    // Small widget: Just QR code, no text
+                    break;
+                    
+                case MEDIUM:
+                    // Medium widget: QR code + "XS Card" label
+                    views.setTextViewText(R.id.widget_card_name, "XS Card");
+                    views.setViewVisibility(R.id.widget_card_name, android.view.View.VISIBLE);
+                    break;
+                    
+                case LARGE_SQUARE:
+                    // Large square widget: QR code + "XS Card" branding
+                    views.setTextViewText(R.id.widget_branding, "XS Card");
+                    break;
+                    
+                case MEDIUM_INFO:
+                    // Medium info card: QR code + user details
+                    String fullName = widgetData.name + 
+                        (widgetData.surname != null && !widgetData.surname.isEmpty() ? " " + widgetData.surname : "");
+                    views.setTextViewText(R.id.widget_user_name, fullName);
+                    
+                    // Show job title if available
+                    if (widgetData.jobTitle != null && !widgetData.jobTitle.isEmpty()) {
+                        views.setTextViewText(R.id.widget_job_title, widgetData.jobTitle);
+                        views.setViewVisibility(R.id.widget_job_title, android.view.View.VISIBLE);
+                    } else {
+                        views.setViewVisibility(R.id.widget_job_title, android.view.View.GONE);
+                    }
+                    
+                    // Show company
+                    if (widgetData.company != null && !widgetData.company.isEmpty()) {
+                        views.setTextViewText(R.id.widget_company, widgetData.company);
+                        views.setViewVisibility(R.id.widget_company, android.view.View.VISIBLE);
+                    } else {
+                        views.setViewVisibility(R.id.widget_company, android.view.View.GONE);
+                    }
+                    break;
             }
         } else {
-            // Fallback UI
-            views.setImageViewResource(R.id.widget_qr_code, R.drawable.ic_qr_code_placeholder);
-            views.setInt(R.id.widget_background, "setBackgroundColor", Color.parseColor("#4CAF50"));
+            // Fallback UI - white background
+            views.setInt(R.id.widget_background, "setBackgroundColor", Color.WHITE);
             
-            if (!isSmallWidget) {
-                views.setTextViewText(R.id.widget_card_name, "XSCard");
-                views.setViewVisibility(R.id.widget_card_name, android.view.View.VISIBLE);
+            // Set placeholder based on widget size
+            if (widgetSize == WidgetSize.MEDIUM_INFO) {
+                views.setTextViewText(R.id.widget_user_name, "XS Card");
+                views.setTextViewText(R.id.widget_company, "Digital Business Card");
+                views.setViewVisibility(R.id.widget_job_title, android.view.View.GONE);
+            } else if (widgetSize == WidgetSize.MEDIUM || widgetSize == WidgetSize.LARGE_SQUARE) {
+                String labelText = "XS Card";
+                int labelId = widgetSize == WidgetSize.LARGE_SQUARE ? 
+                    R.id.widget_branding : R.id.widget_card_name;
+                views.setTextViewText(labelId, labelText);
             }
         }
 
         // Set click intent
         Intent clickIntent = new Intent(context, XSCardWidgetProvider.class);
         clickIntent.setAction(ACTION_WIDGET_CLICK);
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, clickIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, clickIntent, 
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         views.setOnClickPendingIntent(R.id.widget_container, pendingIntent);
 
         appWidgetManager.updateAppWidget(appWidgetId, views);
+    }
+
+    private static WidgetSize determineWidgetSize(int width, int height) {
+        // Determine widget size based on dimensions
+        boolean isSquare = Math.abs(width - height) < 50; // Roughly square
+        boolean isWide = width > height * 1.5; // Wide rectangular
+        
+        if (width < SMALL_WIDGET_THRESHOLD) {
+            return WidgetSize.SMALL;
+        } else if (width >= LARGE_WIDGET_THRESHOLD && isSquare) {
+            return WidgetSize.LARGE_SQUARE;
+        } else if (isWide) {
+            return WidgetSize.MEDIUM_INFO;
+        } else if (width >= MEDIUM_WIDGET_THRESHOLD) {
+            return WidgetSize.MEDIUM;
+        } else {
+            return WidgetSize.MEDIUM;
+        }
+    }
+    
+    private static RemoteViews getRemoteViews(Context context, WidgetSize size) {
+        int layoutId;
+        switch (size) {
+            case SMALL:
+                layoutId = R.layout.widget_small;
+                break;
+            case LARGE_SQUARE:
+                layoutId = R.layout.widget_large_square;
+                break;
+            case MEDIUM_INFO:
+                layoutId = R.layout.widget_medium_info;
+                break;
+            case MEDIUM:
+            default:
+                layoutId = R.layout.widget_medium;
+                break;
+        }
+        return new RemoteViews(context.getPackageName(), layoutId);
+    }
+    
+    private static int getQRCodeSize(WidgetSize size) {
+        switch (size) {
+            case SMALL:
+                return 150;
+            case MEDIUM:
+                return 200;
+            case LARGE_SQUARE:
+                return 300;
+            case MEDIUM_INFO:
+                return 180;
+            default:
+                return 200;
+        }
     }
 
     private static WidgetData loadWidgetData(Context context) {
@@ -125,10 +218,13 @@ public class XSCardWidgetProvider extends AppWidgetProvider {
                     
                     WidgetData data = new WidgetData();
                     data.name = firstCard.optString("name", "");
+                    data.surname = firstCard.optString("surname", "");
                     data.company = firstCard.optString("company", "");
-                    data.colorScheme = firstCard.optString("colorScheme", "#4CAF50");
+                    data.jobTitle = firstCard.optString("jobTitle", "");
+                    data.colorScheme = firstCard.optString("colorScheme", "#FFFFFF");
                     data.cardIndex = cardIndex;
-                    data.qrCodeData = "https://xscard-app-8ign.onrender.com/saveContact?userId=" + userId + "&cardIndex=" + cardIndex;
+                    data.qrCodeData = "https://xscard-app-8ign.onrender.com/saveContact?userId=" + 
+                        userId + "&cardIndex=" + cardIndex;
                     
                     return data;
                 }
@@ -144,13 +240,15 @@ public class XSCardWidgetProvider extends AppWidgetProvider {
         try {
             QRCodeWriter writer = new QRCodeWriter();
             Map<EncodeHintType, Object> hints = new HashMap<>();
-            hints.put(EncodeHintType.MARGIN, 1);
+            hints.put(EncodeHintType.MARGIN, 2); // Increased margin for better scanning
+            hints.put(EncodeHintType.ERROR_CORRECTION, com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.H);
             
             BitMatrix bitMatrix = writer.encode(data, BarcodeFormat.QR_CODE, size, size, hints);
             int width = bitMatrix.getWidth();
             int height = bitMatrix.getHeight();
             
-            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565);
+            // Use ARGB_8888 for better quality
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
             for (int x = 0; x < width; x++) {
                 for (int y = 0; y < height; y++) {
                     bitmap.setPixel(x, y, bitMatrix.get(x, y) ? Color.BLACK : Color.WHITE);
@@ -170,19 +268,35 @@ public class XSCardWidgetProvider extends AppWidgetProvider {
         }
         return 150; // Default fallback
     }
+    
+    private static int getWidgetHeight(Context context, AppWidgetManager appWidgetManager, int appWidgetId) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN) {
+            android.os.Bundle options = appWidgetManager.getAppWidgetOptions(appWidgetId);
+            return options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT);
+        }
+        return 150; // Default fallback
+    }
 
     public static void updateAllWidgets(Context context) {
         Intent intent = new Intent(context, XSCardWidgetProvider.class);
         intent.setAction("com.p.zzles.xscard.UPDATE_WIDGET");
         context.sendBroadcast(intent);
     }
+    
+    private enum WidgetSize {
+        SMALL,
+        MEDIUM,
+        LARGE_SQUARE,
+        MEDIUM_INFO
+    }
 
     private static class WidgetData {
         String name;
+        String surname;
         String company;
+        String jobTitle;
         String colorScheme;
         int cardIndex;
         String qrCodeData;
     }
 }
-

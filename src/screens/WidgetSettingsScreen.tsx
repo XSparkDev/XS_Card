@@ -26,6 +26,7 @@ interface CardData {
   surname: string;
   company: string;
   colorScheme: string;
+  jobTitle?: string;
 }
 
 export default function WidgetSettingsScreen() {
