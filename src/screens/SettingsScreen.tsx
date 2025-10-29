@@ -8,19 +8,37 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { authenticatedFetchWithRefresh, ENDPOINTS } from '../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, API_BASE_URL } from '../utils/api';
 import { useToast } from '../hooks/useToast';
 import Header from '../components/Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getWidgetPreferences, toggleWidgetPreference } from '../utils/widgetUtils';
+import { getImageUrl } from '../utils/imageUtils';
+import { useFocusEffect } from '@react-navigation/native';
 
 type NavigationProp = NativeStackNavigationProp<any>;
+
+interface CardData {
+  name: string;
+  surname: string;
+  email: string;
+  phone: string;
+  company: string;
+  occupation: string;
+  profileImage: string | null;
+  companyLogo: string | null;
+  socials: {
+    [key: string]: string | null;
+  };
+  colorScheme?: string;
+}
 
 interface UserData {
   id: string;
@@ -29,6 +47,7 @@ interface UserData {
   email: string;
   plan: string;
   organiserStatus?: string;
+  cards?: CardData[];
 }
 
 export default function SettingsScreen() {
@@ -37,17 +56,54 @@ export default function SettingsScreen() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  const [profileImageLoading, setProfileImageLoading] = useState(false);
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
+  // Load user data when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUserData();
+    }, [])
+  );
 
   const loadUserData = async () => {
     try {
+      // Load basic user data from AsyncStorage IMMEDIATELY
       const userDataString = await AsyncStorage.getItem('userData');
       if (userDataString) {
-        const data = JSON.parse(userDataString);
-        setUserData(data);
+        const basicData = JSON.parse(userDataString);
+        console.log('SettingsScreen: Loaded userData from AsyncStorage:', basicData);
+        console.log('SettingsScreen: Name:', basicData.name, 'Surname:', basicData.surname);
+        
+        // Set basic user data right away (name, email, plan)
+        setUserData(basicData);
+        
+        // Then fetch cards data in background for profile image
+        setProfileImageLoading(true);
+        try {
+          const userId = await getUserId();
+          if (userId) {
+            const cardResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+            const responseData = await cardResponse.json();
+            
+            let cardsArray: CardData[] | undefined;
+            if (responseData.cards) {
+              cardsArray = responseData.cards;
+            } else if (Array.isArray(responseData)) {
+              cardsArray = responseData;
+            }
+            
+            // Update with cards data (keeps existing name, email, plan)
+            setUserData(prev => ({
+              ...prev!,
+              cards: cardsArray
+            }));
+          }
+        } catch (cardError) {
+          console.log('Could not load cards, profile image will use default:', cardError);
+          // User data is already set, so they still see their info
+        } finally {
+          setProfileImageLoading(false);
+        }
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -111,7 +167,7 @@ export default function SettingsScreen() {
   const handleDeactivateAccount = () => {
     Alert.alert(
       'Deactivate Account',
-      'Are you sure you want to deactivate your account? This action cannot be undone and you will lose access to all your data.',
+      'This will temporarily disable your account. Your data will be preserved and you can contact support to reactivate.\n\nFor permanent deletion, use "Delete Account" instead.',
       [
         {
           text: 'Cancel',
@@ -165,6 +221,68 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This action cannot be undone and you will lose access to all your data.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: confirmDeleteAccount,
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = async () => {
+    console.log('🗑️ confirmDeleteAccount called');
+    console.log('🗑️ Endpoint:', ENDPOINTS.DELETE_ACCOUNT);
+    console.log('🗑️ API Base URL:', API_BASE_URL);
+    
+    setDeactivating(true);
+    try {
+      console.log('🗑️ Sending DELETE request...');
+      const response = await authenticatedFetchWithRefresh(ENDPOINTS.DELETE_ACCOUNT, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('🗑️ Response status:', response.status);
+      console.log('🗑️ Response ok:', response.ok);
+
+      if (response.ok) {
+        toast.success('Account Deleted', 'Your account has been permanently deleted.');
+        
+        // Clear local storage
+        await AsyncStorage.clear();
+        
+        // Navigate to sign in
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'SignIn' }],
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete account');
+      }
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      toast.error(
+        'Deletion Failed',
+        error instanceof Error ? error.message : 'Failed to delete account. Please try again.'
+      );
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
   const renderSettingItem = (
     icon: string,
     title: string,
@@ -212,21 +330,54 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <Header title="Settings" />
       
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        bounces={true}
+      >
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
           
           {userData && (
             <View style={styles.userInfo}>
-              <View style={styles.avatar}>
-                <MaterialIcons name="person" size={32} color={COLORS.white} />
-              </View>
+              {/* Display first card's profile image or default blue avatar */}
+              {profileImageLoading ? (
+                // Show loading state only for avatar
+                <View style={styles.avatar}>
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                </View>
+              ) : (() => {
+                const imageUrl = userData.cards?.[0]?.profileImage ? getImageUrl(userData.cards[0].profileImage) : null;
+                return imageUrl ? (
+                  // Show profile image from first card
+                  <Image
+                    source={{ uri: imageUrl }}
+                    style={styles.avatarImage}
+                    onError={() => {
+                      console.log('Failed to load profile image, using default avatar');
+                    }}
+                  />
+                ) : (
+                  // Show default blue circle with icon
+                  <View style={styles.avatar}>
+                    <MaterialIcons name="person" size={32} color={COLORS.white} />
+                  </View>
+                );
+              })()}
               <View style={styles.userDetails}>
                 <Text style={styles.userName}>
-                  {userData.name} {userData.surname}
+                  {userData.name && userData.surname 
+                    ? `${userData.name} ${userData.surname}`
+                    : userData.name 
+                      ? userData.name
+                      : userData.cards && userData.cards[0] 
+                        ? `${userData.cards[0].name} ${userData.cards[0].surname}`
+                        : 'User'
+                  }
                 </Text>
-                <Text style={styles.userEmail}>{userData.email}</Text>
+                <Text style={styles.userEmail}>{userData.email || 'No email'}</Text>
                 <Text style={styles.userPlan}>
                   Plan: {userData.plan === 'premium' ? 'Premium' : 'Free'}
                 </Text>
@@ -251,8 +402,8 @@ export default function SettingsScreen() {
           {userData?.plan === 'premium' && (
             renderSettingItem(
               'settings',
-              'Manage Subscription',
-              'Update your subscription settings',
+              'View Subscription Details',
+              'See your plan and manage it',
               () => navigation.navigate('UnlockPremium')
             )
           )}
@@ -317,9 +468,8 @@ export default function SettingsScreen() {
           {renderSettingItem(
             'security',
             'Privacy & Security',
-            'Manage your privacy settings',
-            undefined,
-            false
+            'Manage your privacy and security settings',
+            () => navigation.navigate('PrivacySecurity')
           )}
         </View>
 
@@ -359,10 +509,19 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           
           {renderSettingItem(
-            'delete-forever',
+            'block',
             'Deactivate Account',
-            'Permanently deactivate your account',
+            'Temporarily disable your account',
             handleDeactivateAccount,
+            false,
+            true
+          )}
+
+          {renderSettingItem(
+            'delete-forever',
+            'Delete Account',
+            'Permanently delete account and data',
+            handleDeleteAccount,
             false,
             true
           )}
@@ -385,6 +544,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 20,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   section: {
     marginBottom: 24,
@@ -411,13 +573,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 16,
   },
+  avatarImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 16,
+  },
   userDetails: {
     flex: 1,
   },
   userName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.black,
+    color: COLORS.secondary,
     marginBottom: 4,
   },
   userEmail: {

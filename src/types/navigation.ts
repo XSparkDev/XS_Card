@@ -11,7 +11,7 @@ export type RootStackParamList = {
   CardsScreen: undefined;
   AddCards: undefined;
   ContactScreen: undefined;
-  EditCard: { cardIndex: number };
+  EditCard: { cardIndex: number; cardData?: any };
   EventsScreen: undefined;
   EventDetailsScreen: { eventId: string };
   CreateEventScreen: undefined;
@@ -34,6 +34,7 @@ export type RootStackParamList = {
   };
   OrganiserRegistration: undefined;
   Settings: undefined;
+  ChangePassword: undefined;
 };
 
 export type EditCardScreenRouteProp = RouteProp<RootStackParamList, 'EditCard'>;

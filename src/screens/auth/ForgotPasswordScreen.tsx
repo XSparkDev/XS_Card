@@ -36,13 +36,16 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleForgotPassword = async () => {
-    if (!email.trim()) {
+    // Trim email for validation and processing
+    const trimmedEmail = email.trim();
+    
+    if (!trimmedEmail) {
       setErrorMessage('Email is required');
       setShowError(true);
       return;
     }
 
-    if (!validateEmail(email)) {
+    if (!validateEmail(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address');
       setShowError(true);
       return;
@@ -55,7 +58,7 @@ export default function ForgotPasswordScreen() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: trimmedEmail }), // 🔥 FIX: Use trimmed email
       });
 
       const data = await response.json();

@@ -30,6 +30,9 @@ import SettingsScreen from '../screens/SettingsScreen';
 import WidgetSettingsScreen from '../screens/WidgetSettingsScreen';
 import WidgetPreviewScreen from '../screens/WidgetPreviewScreen';
 import DashboardNavigator from './DashboardNavigator';
+import SubscriptionManagementScreen from '../screens/SubscriptionManagementScreen';
+import PrivacySecurityScreen from '../screens/PrivacySecurityScreen'; // NEW IMPORT
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createStackNavigator<RootStackParamList>();
@@ -155,6 +158,9 @@ export default function AppNavigator() {
       <Stack.Screen name="AddCards" component={AddCards} />
       <Stack.Screen name="EditCard" component={EditCard} />
       <Stack.Screen name="UnlockPremium" component={UnlockPremium} />
+      <Stack.Screen name="SubscriptionManagement" component={SubscriptionManagementScreen} />
+      <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="Events" component={EventsScreen} />
       <Stack.Screen name="EventDetails" component={EventDetailsScreen} />
       <Stack.Screen name="EventPreferences" component={EventPreferencesScreen} />

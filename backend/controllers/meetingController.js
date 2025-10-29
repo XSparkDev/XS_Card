@@ -159,6 +159,16 @@ exports.updateMeeting = async (req, res) => {
             });
         }
 
+        // Store original meeting data for comparison
+        const originalMeeting = bookings[meetingIndex];
+        const originalAttendees = originalMeeting.attendees || [];
+        const newAttendees = updateData.attendees || [];
+
+        console.log('🔍 Update Meeting Debug:');
+        console.log('Original attendees:', originalAttendees);
+        console.log('New attendees:', newAttendees);
+        console.log('Update data:', updateData);
+
         // Update meeting data
         bookings[meetingIndex] = {
             ...bookings[meetingIndex],
@@ -167,6 +177,47 @@ exports.updateMeeting = async (req, res) => {
         };
 
         await meetingRef.update({ bookings });
+
+        // Check for new attendees and send invites only to them
+        if (newAttendees.length > 0) {
+            const newAttendeesOnly = findNewAttendees(originalAttendees, newAttendees);
+            
+            console.log('🔍 New Attendee Detection:');
+            console.log('New attendees found:', newAttendeesOnly);
+            
+            if (newAttendeesOnly.length > 0) {
+                console.log(`Found ${newAttendeesOnly.length} new attendees, sending invites...`);
+                
+                try {
+                    // Get organizer info
+                    const userInfo = await getUserInfo(userId);
+                    const organizerInfo = {
+                        name: userInfo.name,
+                        email: userInfo.email
+                    };
+
+                    // Prepare meeting data for email invites
+                    const meetingData = {
+                        title: bookings[meetingIndex].title,
+                        description: bookings[meetingIndex].description || '',
+                        startDateTime: bookings[meetingIndex].meetingWhen,
+                        endDateTime: new Date(new Date(bookings[meetingIndex].meetingWhen).getTime() + (bookings[meetingIndex].duration || 30) * 60000).toISOString(),
+                        location: bookings[meetingIndex].location || 'Virtual Meeting',
+                        attendees: newAttendeesOnly,
+                        organizer: organizerInfo,
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                    };
+
+                    // Send invites only to new attendees
+                    await sendInvitesToNewAttendees(meetingData);
+                    
+                    console.log(`Successfully sent invites to ${newAttendeesOnly.length} new attendees`);
+                } catch (emailError) {
+                    console.error('Error sending invites to new attendees:', emailError);
+                    // Don't fail the entire update if email sending fails
+                }
+            }
+        }
 
         // Format the date for response
         const responseData = {
@@ -393,5 +444,87 @@ exports.sendMeetingInvite = async (req, res) => {
             message: 'Failed to send meeting invitations',
             error: error.message
         });
+    }
+};
+
+// Helper function to find new attendees by comparing email addresses
+const findNewAttendees = (originalAttendees, newAttendees) => {
+    if (!originalAttendees || originalAttendees.length === 0) {
+        return newAttendees; // All attendees are new if there were no original attendees
+    }
+    
+    const originalEmails = originalAttendees.map(attendee => attendee.email?.toLowerCase());
+    
+    return newAttendees.filter(attendee => {
+        const attendeeEmail = attendee.email?.toLowerCase();
+        return attendeeEmail && !originalEmails.includes(attendeeEmail);
+    });
+};
+
+// Helper function to send invites only to new attendees
+const sendInvitesToNewAttendees = async (meetingData) => {
+    try {
+        // Generate the calendar event
+        const calendarEvent = await createCalendarEvent({
+            title: meetingData.title,
+            description: meetingData.description || '',
+            start: meetingData.startDateTime,
+            end: meetingData.endDateTime,
+            location: meetingData.location || 'Online meeting',
+            attendees: meetingData.attendees,
+            organizer: meetingData.organizer,
+            timezone: meetingData.timezone
+        });
+
+        // Send emails only to new attendees
+        const emailPromises = meetingData.attendees.map(async (attendee) => {
+            try {
+                await sendMailWithStatus({
+                    to: attendee.email,
+                    subject: `Meeting Invitation: ${meetingData.title}`,
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #007AFF;">Meeting Invitation</h2>
+                            <p><strong>You've been invited to a meeting:</strong></p>
+                            
+                            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                <h3 style="margin-top: 0; color: #333;">${meetingData.title}</h3>
+                                ${meetingData.description ? `<p><strong>Description:</strong> ${meetingData.description}</p>` : ''}
+                                <p><strong>Date & Time:</strong> ${new Date(meetingData.startDateTime).toLocaleString()}</p>
+                                <p><strong>Duration:</strong> ${meetingData.duration || 30} minutes</p>
+                                <p><strong>Location:</strong> ${meetingData.location || 'Virtual Meeting'}</p>
+                                <p><strong>Organizer:</strong> ${meetingData.organizer.name} (${meetingData.organizer.email})</p>
+                            </div>
+                            
+                            <div style="margin: 20px 0;">
+                                <p><strong>Calendar Event:</strong></p>
+                                <pre style="background-color: #f0f0f0; padding: 10px; border-radius: 4px; font-size: 12px; overflow-x: auto;">${calendarEvent}</pre>
+                            </div>
+                            
+                            <p style="color: #666; font-size: 14px;">
+                                This meeting was updated and you are a new attendee. Please add this to your calendar.
+                            </p>
+                        </div>
+                    `
+                });
+                
+                console.log(`Invite sent successfully to ${attendee.email}`);
+                return { success: true, email: attendee.email };
+            } catch (emailError) {
+                console.error(`Failed to send invite to ${attendee.email}:`, emailError);
+                return { success: false, email: attendee.email, error: emailError.message };
+            }
+        });
+
+        const results = await Promise.all(emailPromises);
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+        
+        console.log(`Email results: ${successCount} sent, ${failCount} failed`);
+        return results;
+        
+    } catch (error) {
+        console.error('Error in sendInvitesToNewAttendees:', error);
+        throw error;
     }
 };

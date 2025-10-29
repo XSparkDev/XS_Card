@@ -2,11 +2,12 @@
   "expo": {
     "name": "XS Card",
     "slug": "xscard",
-    "version": "2.0.0",
+    "version": "207",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
+    "description": "XS Card - Your digital business card solution. Create, share, and manage professional digital business cards with premium features. Terms of Use: https://xscard.co.za/terms",
     "splash": {
       "image": "./assets/icons/splash.png",
       "resizeMode": "contain",
@@ -19,11 +20,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.p.zzles.xscard",
-      "buildNumber": "2.0.0",
+      "buildNumber": "25",
       "icon": "./assets/icons/icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
-      }
+      },
+      "scheme": "XSCard"
     },
     "android": {
       "adaptiveIcon": {
@@ -54,8 +56,8 @@
       [
         "expo-image-picker",
         {
-                  "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
-        "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
+          "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
+          "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
         }
       ]
     ]

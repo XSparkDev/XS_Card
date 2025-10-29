@@ -1,0 +1,70 @@
+# XS Card Environment Variables Template
+# Copy this file to backend/.env and add your actual values
+
+# ============================================
+# FIREBASE CONFIGURATION
+# ============================================
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_CLIENT_EMAIL=your-firebase-client-email
+FIREBASE_PRIVATE_KEY="your-firebase-private-key"
+FIREBASE_DATABASE_URL=https://your-project.firebaseio.com
+FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+
+# ============================================
+# REVENUECAT CONFIGURATION (iOS & Android IAP)
+# ============================================
+
+# RevenueCat API Keys
+# Get from: https://app.revenuecat.com/settings/keys
+REVENUECAT_SECRET_KEY=sk_xxxxxxxxxxxxxxxxxx
+REVENUECAT_IOS_PUBLIC_KEY=appl_xxxxxxxxxxxxxx
+REVENUECAT_ANDROID_PUBLIC_KEY=goog_xxxxxxxxxxxxxx
+
+# Webhook Configuration
+# Get from: https://app.revenuecat.com/settings/integrations
+REVENUECAT_WEBHOOK_AUTH_TOKEN=xxxxxxxxxxxxx
+
+# Product IDs
+# Must match EXACTLY with App Store Connect / Google Play Console
+REVENUECAT_IOS_MONTHLY_PRODUCT_ID=com.xscard.monthly
+REVENUECAT_IOS_ANNUAL_PRODUCT_ID=com.xscard.annual
+REVENUECAT_ANDROID_MONTHLY_PRODUCT_ID=com.xscard.monthly
+REVENUECAT_ANDROID_ANNUAL_PRODUCT_ID=com.xscard.annual
+
+# Entitlement Configuration
+# Must match entitlement identifier in RevenueCat dashboard
+REVENUECAT_ENTITLEMENT_ID=premium
+
+# App Store Configuration (iOS only)
+APPSTORE_SHARED_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# ============================================
+# APPLICATION CONFIGURATION
+# ============================================
+APP_URL=http://localhost:8383
+NODE_ENV=development
+PORT=8383
+
+# ============================================
+# PAYSTACK CONFIGURATION (Legacy - Android/Web)
+# ============================================
+PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxx
+PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxx
+
+# ============================================
+# HCAPTCHA CONFIGURATION
+# ============================================
+HCAPTCHA_SECRET_KEY=your-hcaptcha-secret-key
+
+# ============================================
+# EMAIL CONFIGURATION
+# ============================================
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-email-app-password
+
+# ============================================
+# DATA PURGING CONFIGURATION
+# ============================================
+ARCHIVE_INACTIVE_USERS=false
+DELETE_FIREBASE_AUTH_USERS=false
+INACTIVE_USERS_CHECK_INTERVAL_MINUTES=262800

@@ -644,7 +644,7 @@ export default function EventDetailsScreen() {
         rightIcon={
           isOrganizer ? (
             <TouchableOpacity onPress={() => navigation.navigate('EditEvent', { eventId: event.id, event: event })}>
-              <MaterialIcons name="edit" size={24} color={COLORS.black} />
+              <MaterialIcons name="edit" size={24} color={COLORS.white} />
             </TouchableOpacity>
           ) : undefined
         }

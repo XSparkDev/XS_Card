@@ -1,18 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, KeyboardAvoidingView, BackHandler, PanResponder, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
+import ColorPicker from 'react-native-wheel-color-picker';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
-import { getImageUrl } from '../../utils/imageUtils';
+import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import PhoneNumberInput from '../../components/PhoneNumberInput';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -25,6 +27,7 @@ interface FormData {
   company: string;
   email: string;
   phoneNumber: string;
+  countryCode: string; // Add country code field
   // Social media fields
   whatsapp?: string;
   x?: string;
@@ -42,21 +45,11 @@ interface FormData {
   [key: string]: string | number | undefined;
 }
 
-interface CustomModalProps {
-  isVisible: boolean;
-  onClose: () => void;
-  title: string;
-  message: string;
-  buttons: Array<{
-    text: string;
-    type?: 'cancel' | 'confirm';
-    onPress: () => void;
-  }>;
-}
 
 export default function EditCard() {
   const route = useRoute<EditCardScreenRouteProp>();
   const cardIndex = route.params?.cardIndex ?? 0; // Provide default value of 0
+  const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -67,6 +60,7 @@ export default function EditCard() {
     company: '',
     email: '',
     phoneNumber: '',
+    countryCode: '+27', // Default to South Africa
     whatsapp: '',
     x: '',
     facebook: '',
@@ -80,22 +74,98 @@ export default function EditCard() {
   });
   const [selectedColor, setSelectedColor] = useState('#1B2B5B'); // Default color
   const [selectedSocials, setSelectedSocials] = useState<string[]>([]);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
-  const [isImageSourceModalVisible, setIsImageSourceModalVisible] = useState(false);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
-  const [modalType, setModalType] = useState<'profile' | 'logo' | null>(null);
   const [modalMessage, setModalMessage] = useState('');
   const [userPlan, setUserPlan] = useState<string>('free');
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [socialNotification, setSocialNotification] = useState<string | null>(null);
+  const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
+  const [customColor, setCustomColor] = useState('#1B2B5B');
+  const [showQuickColors, setShowQuickColors] = useState(false);
+
+  // Helper function to parse phone number and extract country code
+  const parsePhoneNumber = (phone: string) => {
+    if (!phone) return { countryCode: '+27', number: '' };
+    
+    // If phone starts with +, try to find matching country code
+    if (phone.startsWith('+')) {
+      // Common country codes to check (sorted by length, longest first)
+      const countryCodes = ['+27', '+44', '+33', '+49', '+86', '+91', '+81', '+61', '+55', '+39', '+34', '+31', '+46', '+47', '+45', '+41', '+43', '+32', '+351', '+30', '+48', '+420', '+36', '+40', '+359', '+385', '+386', '+421', '+370', '+371', '+372', '+358', '+353', '+354', '+352', '+7', '+380', '+90', '+82', '+65', '+60', '+66', '+84', '+63', '+62', '+880', '+92', '+98', '+972', '+966', '+971', '+20', '+234', '+254', '+52', '+54', '+56', '+57', '+51', '+64', '+1'];
+      
+      for (const code of countryCodes) {
+        if (phone.startsWith(code)) {
+          return {
+            countryCode: code,
+            number: phone.substring(code.length)
+          };
+        }
+      }
+    }
+    
+    // Default to South Africa if no match found
+    return { countryCode: '+27', number: phone };
+  };
 
   useEffect(() => {
+    // Use passed card data if available, otherwise fall back to API call
+    if (cardData) {
+      loadCardDataFromProps();
+    } else {
     loadUserData();
+    }
     getUserPlan();
-  }, []);
+  }, [cardData]);
+
+  // New function to load data from passed props (no API call)
+  const loadCardDataFromProps = () => {
+    try {
+      if (!cardData) {
+        setError('No card data provided');
+        return;
+      }
+
+      console.log('Loading card data from props:', cardData);
+      
+      setSelectedColor(cardData.colorScheme || '#1B2B5B');
+      setCustomColor(cardData.colorScheme || '#1B2B5B');
+      setFormData({
+        firstName: cardData.name || '',
+        lastName: cardData.surname || '',
+        occupation: cardData.occupation || '',
+        company: cardData.company || '',
+        email: cardData.email || '',
+        phoneNumber: parsePhoneNumber(cardData.phone || '').number,
+        countryCode: parsePhoneNumber(cardData.phone || '').countryCode,
+        ...Object.keys(cardData.socials || {}).reduce((acc, key) => ({
+          ...acc,
+          [key]: cardData.socials[key]
+        }), {}),
+        profileImage: cardData.profileImage || '',
+        companyLogo: cardData.companyLogo || '',
+        logoZoomLevel: cardData.logoZoomLevel || 1.0,
+      });
+
+      // Set zoom level if it exists in the card data
+      if (cardData.logoZoomLevel) {
+        console.log('Setting zoom level from passed data:', cardData.logoZoomLevel);
+        setZoomLevel(cardData.logoZoomLevel);
+      } else {
+        console.log('No saved zoom level found, using default 1.0');
+        setZoomLevel(1.0);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading card data from props:', error);
+      setError('Failed to load card data');
+      setLoading(false);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -129,13 +199,15 @@ export default function EditCard() {
         console.log('Card data loaded with zoom level:', userData.logoZoomLevel);
         
         setSelectedColor(userData.colorScheme || '#1B2B5B');
+        setCustomColor(userData.colorScheme || '#1B2B5B');
         setFormData({
           firstName: userData.name || '',
           lastName: userData.surname || '',
           occupation: userData.occupation || '',
           company: userData.company || '',
           email: userData.email || '',
-          phoneNumber: userData.phone || '',
+          phoneNumber: parsePhoneNumber(userData.phone || '').number,
+          countryCode: parsePhoneNumber(userData.phone || '').countryCode,
           ...Object.keys(userData.socials || {}).reduce((acc, key) => ({
             ...acc,
             [key]: userData.socials[key]
@@ -203,11 +275,23 @@ export default function EditCard() {
     navigation.goBack();
   };
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+
   const validateForm = () => {
     if (!formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
       setError('Please fill in all required fields');
       return false;
     }
+    
+    if (!validateEmail(formData.email)) {
+      setError('Please enter a valid email address');
+      return false;
+    }
+    
     setError('');
     return true;
   };
@@ -239,7 +323,7 @@ export default function EditCard() {
         occupation: formData.occupation,
         company: formData.company,
         email: formData.email,
-        phone: formData.phoneNumber,
+        phone: `${formData.countryCode}${formData.phoneNumber}`,
         socials: socialFields,
         colorScheme: selectedColor,
         profileImage: formData.profileImage,
@@ -266,7 +350,7 @@ export default function EditCard() {
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
       
-      setModalMessage('Card updated successfully');
+      setModalMessage('Card updated');
       setIsSuccessModalVisible(true);
 
     } catch (error) {
@@ -281,12 +365,15 @@ export default function EditCard() {
       setIsSocialRemoveModalVisible(true);
     } else {
       setSelectedSocials([...selectedSocials, socialId]);
+      
+      // Show notification for the added social link
+      const socialName = socials.find(s => s.id === socialId)?.label || socialId;
+      setSocialNotification(`A ${socialName} textbox has been added below.`);
+      
+      // Clear notification after 3 seconds
       setTimeout(() => {
-        scrollViewRef.current?.scrollTo({
-          y: 500,
-          animated: true
-        });
-      }, 100);
+        setSocialNotification(null);
+      }, 3000);
     }
   };
 
@@ -296,97 +383,169 @@ export default function EditCard() {
     setIsSocialRemoveModalVisible(false);
   };
 
-  const handleProfileImageEdit = () => {
-    setModalType('profile');
-    setIsImageSourceModalVisible(true);
+  const handleProfileImageEdit = async () => {
+    if (Platform.OS === 'android') {
+      // Android: NO custom permission modals, just direct picker
+      Alert.alert(
+        'Select Profile Picture',
+        'Choose where you want to get your profile picture from.',
+        [
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      // iOS: Keep the existing custom permission flow (Apple requires it)
+      const currentPermissions = await checkPermissions();
+      
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        Alert.alert(
+          'Select Profile Picture',
+          'Choose where you want to get your profile picture from.',
+          [
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Show permission request modal for iOS only
+        Alert.alert(
+          'Permission Required', 
+          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Grant Permission', 
+              onPress: async () => {
+                const permissions = await requestPermissions();
+                if (permissions.cameraGranted && permissions.galleryGranted) {
+                  // Show picker after permissions granted
+                  Alert.alert(
+                    'Select Profile Picture',
+                    'Choose where you want to get your profile picture from.',
+                    [
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ]
+                  );
+                }
+              }
+            }
+          ]
+        );
+      }
+    }
   };
 
-  const handleLogoEdit = () => {
-    setModalType('logo');
-    setIsImageSourceModalVisible(true);
+  const handleLogoEdit = async () => {
+    if (Platform.OS === 'android') {
+      // Android: NO custom permission modals, just direct picker
+      Alert.alert(
+        'Select Company Logo',
+        'Choose where you want to get your company logo from.',
+        [
+          { text: 'Camera', onPress: () => pickLogo('camera') },
+          { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      // iOS: Keep the existing custom permission flow (Apple requires it)
+      const currentPermissions = await checkPermissions();
+      
+      if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
+        Alert.alert(
+          'Select Company Logo',
+          'Choose where you want to get your company logo from.',
+          [
+            { text: 'Camera', onPress: () => pickLogo('camera') },
+            { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Show permission request modal for iOS only
+        Alert.alert(
+          'Permission Required', 
+          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Grant Permission', 
+              onPress: async () => {
+                const permissions = await requestPermissions();
+                if (permissions.cameraGranted && permissions.galleryGranted) {
+                  // Show picker after permissions granted
+                  Alert.alert(
+                    'Select Company Logo',
+                    'Choose where you want to get your company logo from.',
+                    [
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
+                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ]
+                  );
+                }
+              }
+            }
+          ]
+        );
+      }
+    }
   };
 
-  // Improved implementation for iOS compatibility
-  const pickImage = async (source: 'camera' | 'gallery') => {
+  // Profile image picker function (simplified like logo picker)
+  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
       
-      // First, check and request permissions with more detailed handling
-      let permissionStatus;
+      let imageUri: string | null = null;
       
-      if (source === 'camera') {
-        console.log('[Image Picker] Requesting camera permissions...');
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Image Picker] Camera permission status:', status);
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Image Picker] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(source === 'camera');
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Image Picker] iOS: Permission check then pick');
+        const { cameraGranted, galleryGranted } = await requestPermissions();
         
-        if (status !== 'granted') {
+        if (source === 'camera' && !cameraGranted) {
           Alert.alert(
             'Camera Permission Required', 
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
                   Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
               }}
             ]
           );
           return;
         }
-      } else {
-        console.log('[Image Picker] Requesting media library permissions...');
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Image Picker] Media library permission status:', status);
         
-        if (status !== 'granted') {
+        if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
             'Photo Library Permission Required', 
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
                   Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
               }}
             ]
           );
           return;
         }
+
+        console.log('[Image Picker] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(source === 'camera');
       }
-
-      // Add a small delay to ensure permissions are properly set
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // More robust configuration options
-      const options: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1] as [number, number],
-        quality: 0.8,
-        allowsMultipleSelection: false,
-      };
-
-      console.log(`[Image Picker] Launching ${source} picker with options:`, options);
-
-      let result: ImagePicker.ImagePickerResult;
       
-      if (source === 'camera') {
-        result = await ImagePicker.launchCameraAsync(options);
-      } else {
-        result = await ImagePicker.launchImageLibraryAsync(options);
-      }
-
-      console.log('[Image Picker] Result received:', result.canceled ? 'User canceled' : 'Image selected');
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
+      if (imageUri) {
         console.log('[Image Picker] Processing selected image...');
         const userId = await getUserId();
         if (!userId) {
@@ -398,7 +557,7 @@ export default function EditCard() {
         // Create form data for upload
         const formData = new FormData();
         formData.append('image', {
-          uri: result.assets[0].uri,
+          uri: imageUri,
           type: 'image/jpeg',
           name: 'profile-image.jpg',
         } as any);
@@ -460,82 +619,50 @@ export default function EditCard() {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
       
-      // First, check and request permissions with more detailed handling
-      let permissionStatus;
+      let imageUri: string | null = null;
       
-      if (source === 'camera') {
-        console.log('[Logo Picker] Requesting camera permissions...');
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Logo Picker] Camera permission status:', status);
+      if (Platform.OS === 'android') {
+        // Android: Direct pick, let system handle permissions
+        console.log('[Logo Picker] Android: Direct pick with system permission handling');
+        imageUri = await pickImage(source === 'camera');
+      } else {
+        // iOS: Check permissions first, then pick
+        console.log('[Logo Picker] iOS: Permission check then pick');
+        const { cameraGranted, galleryGranted } = await requestPermissions();
         
-        if (status !== 'granted') {
+        if (source === 'camera' && !cameraGranted) {
           Alert.alert(
             'Camera Permission Required', 
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
                   Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
               }}
             ]
           );
           return;
         }
-      } else {
-        console.log('[Logo Picker] Requesting media library permissions...');
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        permissionStatus = status;
-        console.log('[Logo Picker] Media library permission status:', status);
         
-        if (status !== 'granted') {
+        if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
             'Photo Library Permission Required', 
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                if (Platform.OS === 'ios') {
                   Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
               }}
             ]
           );
           return;
         }
+
+        console.log('[Logo Picker] iOS: Permissions checked, launching picker...');
+        imageUri = await pickImage(source === 'camera');
       }
-
-      // Add a small delay to ensure permissions are properly set
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // More robust configuration options
-      const options: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 2] as [number, number],
-        quality: 0.8,
-        allowsMultipleSelection: false,
-      };
-
-      console.log(`[Logo Picker] Launching ${source} picker with options:`, options);
-
-      let result: ImagePicker.ImagePickerResult;
       
-      if (source === 'camera') {
-        result = await ImagePicker.launchCameraAsync(options);
-      } else {
-        result = await ImagePicker.launchImageLibraryAsync(options);
-      }
-
-      console.log('[Logo Picker] Result received:', result.canceled ? 'User canceled' : 'Logo selected');
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
+      if (imageUri) {
         console.log('[Logo Picker] Processing selected logo...');
         const userId = await getUserId();
         if (!userId) {
@@ -547,7 +674,7 @@ export default function EditCard() {
         // Create form data for upload
         const formData = new FormData();
         formData.append('image', {
-          uri: result.assets[0].uri,
+          uri: imageUri,
           type: 'image/jpeg',
           name: 'company-logo.jpg',
         } as any);
@@ -605,8 +732,8 @@ export default function EditCard() {
     }
   };
 
-  // Update the CustomModal component to use the correct Modal type
-  const CustomModal = ({ isVisible, onClose, title, message, buttons }: CustomModalProps) => {
+  // CustomModal component for other modals (not image selection)
+  const CustomModal = ({ isVisible, onClose, title, message, buttons }: any) => {
     useEffect(() => {
       const backAction = () => {
         if (isVisible) {
@@ -638,7 +765,7 @@ export default function EditCard() {
           <Text style={styles.modalTitle}>{title}</Text>
           <Text style={styles.modalMessage}>{message}</Text>
           <View style={styles.modalButtonsContainer}>
-            {buttons.map((button, index) => (
+            {buttons.map((button: any, index: number) => (
               <TouchableOpacity
                 key={index}
                 style={[
@@ -689,7 +816,7 @@ export default function EditCard() {
       
       {/* Cancel and Preview buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity onPress={handleCancel}>
+        <TouchableOpacity onPress={handleCancel} style={styles.cancelButtonContainer}>
           <Text style={styles.cancelButton}>Cancel</Text>
         </TouchableOpacity>
         <View style={styles.rightButtons}>
@@ -699,18 +826,13 @@ export default function EditCard() {
               <Text style={styles.previewButtonText}>Preview</Text>
             </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSave}>
+        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer}>
           <Text style={styles.saveButton}>Save</Text>
         </TouchableOpacity>
         </View>
       </View>
 
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 30 : 0} //check this
-      >
-        <ScrollView 
+      <KeyboardAwareScrollView 
           ref={scrollViewRef}
           style={styles.content}
           contentContainerStyle={[
@@ -719,10 +841,20 @@ export default function EditCard() {
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+        enableOnAndroid={true}
+        extraScrollHeight={20}
+        extraHeight={20}
         >
-          {/* Warning Message */}
-          <View style={styles.colorSection}>
+          {/* Card Color Section */}
+          <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Card color</Text>
+            
+            {/* Current Color Indicator */}
+            <View style={styles.currentColorIndicator}>
+              <Text style={styles.currentColorLabel}>Preview colour:</Text>
+              <View style={[styles.currentColorPreview, { backgroundColor: selectedColor }]} />
+            </View>
+            
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
@@ -741,12 +873,30 @@ export default function EditCard() {
                   ]} />
                 </TouchableOpacity>
               ))}
+              
+              {/* Custom Color Picker Button */}
+              <TouchableOpacity
+                onPress={() => {
+                  setCustomColor(selectedColor); // Sync with current selected color
+                  setIsCustomColorModalVisible(true);
+                }}
+                style={styles.colorButtonWrapper}
+              >
+                <View style={[
+                  styles.colorButton,
+                  styles.customColorButton,
+                  selectedColor === customColor && styles.selectedColor,
+                ]}>
+                  <MaterialIcons name="palette" size={20} color="#666" />
+                </View>
+              </TouchableOpacity>
             </ScrollView>
           </View>
 
           {/* Images & Layout Section */}
-          <Text style={styles.sectionTitle}>Images & layout</Text>
-          <View style={styles.logoContainer}>
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Images & layout</Text>
+            <View style={styles.logoContainer}>
             <View style={styles.logoFrame}>
             <Image
               source={formData.companyLogo ? 
@@ -846,31 +996,11 @@ export default function EditCard() {
               </View>
             </View>
           </View>
-
-          {/* Link Socials Section */}
-          <Text style={styles.sectionTitle}>Link Socials</Text>
-          <View style={styles.socialsGrid}>
-            {socials.map((social) => (
-              <TouchableOpacity
-                key={social.id}
-                style={[
-                  styles.socialItem,
-                  selectedSocials.includes(social.id) && styles.selectedSocialItem
-                ]}
-                onPress={() => handleSocialSelect(social.id as SocialMediaPlatform)}
-              >
-                <MaterialCommunityIcons
-                  name={social.icon || 'link'}
-                  size={24}
-                  color={social.color}
-                />
-                <Text style={styles.socialLabel}>{social.label}</Text>
-              </TouchableOpacity>
-            ))}
           </View>
 
           {/* Personal Details Section */}
-          <Text style={styles.sectionTitle}>Personal details</Text>
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Personal details</Text>
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             <TextInput 
@@ -917,13 +1047,11 @@ export default function EditCard() {
               keyboardType="email-address"
               editable={userPlan !== 'enterprise'}
             />
-            <TextInput 
-              style={styles.input}
-              placeholder="Phone number"
-              placeholderTextColor="#999"
+            <PhoneNumberInput
               value={formData.phoneNumber}
               onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-              keyboardType="phone-pad"
+              onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
+              placeholder="Phone number"
             />
 
             {/* Social Media URL Inputs */}
@@ -950,11 +1078,11 @@ export default function EditCard() {
                 </View>
                 <TextInput
                   style={styles.input}
-                  placeholder={`${socials.find(s => s.id === socialId)?.label} ${
+                  placeholder={
                     socialId === 'website' ? 'URL' : 
-                    socialId === 'whatsapp' ? 'number' : 
-                    'username (without @)'
-                  }`}
+                    socialId === 'whatsapp' ? 'Phone number' : 
+                    'Username'
+                  }
                   placeholderTextColor="#999"
                   value={formData[socialId]?.toString() || ''}
                   onChangeText={(text) => {
@@ -964,8 +1092,52 @@ export default function EditCard() {
                   }}
                   keyboardType={socialId === 'whatsapp' ? 'phone-pad' : 'default'}
                 />
+                {/* Helpful notes for social platforms */}
+                {socialId !== 'website' && socialId !== 'whatsapp' && (
+                  <Text style={styles.socialNote}>
+                    * Enter username without @ symbol
+                  </Text>
+                )}
+                {socialId === 'whatsapp' && (
+                  <Text style={styles.socialNote}>
+                    * Include country code (e.g., +1234567890)
+                  </Text>
+                )}
               </Animated.View>
             ))}
+          </View>
+          </View>
+
+          {/* Social Link Notification */}
+          {socialNotification && (
+            <View style={styles.notificationContainer}>
+              <MaterialIcons name="info" size={20} color="#1976D2" />
+              <Text style={styles.notificationText}>{socialNotification}</Text>
+            </View>
+          )}
+
+          {/* Link Socials Section */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Link Socials</Text>
+          <View style={styles.socialsGrid}>
+            {socials.map((social) => (
+              <TouchableOpacity
+                key={social.id}
+                style={[
+                  styles.socialItem,
+                  selectedSocials.includes(social.id) && styles.selectedSocialItem
+                ]}
+                onPress={() => handleSocialSelect(social.id as SocialMediaPlatform)}
+              >
+                <MaterialCommunityIcons
+                  name={social.icon || 'link'}
+                  size={24}
+                  color={social.color}
+                />
+                <Text style={styles.socialLabel}>{social.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           </View>
 
           {/* Delete Button */}
@@ -982,14 +1154,13 @@ export default function EditCard() {
               </Text>
             </TouchableOpacity>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       <CustomModal
         isVisible={isSocialRemoveModalVisible}
         onClose={() => setIsSocialRemoveModalVisible(false)}
-        title="Remove Social Media"
-        message="Are you sure you want to remove this social media link?"
+        title="Remove social media"
+        message="Are you sure?"
         buttons={[
           {
             text: 'Cancel',
@@ -1059,35 +1230,6 @@ export default function EditCard() {
         ]}
       />
 
-      <CustomModal
-        isVisible={isImageSourceModalVisible}
-        onClose={() => setIsImageSourceModalVisible(false)}
-        title={`Select ${modalType === 'profile' ? 'Profile Picture' : 'Logo'} Source`}
-        message="Choose where you want to pick your image from"
-        buttons={[
-          {
-            text: 'Camera',
-            type: 'confirm',
-            onPress: () => {
-              setIsImageSourceModalVisible(false);
-              modalType === 'profile' ? pickImage('camera') : pickLogo('camera');
-            }
-          },
-          {
-            text: 'Gallery',
-            type: 'confirm',
-            onPress: () => {
-              setIsImageSourceModalVisible(false);
-              modalType === 'profile' ? pickImage('gallery') : pickLogo('gallery');
-            }
-          },
-          {
-            text: 'Cancel',
-            type: 'cancel',
-            onPress: () => setIsImageSourceModalVisible(false)
-          }
-        ]}
-      />
 
       <CustomModal
         isVisible={isSuccessModalVisible}
@@ -1186,7 +1328,7 @@ export default function EditCard() {
               
               <TouchableOpacity style={previewStyles.contactSection}>
                 <MaterialCommunityIcons name="phone-outline" size={24} color={selectedColor} />
-                <Text style={previewStyles.contactText}>{formData.phoneNumber}</Text>
+                <Text style={previewStyles.contactText}>{`${formData.countryCode}${formData.phoneNumber}`}</Text>
               </TouchableOpacity>
               
               {/* Social Links - SHOULD use the color scheme */}
@@ -1231,6 +1373,109 @@ export default function EditCard() {
           </View>
         </SafeAreaView>
       </RNModal>
+
+      {/* Custom Color Picker Modal */}
+      <Modal
+        isVisible={isCustomColorModalVisible}
+        onBackdropPress={() => setIsCustomColorModalVisible(false)}
+        animationIn="fadeIn"
+        animationOut="fadeOut"
+        backdropOpacity={0.5}
+        style={{ margin: 20 }}
+      >
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>Choose Custom Color</Text>
+          
+          {/* Professional Color Picker - Moved to top */}
+          <View style={styles.visualColorPickerContainer}>
+            <Text style={styles.colorPickerLabel}>Select your color:</Text>
+            <View style={styles.professionalColorPicker}>
+              <ColorPicker
+                onColorChangeComplete={(color: string) => setCustomColor(color)}
+                color={customColor}
+                thumbSize={30}
+                sliderSize={30}
+                gapSize={10}
+                swatches={false}
+              />
+            </View>
+          </View>
+          
+          {/* Color Preview */}
+          <View style={styles.colorPreviewContainer}>
+            <Text style={styles.colorPreviewLabel}>Preview:</Text>
+            <View style={[styles.colorPreviewLarge, { backgroundColor: customColor }]} />
+            <Text style={styles.colorHexText}>{customColor.toUpperCase()}</Text>
+          </View>
+          
+          {/* Color Input */}
+          <View style={styles.colorInputContainer}>
+            <Text style={styles.colorInputLabel}>Hex Color:</Text>
+            <TextInput
+              style={styles.colorInput}
+              value={customColor}
+              onChangeText={(text) => {
+                // Ensure it starts with # and is valid hex
+                let cleanText = text.replace(/[^0-9A-Fa-f]/g, '');
+                if (cleanText.length > 6) cleanText = cleanText.substring(0, 6);
+                setCustomColor('#' + cleanText);
+              }}
+              placeholder="#000000"
+              placeholderTextColor="#999"
+              maxLength={7}
+            />
+          </View>
+          
+          {/* Quick Color Presets Toggle Button */}
+          <TouchableOpacity
+            style={styles.quickColorsToggleButton}
+            onPress={() => setShowQuickColors(!showQuickColors)}
+          >
+            <Text style={styles.quickColorsToggleText}>
+              {showQuickColors ? 'Hide Quick Colors' : 'Show Quick Colors'}
+            </Text>
+            <MaterialIcons 
+              name={showQuickColors ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} 
+              size={24} 
+              color={COLORS.primary} 
+            />
+          </TouchableOpacity>
+
+          {/* Quick Color Presets - Conditionally Rendered */}
+          {showQuickColors && (
+            <View style={styles.quickColorsContainer}>
+              <Text style={styles.quickColorsLabel}>Quick Colors:</Text>
+              <View style={styles.quickColorsGrid}>
+                {['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#FFC0CB', '#A52A2A', '#808080', '#000000'].map((color, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => setCustomColor(color)}
+                    style={[styles.quickColorButton, { backgroundColor: color }]}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+          
+          <View style={styles.modalButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel]}
+              onPress={() => setIsCustomColorModalVisible(false)}
+            >
+              <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonConfirm]}
+              onPress={() => {
+                setSelectedColor(customColor);
+                setIsCustomColorModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalButtonText}>Apply Color</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1285,13 +1530,14 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   form: {
-    gap: 12,
+    // Spacing handled by individual input marginBottom
   },
   input: {
-    backgroundColor: '#F8F8F8',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+    padding: 15,
     fontSize: 16,
+    marginBottom: 15,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -1309,9 +1555,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  cancelButtonContainer: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
   cancelButton: {
     color: '#666',
     fontSize: 16,
+    fontWeight: '500',
   },
   previewButton: {
     flexDirection: 'row',
@@ -1327,9 +1582,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 4,
   },
+  saveButtonContainer: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
   saveButton: {
-    color: '#666',
+    color: COLORS.white,
     fontSize: 16,
+    fontWeight: '600',
   },
   addButton: {
     backgroundColor: '#1E1B4B',
@@ -1346,6 +1608,13 @@ const styles = StyleSheet.create({
   errorText: {
     color: 'red',
     marginBottom: 10,
+  },
+  sectionContainer: {
+    marginTop: 20,
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
   colorSection: {
     marginTop: 20,
@@ -1370,6 +1639,127 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 20,
+  },
+  currentColorIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+  },
+  currentColorLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginRight: 8,
+  },
+  currentColorPreview: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+  },
+  customColorButton: {
+    backgroundColor: '#F5F5F5',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  colorPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+  },
+  colorPreviewLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginRight: 12,
+  },
+  colorPreviewLarge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    marginRight: 12,
+  },
+  colorHexText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.black,
+    fontFamily: 'monospace',
+  },
+  visualColorPickerContainer: {
+    marginBottom: 20,
+  },
+  colorPickerLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginBottom: 12,
+  },
+  professionalColorPicker: {
+    width: '100%',
+    height: Math.min(Dimensions.get('window').height * 0.35, 280),
+  },
+  colorInputContainer: {
+    marginBottom: 20,
+  },
+  colorInputLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  colorInput: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    fontFamily: 'monospace',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  quickColorsToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  quickColorsToggleText: {
+    fontSize: 16,
+    color: COLORS.primary,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  quickColorsContainer: {
+    marginBottom: 20,
+  },
+  quickColorsLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    marginBottom: 12,
+  },
+  quickColorsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickColorButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
   },
   logoContainer: {
     width: '100%',
@@ -1477,6 +1867,13 @@ const styles = StyleSheet.create({
   },
   removeSocialButton: {
     padding: 4,
+  },
+  socialNote: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    marginLeft: 4,
+    fontStyle: 'italic',
   },
   scrollContent: {
     paddingBottom: Platform.OS === 'ios' ? 20 : 20,
@@ -1621,6 +2018,24 @@ const styles = StyleSheet.create({
   zoomLabelText: {
     fontSize: 12,
     color: '#666',
+  },
+  notificationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1976D2',
+  },
+  notificationText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#1976D2',
+    flex: 1,
   },
   previewModalContainer: {
     flex: 1,

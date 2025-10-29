@@ -1,6 +1,7 @@
 const { db, admin } = require('../firebase.js');
 const { transporter, sendMailWithStatus } = require('../public/Utils/emailService');
 const { formatDate } = require('../utils/dateFormatter');
+// Note: Contact linking functionality moved to server.js /AddContact endpoint
 
 // Add constant for free plan limit
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -56,6 +57,13 @@ exports.getContactById = async (req, res) => {
         console.log('Raw contact data:', data); // Debug log
 
         if (data.contactList) {
+            // Sort by createdAt descending (newest first)
+            data.contactList.sort((a, b) => {
+                const aTime = a.createdAt?.seconds || 0;
+                const bTime = b.createdAt?.seconds || 0;
+                return bTime - aTime; // Descending order
+            });
+            
             data.contactList = data.contactList.map(contact => ({
                 ...contact,
                 createdAt: formatDate(contact.createdAt) // Format for display
@@ -156,13 +164,15 @@ exports.saveContactInfo = async (req, res) => {
     console.log('Save Contact Info called - Public endpoint');
     console.log('Raw request body:', JSON.stringify(req.body, null, 2));
     
-    // Validate required fields only
+    // Validate required fields - now including email
     if (!userId || !contactInfo) {
         return res.status(400).send({ 
             success: false,
             message: 'User ID and contact info are required' 
         });
     }
+
+    // Note: Email validation and linking moved to server.js /AddContact endpoint
 
     try {
         // Get user's plan information
@@ -201,7 +211,8 @@ exports.saveContactInfo = async (req, res) => {
         // Force-type the email field as string to avoid any type conversions
         const contactEmail = String(contactInfo.email || '');
         console.log('Processed email value:', contactEmail);
-          // Create contact with explicit field assignment - no object spread which could lose properties
+        
+        // Create contact with explicit field assignment - no object spread which could lose properties
         const newContact = {
             name: String(contactInfo.name || ''),
             surname: String(contactInfo.surname || ''),
@@ -418,3 +429,5 @@ exports.deleteContactFromList = async (req, res) => {
         });
     }
 };
+
+// Note: Profile image endpoint moved to server.js

@@ -6,7 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
-import { API_BASE_URL, ENDPOINTS, buildUrl } from '../../utils/api';
+import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 // ErrorPopup import removed - no popups on signup page
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandler, ERROR_CODES, createAppError, handleStorageError } from '../../utils/errorHandler';
@@ -15,6 +15,7 @@ type SignUpScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignU
 
 export default function SignUpScreen() {
   const navigation = useNavigation<SignUpScreenNavigationProp>();
+  const toast = useToast();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -66,12 +67,15 @@ export default function SignUpScreen() {
       isValid = false;
     }
 
-    if (!email.trim()) {
+    // Trim email for validation
+    const trimmedEmail = email.trim();
+    
+    if (!trimmedEmail) {
       setErrorMessage('Email is required');
       setShowError(true);
       newErrors.email = 'Email is required';
       isValid = false;
-    } else if (!validateEmail(email)) {
+    } else if (!validateEmail(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address');
       setShowError(true);
       newErrors.email = 'Please enter a valid email address';
@@ -106,7 +110,7 @@ export default function SignUpScreen() {
       const userData = {
         name: firstName,
         surname: lastName,
-        email,
+        email: email.trim(), // 🔥 FIX: Trim email before sending to backend
         password,
         status: 'active',
       };
@@ -124,25 +128,30 @@ export default function SignUpScreen() {
         
         // Handle specific signup errors
         if (response.status === 409) {
-          // User already exists
-          const error = createAppError(ERROR_CODES.VALIDATION_ERROR, new Error(errorData.message || 'Email already exists'));
-          await ErrorHandler.handleError(error);
-          setErrorMessage(error.userMessage);
+          // User already exists - show specific error
+          setErrors(prev => ({ ...prev, email: 'Email already exists' }));
+          toast.error('Email Already Exists', errorData.message || 'An account with this email already exists. Please sign in instead.');
+          setErrorMessage(errorData.message || 'Email already exists');
+        } else if (response.status === 400) {
+          // Validation errors (invalid email, weak password, etc.)
+          if (errorData.code === 'INVALID_EMAIL') {
+            setErrors(prev => ({ ...prev, email: 'Invalid email format' }));
+            toast.error('Invalid Email', errorData.message);
+          } else if (errorData.code === 'WEAK_PASSWORD') {
+            setErrors(prev => ({ ...prev, password: 'Password too weak' }));
+            toast.error('Weak Password', errorData.message);
+          } else {
+            toast.error('Validation Error', errorData.message || 'Please check your input and try again.');
+          }
+          setErrorMessage(errorData.message || 'Validation error');
         } else if (response.status >= 500) {
-          // Server error with retry
-          const error = createAppError(ERROR_CODES.SERVER_ERROR, new Error(errorData.message || 'Server error'));
-          await ErrorHandler.handleError(error, {
-            retryAction: async () => {
-              await handleSignUp();
-            },
-            maxRetries: 2
-          });
-          setErrorMessage(error.userMessage);
+          // Server error - don't retry automatically for signup
+          toast.error('Server Error', 'Unable to create account. Please try again later.');
+          setErrorMessage('Server error occurred');
         } else {
           // Other API errors
-          const error = createAppError(ERROR_CODES.API_ERROR, new Error(errorData.message || 'Failed to create account'));
-          await ErrorHandler.handleError(error);
-          setErrorMessage(error.userMessage);
+          toast.error('Sign Up Failed', errorData.message || 'Failed to create account. Please try again.');
+          setErrorMessage(errorData.message || 'Failed to create account');
         }
         setShowError(true);
         return;
@@ -160,20 +169,23 @@ export default function SignUpScreen() {
         // Continue anyway - user can still proceed
       }
       
-      // Navigate to complete profile
+      // Show success toast and navigate to complete profile
+      toast.success('Account Created!', 'Welcome! Please complete your profile to get started.');
       navigation.navigate('CompleteProfile', { userId });
       
     } catch (error) {
       console.error('SignUp: Error during signup:', error);
       
-      // Handle network errors silently
+      // Handle network errors with toast
       if (error instanceof TypeError && error.message.includes('fetch')) {
         console.error('SignUp: Network error:', error);
         setErrors(prev => ({ ...prev, email: 'Network error' }));
+        toast.error('Network Error', 'Unable to connect to server. Please check your internet connection');
       } else {
-        // Handle other errors silently
+        // Handle other errors with toast
         console.error('SignUp: Other error:', error);
         setErrors(prev => ({ ...prev, email: 'Signup failed' }));
+        toast.error('Sign Up Failed', 'An error occurred during signup. Please try again');
       }
     } finally {
       setIsLoading(false);
@@ -244,6 +256,14 @@ export default function SignUpScreen() {
             placeholderTextColor="#999"
           />
           {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+
+          {/* Email Warning */}
+          <View style={styles.emailWarningContainer}>
+            <MaterialIcons name="warning" size={16} color="#FF6B35" />
+            <Text style={styles.emailWarningText}>
+              Use your personal email address. Company emails may result in account loss if employment ends.
+            </Text>
+          </View>
 
           <View style={styles.passwordContainer}>
             <TextInput
@@ -460,6 +480,24 @@ const styles = StyleSheet.create({
     marginTop: -10,
     marginBottom: 10,
     marginLeft: 15,
+  },
+  emailWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF6B35',
+  },
+  emailWarningText: {
+    color: '#E65100',
+    fontSize: 13,
+    lineHeight: 18,
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
   },
   disabledButton: {
     backgroundColor: '#999',

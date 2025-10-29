@@ -12,7 +12,9 @@ import {
   Linking, 
   RefreshControl, 
   ActivityIndicator,
-  SafeAreaView 
+  SafeAreaView,
+  Share,
+  Dimensions 
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -29,13 +31,22 @@ import {
   API_BASE_URL, 
   ENDPOINTS, 
   getUserId, 
-  authenticatedFetchWithRefresh 
+  authenticatedFetchWithRefresh,
+  useToast 
 } from '../../utils/api';
+import { formatTimestamp } from '../../utils/dateFormatter';
+import { AuthManager } from '../../utils/authManager';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
+const DEFAULT_COUNTRY_CODE = '+27'; // South Africa
 
 // Type definitions
+interface Timestamp {
+  seconds: number;
+  nanoseconds?: number;
+}
+
 interface Contact {
   id?: string;
   name: string;
@@ -44,7 +55,19 @@ interface Contact {
   email?: string;
   company?: string;
   howWeMet: string;
-  createdAt: string;
+  createdAt: string | Timestamp;
+  // Contact linking fields
+  isXsCardUser?: boolean;
+  sourceUserId?: string;
+  sourceCardIndex?: number;
+  profileImageUrl?: string; // Legacy single URL
+  profileImageUrls?: {
+    thumbnail?: string;
+    medium?: string;
+    large?: string;
+    original?: string;
+  };
+  linkedAt?: string;
 }
 
 interface ContactData {
@@ -61,10 +84,198 @@ interface UserData {
 interface ShareOption {
   id: string;
   name: string;
-  icon: 'whatsapp' | 'send' | 'email';
+  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
   color: string;
   action: (contact?: Contact) => Promise<void>;
 }
+
+// Lazy Contact Image Component
+interface LazyContactImageProps {
+  contact: Contact;
+  style: any;
+  onLayout?: (event: any) => void;
+}
+
+const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onLayout }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const viewRef = useRef<View>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Get the appropriate image URL
+  const getImageUrl = useCallback(() => {
+    if (!contact.isXsCardUser) return null;
+    
+    // Prefer new structure with multiple sizes
+    if (contact.profileImageUrls?.thumbnail) {
+      return contact.profileImageUrls.thumbnail;
+    }
+    
+    // Fallback to legacy single URL
+    if (contact.profileImageUrl) {
+      return contact.profileImageUrl;
+    }
+    
+    return null;
+  }, [contact]);
+
+  // Check if component is visible on screen
+  const checkVisibility = useCallback(() => {
+    if (!viewRef.current) return;
+    
+    viewRef.current.measure((x, y, width, height, pageX, pageY) => {
+      const windowHeight = Dimensions.get('window').height;
+      const isInViewport = pageY < windowHeight && (pageY + height) > 0;
+      
+      if (isInViewport && !isVisible) {
+        console.log('Contact image becoming visible:', contact.name);
+        setIsVisible(true);
+      }
+    });
+  }, [isVisible, contact.name]);
+
+  // Load image when visible
+  useEffect(() => {
+    if (!isVisible || imageLoaded || imageError) return;
+    
+    const url = getImageUrl();
+    if (!url) {
+      console.log('No image URL for contact:', contact.name);
+      return;
+    }
+
+    console.log('Loading image for contact:', contact.name, 'URL:', url);
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
+    const loadImage = async () => {
+      try {
+        // Pre-load the image to check if it exists
+        const response = await fetch(url, {
+          method: 'HEAD',
+          signal: abortControllerRef.current?.signal
+        });
+
+        if (response.ok) {
+          console.log('Image loaded successfully for:', contact.name);
+          setImageUri(url);
+          setImageLoaded(true);
+        } else {
+          console.log('Image load failed for:', contact.name, 'Status:', response.status);
+          setImageError(true);
+        }
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.log('Failed to load contact image:', contact.name, error);
+          setImageError(true);
+        }
+      }
+    };
+
+    loadImage();
+  }, [isVisible, imageLoaded, imageError, getImageUrl, contact.name]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Check visibility on layout
+  const handleLayout = useCallback((event: any) => {
+    onLayout?.(event);
+    setTimeout(checkVisibility, 100);
+    
+    // Fallback: if visibility check doesn't trigger after 1 second, force load
+    setTimeout(() => {
+      if (!isVisible && !imageLoaded && !imageError) {
+        console.log('Fallback: forcing image load for:', contact.name);
+        setIsVisible(true);
+      }
+    }, 1000);
+  }, [checkVisibility, onLayout, isVisible, imageLoaded, imageError, contact.name]);
+
+  // Render appropriate image
+  if (!contact.isXsCardUser || imageError || (!imageLoaded && !isVisible)) {
+    // Show default avatar for non-XS Card users or when image failed/not loaded
+    return (
+      <View ref={viewRef} style={style} onLayout={handleLayout}>
+        <Image 
+          source={require('../../../assets/images/profile.png')} 
+          style={style} 
+        />
+        {contact.isXsCardUser && (
+          <View style={styles.xsCardBadge}>
+            <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  if (imageLoaded && imageUri) {
+    // Show profile image with XS Card badge
+    return (
+      <View ref={viewRef} style={style} onLayout={handleLayout}>
+        <Image 
+          source={{ uri: imageUri }} 
+          style={style}
+          onError={() => setImageError(true)}
+        />
+        <View style={styles.xsCardBadge}>
+          <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  // Show loading state
+  return (
+    <View ref={viewRef} style={[style, styles.imageLoadingContainer]} onLayout={handleLayout}>
+      <ActivityIndicator size="small" color="#666" />
+      <View style={styles.xsCardBadge}>
+        <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+      </View>
+    </View>
+  );
+};
+
+// Utility function to format phone number with country code
+const formatPhoneWithCountryCode = (phone: string): string => {
+  if (!phone) return '';
+  
+  // Remove any spaces, hyphens, or parentheses
+  const cleanedPhone = phone.replace(/[\s\-\(\)]/g, '');
+  
+  // If already has a country code (starts with +), return as is
+  if (cleanedPhone.startsWith('+')) {
+    return cleanedPhone;
+  }
+  
+  // If starts with 00, replace with +
+  if (cleanedPhone.startsWith('00')) {
+    return '+' + cleanedPhone.substring(2);
+  }
+  
+  // If starts with 0 (local number), add country code
+  if (cleanedPhone.startsWith('0')) {
+    return DEFAULT_COUNTRY_CODE + cleanedPhone.substring(1);
+  }
+  
+  // Otherwise, add country code to the number
+  return DEFAULT_COUNTRY_CODE + cleanedPhone;
+};
 
 // Main Component
 export default function ContactsScreen() {
@@ -90,22 +301,77 @@ export default function ContactsScreen() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedContactForOptions, setSelectedContactForOptions] = useState<Contact | null>(null);
   const [selectedContactIndex, setSelectedContactIndex] = useState<number>(-1);
+  const [pendingShareContact, setPendingShareContact] = useState<Contact | null>(null);
   
   // Toast
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+  const toast = useToast();
   
   // Swipeable refs
   const swipeableRefs = useRef<Map<number, Swipeable | null>>(new Map());
 
+  // Debug share modal state changes
+  useEffect(() => {
+    console.log('🔍 Share modal visibility changed:', isShareModalVisible);
+    console.log('🔍 Current selectedContact:', selectedContact ? `${selectedContact.name} ${selectedContact.surname}` : 'null');
+  }, [isShareModalVisible, selectedContact]);
+
+  // Debug contact options modal state changes
+  useEffect(() => {
+    console.log('🔍 Contact options modal visibility changed:', isContactOptionsVisible);
+    console.log('🔍 Current selectedContactForOptions:', selectedContactForOptions ? `${selectedContactForOptions.name} ${selectedContactForOptions.surname}` : 'null');
+  }, [isContactOptionsVisible, selectedContactForOptions]);
+
+
   // ============= CORE FUNCTIONS =============
   
-  // Toast utility
-  const showToast = useCallback((message: string) => {
-    setToastMessage(message);
-    setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 3000);
-  }, []);
+
+  // Share functionality - moved before useEffect that uses it
+  const handleShare = useCallback(async (contact?: Contact) => {
+    try {
+      console.log('🚀 handleShare called with contact:', contact ? `${contact.name} ${contact.surname}` : 'null');
+      console.log('🚀 Current isShareModalVisible:', isShareModalVisible);
+      console.log('🚀 Current selectedContact:', selectedContact ? `${selectedContact.name} ${selectedContact.surname}` : 'null');
+      
+      // Check limit for new shares
+      if (!contact && remainingContacts === 0) {
+        console.log('🚀 Share limit reached, showing limit modal');
+        setShowLimitModal(true);
+        return;
+      }
+      
+      console.log('🚀 Setting selected contact to:', contact ? `${contact.name} ${contact.surname}` : 'null');
+      setSelectedContact(contact || null);
+      
+      console.log('🚀 Setting share modal visible to true');
+      setIsShareModalVisible(true);
+      
+      console.log('🚀 Share modal state should now be: visible=true, contact=', contact ? `${contact.name} ${contact.surname}` : 'null');
+    } catch (error) {
+      console.error('🚀 Error preparing share:', error);
+      toast.error('Sharing Failed', 'Failed to prepare sharing');
+    }
+  }, [remainingContacts, isShareModalVisible, selectedContact]);
+
+  // Handle pending share when contact options modal is fully closed
+  useEffect(() => {
+    console.log('💫 useEffect triggered - isContactOptionsVisible:', isContactOptionsVisible, 'pendingShareContact:', pendingShareContact ? `${pendingShareContact.name} ${pendingShareContact.surname}` : 'null');
+    
+    if (!isContactOptionsVisible && pendingShareContact) {
+      console.log('💫 Contact options modal fully closed, triggering share for:', `${pendingShareContact.name} ${pendingShareContact.surname}`);
+      
+      // Store the contact before clearing it
+      const contactToShare = pendingShareContact;
+      
+      // Clear the pending contact first
+      setPendingShareContact(null);
+      
+      // Then trigger the share with a longer delay
+      setTimeout(() => {
+        console.log('💫 Calling handleShare after modal fully closed');
+        handleShare(contactToShare);
+      }, 1000); // Much longer delay to ensure modal is completely dismissed
+    }
+  }, [isContactOptionsVisible, pendingShareContact, handleShare]);
 
   // Swipeable utilities
   const closeAllSwipeables = useCallback(() => {
@@ -138,6 +404,18 @@ export default function ContactsScreen() {
       const contactList = Array.isArray(contactData?.contactList) ? contactData.contactList : [];
       setContacts(contactList);
 
+      // Cache contacts data in AsyncStorage with timestamp
+      try {
+        const cacheData = {
+          data: contactList,
+          timestamp: Date.now()
+        };
+        await AsyncStorage.setItem('cachedContacts', JSON.stringify(cacheData));
+        console.log('✅ Cached contacts data for Dashboard reuse');
+      } catch (cacheError) {
+        console.error('Error caching contacts:', cacheError);
+      }
+
       // Set remaining contacts based on plan
       if (userData.plan === 'free') {
         const remaining = Math.max(0, FREE_PLAN_CONTACT_LIMIT - contactList.length);
@@ -150,11 +428,11 @@ export default function ContactsScreen() {
       console.error('Error loading contacts:', error);
       setContacts([]);
       setRemainingContacts('unlimited');
-      showToast('Unable to load contacts. Please try again.');
+      toast.error('Loading Failed', 'Unable to load contacts. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, []);
 
   // Delete contact
   const handleDeleteContact = useCallback(async (index: number) => {
@@ -198,40 +476,27 @@ export default function ContactsScreen() {
                   setRemainingContacts(remainingContacts + 1);
                 }
                 
-                showToast('Contact deleted successfully');
+                toast.success('Contact Deleted', 'Contact deleted successfully');
               } catch (error) {
                 console.error('Error deleting contact:', error);
-                showToast(error instanceof Error ? error.message : 'Failed to delete contact');
+                toast.error('Delete Failed', error instanceof Error ? error.message : 'Failed to delete contact');
               }
             }
           }
         ]
       );
     }, 300);
-  }, [contacts, remainingContacts, showToast]);
+  }, [contacts, remainingContacts]);
 
-  // Share functionality
-  const handleShare = useCallback(async (contact?: Contact) => {
-    try {
-      // Check limit for new shares
-      if (!contact && remainingContacts === 0) {
-        setShowLimitModal(true);
-        return;
-      }
-      
-      setSelectedContact(contact || null);
-      setIsShareModalVisible(true);
-    } catch (error) {
-      console.error('Error preparing share:', error);
-      showToast('Failed to prepare sharing');
-    }
-  }, [remainingContacts, showToast]);
 
   // Contact press handler
   const handleContactPress = useCallback((contact: Contact, index: number) => {
+    console.log('📱 Contact pressed:', `${contact.name} ${contact.surname}`, 'index:', index);
+    console.log('📱 Setting contact options modal visible');
     setSelectedContactForOptions(contact);
     setSelectedContactIndex(index);
     setIsContactOptionsVisible(true);
+    console.log('📱 Contact options modal should now be visible');
   }, []);
 
   // Refresh handler
@@ -268,15 +533,32 @@ export default function ContactsScreen() {
           { text: 'Cancel', style: 'cancel' },
           { 
             text: 'Export', 
-            onPress: () => Linking.openURL(contactUrl)
+            onPress: async () => {
+              try {
+                // Set export flag to prevent auto-logout during export
+                console.log('Contact export: Setting export flag to prevent auto-logout');
+                AuthManager.setContactExporting(true);
+                
+                // Open the URL
+                await Linking.openURL(contactUrl);
+                
+                // Show success message
+                toast.success('Export Initiated', 'Contact export initiated. Check your downloads.');
+              } catch (error) {
+                console.error('Error opening contact export URL:', error);
+                toast.error('Export Failed', 'Failed to open export page. Please try again.');
+                // Clear export flag on error
+                AuthManager.setContactExporting(false);
+              }
+            }
           }
         ]
       );
     } catch (error) {
       console.error('Export contact error:', error);
-      showToast('Failed to export contact. Please try again.');
+      toast.error('Export Failed', 'Failed to export contact. Please try again.');
     }
-  }, [showToast]);
+  }, []);
 
   // ============= SHARE OPTIONS =============
   
@@ -290,7 +572,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -298,7 +580,7 @@ export default function ContactsScreen() {
           
           let message: string;
           if (contact) {
-            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
           } else {
             const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
             message = `Check out my digital business card! ${shareUrl}`;
@@ -306,7 +588,7 @@ export default function ContactsScreen() {
           
           await Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`);
         } catch (error) {
-          showToast('WhatsApp is not installed on your device');
+          toast.error('App Not Found', 'WhatsApp is not installed on your device');
         }
       }
     },
@@ -319,7 +601,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -327,7 +609,7 @@ export default function ContactsScreen() {
           
           let message: string;
           if (contact) {
-            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
           } else {
             const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
             message = `Check out my business card: ${shareUrl}`;
@@ -335,7 +617,7 @@ export default function ContactsScreen() {
 
           await Linking.openURL(`tg://msg?text=${encodeURIComponent(message)}`);
         } catch (error) {
-          showToast('Telegram is not installed on your device');
+          toast.error('App Not Found', 'Telegram is not installed on your device');
         }
       }
     },
@@ -348,7 +630,7 @@ export default function ContactsScreen() {
         try {
           const storedUserData = await AsyncStorage.getItem('userData');
           if (!storedUserData) {
-            showToast('User data not available');
+            toast.error('Data Error', 'User data not available');
             return;
           }
           
@@ -356,7 +638,7 @@ export default function ContactsScreen() {
           let emailUrl = '';
           
           if (contact) {
-            const formattedMessage = `Hello,\n\nI wanted to share this contact information with you:\n\nName: ${contact.name} ${contact.surname}\nPhone: ${contact.phone}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}\n\nBest regards,\n${userData.name || ''} ${userData.surname || ''}`;
+            const formattedMessage = `Hello,\n\nI wanted to share this contact information with you:\n\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}\n\nBest regards,\n${userData.name || ''} ${userData.surname || ''}`;
             
             emailUrl = `mailto:?subject=${encodeURIComponent(`Contact Information - ${contact.name} ${contact.surname}`)}&body=${encodeURIComponent(formattedMessage)}`;
           } else {
@@ -368,7 +650,76 @@ export default function ContactsScreen() {
           
           await Linking.openURL(emailUrl);
         } catch (error) {
-          showToast('Could not open email client');
+          toast.error('Email Failed', 'Could not open email client');
+        }
+      }
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      icon: 'linkedin',
+      color: '#0077B5',
+      action: async (contact?: Contact) => {
+        try {
+          const storedUserData = await AsyncStorage.getItem('userData');
+          if (!storedUserData) {
+            toast.error('Data Error', 'User data not available');
+            return;
+          }
+          
+          const userData = JSON.parse(storedUserData);
+          let message: string;
+          let url: string;
+          
+          if (contact) {
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            url = '';
+          } else {
+            const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+            message = `Check out my digital business card!`;
+            url = shareUrl;
+          }
+          
+          const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url || '')}&summary=${encodeURIComponent(message)}`;
+          await Linking.openURL(linkedinUrl);
+        } catch (error) {
+          toast.error('LinkedIn Failed', 'Could not open LinkedIn');
+        }
+      }
+    },
+    {
+      id: 'more',
+      name: 'More',
+      icon: 'more-horiz',
+      color: '#6B7280',
+      action: async (contact?: Contact) => {
+        try {
+          const storedUserData = await AsyncStorage.getItem('userData');
+          if (!storedUserData) {
+            toast.error('Data Error', 'User data not available');
+            return;
+          }
+          
+          const userData = JSON.parse(storedUserData);
+          let message: string;
+          let url: string;
+          
+          if (contact) {
+            message = `Contact Information:\nName: ${contact.name} ${contact.surname}\nPhone: ${formatPhoneWithCountryCode(contact.phone)}${contact.email ? `\nEmail: ${contact.email}` : ''}${contact.company ? `\nCompany: ${contact.company}` : ''}\nMet at: ${contact.howWeMet}`;
+            url = '';
+          } else {
+            const shareUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+            message = `Check out my digital business card!`;
+            url = shareUrl;
+          }
+          
+          await Share.share({
+            message: url ? `${message}\n\n${url}` : message,
+            url: url || undefined,
+            title: contact ? `Contact: ${contact.name} ${contact.surname}` : 'My Digital Business Card'
+          });
+        } catch (error) {
+          toast.error('Share Failed', 'Could not open share options');
         }
       }
     }
@@ -386,16 +737,27 @@ export default function ContactsScreen() {
       setSelectedContact(null);
     } catch (error) {
       console.error('Error sharing:', error);
-      showToast('Failed to share');
+      toast.error('Share Failed', 'Failed to share');
     }
-  }, [selectedContact, shareOptions, showToast]);
+  }, [selectedContact, shareOptions]);
 
   // ============= COMPUTED VALUES =============
   
-  // Filter contacts based on search query
-  const filteredContacts = contacts.filter(contact =>
-    `${contact.name || ''} ${contact.surname || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter contacts based on search query (name, phone, company, email, howWeMet)
+  const filteredContacts = contacts.filter(contact => {
+    const searchTerm = searchQuery.toLowerCase();
+    const fullName = `${contact.name || ''} ${contact.surname || ''}`.toLowerCase();
+    const phone = (contact.phone || '').toLowerCase();
+    const company = (contact.company || '').toLowerCase();
+    const email = (contact.email || '').toLowerCase();
+    const howWeMet = (contact.howWeMet || '').toLowerCase();
+    
+    return fullName.includes(searchTerm) ||
+           phone.includes(searchTerm) ||
+           company.includes(searchTerm) ||
+           email.includes(searchTerm) ||
+           howWeMet.includes(searchTerm);
+  });
 
   // Dynamic styles based on color scheme
   const dynamicStyles = {
@@ -445,13 +807,13 @@ export default function ContactsScreen() {
   const RenderLeftActions = useCallback((progress: any, dragX: any, contact: Contact) => {
     return (
       <TouchableOpacity 
-        style={dynamicStyles.shareAction}
+        style={[styles.shareAction, { backgroundColor: '#2196F3' }]}
         onPress={() => handleShare(contact)}
       >
         <MaterialIcons name="share" size={24} color={COLORS.white} />
       </TouchableOpacity>
     );
-  }, [dynamicStyles.shareAction, handleShare]);
+  }, [handleShare]);
 
   // ============= EFFECTS =============
   
@@ -483,7 +845,7 @@ export default function ContactsScreen() {
               <MaterialIcons 
                 name={remainingContacts === 0 ? "error-outline" : "people-outline"} 
                 size={22} 
-                color={remainingContacts === 0 ? COLORS.error : colorScheme} 
+                color={remainingContacts === 0 ? COLORS.error : COLORS.primary} 
               />
             </View>
             <View style={styles.contactCountContent}>
@@ -503,11 +865,11 @@ export default function ContactsScreen() {
                       width: typeof remainingContacts === 'number' 
                         ? `${(remainingContacts / FREE_PLAN_CONTACT_LIMIT) * 100}%`
                         : '0%',
-                      backgroundColor: remainingContacts === 0 
+                      backgroundColor: remainingContacts === 5 
                         ? COLORS.error 
-                        : remainingContacts === 1 
+                        : remainingContacts === 10 
                           ? '#FFA500'
-                          : colorScheme
+                          : COLORS.primary
                     }
                   ]} 
                 />
@@ -579,6 +941,13 @@ export default function ContactsScreen() {
                   tintColor={colorScheme}
                 />
               }
+              onScroll={() => {
+                // Trigger visibility checks on scroll
+                setTimeout(() => {
+                  // This will trigger visibility checks for all LazyContactImage components
+                }, 100);
+              }}
+              scrollEventThrottle={200}
             >
               {filteredContacts.map((contact, index) => (
                 <Swipeable
@@ -597,9 +966,9 @@ export default function ContactsScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.contactLeft}>
-                      <Image 
-                        source={require('../../../assets/images/profile.png')} 
-                        style={styles.contactImage} 
+                      <LazyContactImage 
+                        contact={contact}
+                        style={styles.contactImage}
                       />
                       <View style={styles.contactInfo}>
                         <Text style={styles.contactName}>
@@ -607,7 +976,7 @@ export default function ContactsScreen() {
                         </Text>
                         <View style={styles.contactSubInfo}>
                           <Text style={styles.contactPhone}>
-                            {contact.phone}
+                            {formatPhoneWithCountryCode(contact.phone)}
                           </Text>
                           {contact.email && (
                             <Text style={styles.contactEmail}>
@@ -623,7 +992,7 @@ export default function ContactsScreen() {
                             Met at: {contact.howWeMet}
                           </Text>
                           <Text style={styles.contactDate}>
-                            {contact.createdAt}
+                            {formatTimestamp(contact.createdAt)}
                           </Text>
                         </View>
                       </View>
@@ -640,13 +1009,19 @@ export default function ContactsScreen() {
           visible={isShareModalVisible}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => setIsShareModalVisible(false)}
+          onRequestClose={() => {
+            console.log('🎯 Share modal close requested');
+            setIsShareModalVisible(false);
+          }}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => setIsShareModalVisible(false)}
+                onPress={() => {
+                  console.log('🎯 Share modal close button pressed');
+                  setIsShareModalVisible(false);
+                }}
               >
                 <MaterialIcons name="close" size={24} color={COLORS.black} />
               </TouchableOpacity>
@@ -659,13 +1034,16 @@ export default function ContactsScreen() {
                     style={styles.shareOption}
                     onPress={() => handlePlatformSelect(option.id)}
                   >
-                    <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
-                      {option.id === 'whatsapp' ? (
-                        <MaterialCommunityIcons name="whatsapp" size={24} color={COLORS.white} />
-                      ) : (
-                        <MaterialIcons name={option.icon as 'send' | 'email'} size={24} color={COLORS.white} />
-                      )}
-                    </View>
+                     <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
+                       {option.id === 'whatsapp' ? (
+                         <MaterialCommunityIcons name="whatsapp" size={22} color={COLORS.white} />
+                       ) : option.id === 'linkedin' ? (
+                         <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
+                       ) : (
+                         <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
+                       )}
+                     </View>
+                    <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -679,6 +1057,7 @@ export default function ContactsScreen() {
           transparent={true}
           animationType="fade"
           onRequestClose={() => {
+            console.log('📱 Contact options modal close requested');
             setIsContactOptionsVisible(false);
             setSelectedContactForOptions(null);
             setSelectedContactIndex(-1);
@@ -701,21 +1080,27 @@ export default function ContactsScreen() {
                 <>
                   <View style={styles.selectedContactHeader}>
                     <View style={styles.modalContactImageContainer}>
-                      <Image 
-                        source={require('../../../assets/images/profile.png')} 
-                        style={styles.modalContactImage} 
+                      <LazyContactImage 
+                        contact={selectedContactForOptions}
+                        style={styles.modalContactImage}
                       />
                     </View>
                     <Text style={styles.modalContactName}>
                       {selectedContactForOptions.name} {selectedContactForOptions.surname}
                     </Text>
+                      {selectedContactForOptions.isXsCardUser && (
+                        <View style={styles.xsCardUserBadge}>
+                          <MaterialIcons name="verified" size={16} color={COLORS.primary} />
+                          <Text style={styles.xsCardUserText}>XS Card User</Text>
+                        </View>
+                      )}
                   </View>
 
                   {/* Contact Information Section */}
                   <View style={styles.contactInfoSection}>
                     <View style={styles.contactInfoRow}>
                       <MaterialIcons name="phone" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
-                      <Text style={styles.contactInfoText}>{selectedContactForOptions.phone}</Text>
+                      <Text style={styles.contactInfoText}>{formatPhoneWithCountryCode(selectedContactForOptions.phone)}</Text>
                     </View>
                     
                     {selectedContactForOptions.email && (
@@ -736,6 +1121,7 @@ export default function ContactsScreen() {
                       <MaterialIcons name="place" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>Met at: {selectedContactForOptions.howWeMet}</Text>
                     </View>
+                    
                   </View>
 
                   <View style={styles.contactActionButtons}>
@@ -752,21 +1138,36 @@ export default function ContactsScreen() {
                       <Text style={styles.actionButtonText}>Add to Phone</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: colorScheme }]}
-                      onPress={() => {
-                        handleShare(selectedContactForOptions);
-                        setIsContactOptionsVisible(false);
-                        setSelectedContactForOptions(null);
-                        setSelectedContactIndex(-1);
-                      }}
-                    >
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
+                        onPress={() => {
+                          console.log('🔥 SHARE BUTTON PRESSED!');
+                          console.log('🔥 selectedContactForOptions:', selectedContactForOptions ? `${selectedContactForOptions.name} ${selectedContactForOptions.surname}` : 'null');
+                          console.log('🔥 Current isContactOptionsVisible:', isContactOptionsVisible);
+                          console.log('🔥 Current isShareModalVisible:', isShareModalVisible);
+                          
+                          // Capture the contact before clearing state
+                          const contactToShare = selectedContactForOptions;
+                          console.log('🔥 Captured contactToShare:', contactToShare ? `${contactToShare.name} ${contactToShare.surname}` : 'null');
+                          
+                          // Set the pending share contact (this will trigger the useEffect when modal closes)
+                          console.log('🔥 Setting pending share contact');
+                          setPendingShareContact(contactToShare);
+                          
+                          // Close contact options modal
+                          console.log('🔥 Closing contact options modal...');
+                          setIsContactOptionsVisible(false);
+                          setSelectedContactForOptions(null);
+                          setSelectedContactIndex(-1);
+                          console.log('🔥 Contact options modal closed, waiting for useEffect to trigger share');
+                        }}
+                      >
                       <MaterialIcons name="share" size={24} color={COLORS.white} />
                       <Text style={styles.actionButtonText}>Share Contact</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: COLORS.error }]}
+                      style={[styles.actionButton, { backgroundColor: '#FF0000' }]}
                       onPress={() => {
                         setIsContactOptionsVisible(false);
                         setSelectedContactForOptions(null);
@@ -816,12 +1217,6 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
-        {/* Toast Notification */}
-        {toastVisible && (
-          <View style={styles.toastContainer}>
-            <Text style={styles.toastText}>{toastMessage}</Text>
-          </View>
-        )}
       </View>
     </GestureHandlerRootView>
   );
@@ -972,6 +1367,27 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     marginRight: 15,
   },
+  xsCardBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 2,
+  },
+  imageLoadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
   contactInfo: {
     justifyContent: 'center',
   },
@@ -1009,7 +1425,13 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   deleteAction: {
-    backgroundColor: COLORS.error,
+    backgroundColor: '#FF0000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  shareAction: {
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
@@ -1020,6 +1442,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1000,
   },
   modalContent: {
     backgroundColor: COLORS.white,
@@ -1033,6 +1456,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 60,
     elevation: 20,
+    zIndex: 1001,
   },
   closeButton: {
     position: 'absolute',
@@ -1046,17 +1470,27 @@ const styles = StyleSheet.create({
   },
   shareOptions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-evenly',
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: 5,
   },
   shareOption: {
-    padding: 10,
+    alignItems: 'center',
+    padding: 4,
+    flex: 1,
+    maxWidth: 60,
+  },
+  shareOptionText: {
+    fontSize: 10,
+    color: COLORS.black,
+    marginTop: 4,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1070,6 +1504,21 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     marginBottom: 12,
+  },
+  xsCardUserBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${COLORS.primary}80`,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 8,
+  },
+  xsCardUserText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 4,
   },
   modalContactImage: {
     width: '100%',
@@ -1158,22 +1607,5 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: COLORS.white,
     fontWeight: 'bold',
-  },
-  toastContainer: {
-    position: 'absolute',
-    top: 100,
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    zIndex: 1000,
-  },
-  toastText: {
-    color: COLORS.white,
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
   },
 });

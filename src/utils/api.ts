@@ -5,6 +5,8 @@ import { ErrorHandler, ERROR_CODES, handleAuthError, handleNetworkError, createA
 import { auth } from '../config/firebaseConfig';
 // Import for keepLoggedIn preference check
 import { getKeepLoggedInPreference } from './authStorage';
+// Toast service for centralized imports
+import { toastService, useToast } from '../hooks/useToast';
 
 // Add these types near the top of the file
 export interface PasscreatorResponse {
@@ -45,16 +47,18 @@ export const setGlobalAuthContextRef = (ref: any) => {
 };
 
 // Helper function to get the appropriate base URL
+
 const getBaseUrl = () => {
   // For production, use the deployed server
-  return 'https://xscard-app-8ign.onrender.com';
-  
+  //return 'https://xscard-app-8ign.onrender.com';
+    return 'https://baseurl.xscard.co.za';
+
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-//   return 'http://localhost:8384';
-  // return 'http://192.168.68.104:8383';
+  // return 'http://192.168.68.113:8383';
+ // return 'https://2f0c56695d5a.ngrok-free.app';
   
 };
 
@@ -81,13 +85,16 @@ export const ENDPOINTS = {
     UPDATE_CARD_COLOR: '/Cards/:id/color',
     CREATE_MEETING: '/meetings',
     MEETING_INVITE: '/meetings/invite',
-    DELETE_CARD: '/Cards/:id',  // Change this to match the working endpoint
+    DELETE_CARD: '/Cards/:id',
     UPGRADE_USER: '/Users/:id/upgrade',
     INITIALIZE_PAYMENT: '/payment/initialize',
     SUBSCRIPTION_STATUS: '/subscription/status',
-    CANCEL_SUBSCRIPTION: '/subscription/cancel',
+    REVENUECAT_SYNC: '/api/revenuecat/sync',
     FORGOT_PASSWORD: '/forgot-password',
     RESET_PASSWORD: '/reset-password',
+    CHANGE_PASSWORD: '/change-password',
+    RESEND_VERIFICATION: '/resend-verification',
+    RESEND_VERIFICATION_PUBLIC: '/public/resend-verification',
     // New authentication endpoints for Phase 4
     REFRESH_TOKEN: '/refresh-token',
     VALIDATE_TOKEN: '/validate-token',
@@ -144,6 +151,7 @@ export const ENDPOINTS = {
     
     // User Management
     DEACTIVATE_USER: '/Users',
+    DELETE_ACCOUNT: '/Users/delete-account',
 };
 
 export const buildUrl = (endpoint: string) => `${API_BASE_URL}${endpoint}`;
@@ -634,3 +642,6 @@ export const manuallyExpireToken = async (): Promise<void> => {
     console.error('[Test] Error manually expiring token:', error);
   }
 };
+
+// Re-export toast service and hook for centralized imports
+export { toastService, useToast };

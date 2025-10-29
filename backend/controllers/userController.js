@@ -155,7 +155,35 @@ exports.addUser = async (req, res) => {
         });
     } catch (error) {
         console.error('Error adding user:', error);
-        res.status(500).send({ message: 'Internal Server Error', error: error.message });
+        
+        // Handle specific Firebase Auth errors
+        if (error.code === 'auth/email-already-exists') {
+            return res.status(409).send({ 
+                message: 'An account with this email already exists. Please sign in instead.',
+                code: 'EMAIL_ALREADY_EXISTS'
+            });
+        } else if (error.code === 'auth/invalid-email') {
+            return res.status(400).send({ 
+                message: 'Invalid email address format.',
+                code: 'INVALID_EMAIL'
+            });
+        } else if (error.code === 'auth/weak-password') {
+            return res.status(400).send({ 
+                message: 'Password is too weak. Please choose a stronger password.',
+                code: 'WEAK_PASSWORD'
+            });
+        } else if (error.code === 'auth/operation-not-allowed') {
+            return res.status(500).send({ 
+                message: 'Email/password accounts are not enabled. Please contact support.',
+                code: 'OPERATION_NOT_ALLOWED'
+            });
+        }
+        
+        // Generic server error for other cases
+        res.status(500).send({ 
+            message: 'Internal Server Error', 
+            error: error.message 
+        });
     }
 };
 
@@ -862,6 +890,89 @@ exports.resetPassword = async (req, res) => {
     }
 };
 
+// Change password function (reuses reset password logic but for authenticated users)
+exports.changePassword = async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.uid; // From auth middleware
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).send({ message: 'Current password and new password are required' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8) {
+        return res.status(400).send({ message: 'Password must be at least 8 characters long' });
+    }
+
+    // Additional password validation
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
+    
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+        return res.status(400).send({ 
+            message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&*)' 
+        });
+    }
+
+    try {
+        // Get user document
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        const userData = userDoc.data();
+
+        // Verify current password using Firebase REST API
+        try {
+            const response = await axios.post(AUTH_ENDPOINTS.signIn, {
+                email: userData.email,
+                password: currentPassword,
+                returnSecureToken: true
+            });
+            
+            // If we get here, the password is correct
+            console.log('Current password verified successfully');
+        } catch (authError) {
+            console.log('Current password verification failed:', authError.response?.data?.error?.message);
+            return res.status(400).send({ message: 'Current password is incorrect' });
+        }
+
+        // Update password in Firebase Auth
+        await admin.auth().updateUser(userId, {
+            password: newPassword
+        });
+
+        // Send confirmation email
+        await sendMailWithStatus({
+            to: userData.email,
+            subject: 'XS Card - Password Successfully Changed',
+            html: `
+                <h1>Password Successfully Changed</h1>
+                <p>Hello ${userData.name || userData.surname || 'User'},</p>
+                <p>Your password has been successfully changed.</p>
+                <p>If you didn't make this change, please contact us immediately.</p>
+                <p>For security, please sign in with your new password.</p>
+            `
+        });
+
+        res.status(200).send({ 
+            message: 'Password changed successfully. You can now sign in with your new password.'
+        });
+
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).send({ 
+            message: 'Failed to change password',
+            error: error.message 
+        });
+    }
+};
+
 // Add new function to get user info for reset page
 exports.getResetUserInfo = async (req, res) => {
     const { token, uid } = req.query;
@@ -1384,6 +1495,19 @@ exports.deactivateUser = async (req, res) => {
         });
         console.log(`[DeactivateUser] ✅ Database update completed`);
 
+        // DISABLE Firebase Auth account (NOT delete - just disable)
+        try {
+            console.log(`[DeactivateUser] 🔒 Disabling Firebase Auth account: ${userId}`);
+            await admin.auth().updateUser(userId, {
+                disabled: true
+            });
+            console.log(`[DeactivateUser] ✅ Firebase Auth account disabled successfully`);
+        } catch (authError) {
+            console.error(`[DeactivateUser] ❌ Failed to disable Firebase Auth account:`, authError.message);
+            // Don't fail the entire operation if auth disable fails
+            console.log(`[DeactivateUser] ⚠️ Continuing with database deactivation despite auth error`);
+        }
+
         // Verify the update by reading the document again
         const updatedDoc = await userRef.get();
         const updatedData = updatedDoc.data();
@@ -1405,6 +1529,334 @@ exports.deactivateUser = async (req, res) => {
             success: false,
             message: 'Failed to deactivate user account',
             error: error.message
+        });
+    }
+};
+
+/**
+ * Permanently delete user account and anonymize data
+ * Deletes Firebase Auth, anonymizes users doc, anonymizes cards doc
+ */
+exports.deleteUserAccount = async (req, res) => {
+    try {
+        console.log(`[DeleteAccount] 🗑️  Delete account request received`);
+        console.log(`[DeleteAccount] 📋 req.user exists:`, !!req.user);
+        console.log(`[DeleteAccount] 📋 req.user:`, req.user);
+        
+        const userId = req.user.uid;
+
+        console.log(`[DeleteAccount] 🗑️  Starting account deletion for user: ${userId}`);
+        console.log(`[DeleteAccount] 📋 Looking for user in Firestore...`);
+
+        // Get user and cards data before deletion
+        const userRef = db.collection('users').doc(userId);
+        const cardsRef = db.collection('cards').doc(userId);
+        
+        const userDoc = await userRef.get();
+        const cardsDoc = await cardsRef.get();
+
+        console.log(`[DeleteAccount] 📋 User doc exists: ${userDoc.exists}`);
+        console.log(`[DeleteAccount] 📋 Cards doc exists: ${cardsDoc.exists}`);
+
+        // If user document doesn't exist, just delete Firebase Auth and exit
+        if (!userDoc.exists) {
+            console.log(`[DeleteAccount] ⚠️  User document not found in Firestore, proceeding with Auth deletion only`);
+            
+            try {
+                await admin.auth().deleteUser(userId);
+                console.log(`[DeleteAccount] ✅ Firebase Auth account deleted`);
+                
+                return res.status(200).json({
+                    success: true,
+                    message: 'Account deleted (Auth only - no Firestore data found)',
+                    data: {
+                        deletedAt: new Date().toISOString(),
+                        authDeleted: true,
+                        dataAnonymized: false
+                    }
+                });
+            } catch (authError) {
+                console.error(`[DeleteAccount] ❌ Failed to delete Firebase Auth:`, authError);
+                throw authError;
+            }
+        }
+
+        const currentUserData = userDoc.data();
+        const currentCardsData = cardsDoc.exists ? cardsDoc.data() : null;
+
+        console.log(`[DeleteAccount] 📋 Current user email: ${currentUserData.email}`);
+        console.log(`[DeleteAccount] 📋 Current user name: ${currentUserData.name}`);
+
+        // Create anonymized timestamp for unique identifier
+        const deletionTimestamp = Date.now();
+        const anonymizedEmail = `deleted_user_${deletionTimestamp}@deleted.local`;
+
+        // STEP 1: Anonymize user document
+        console.log(`[DeleteAccount] 🔄 Anonymizing user document...`);
+        await userRef.update({
+            // Anonymize personal data
+            name: 'Deleted',
+            surname: 'User',
+            email: anonymizedEmail,
+            phone: null,
+            profileImage: null,
+            
+            // Mark as deleted
+            active: false,
+            deleted: true,
+            deletedAt: admin.firestore.Timestamp.now(),
+            
+            // Keep for business intelligence (anonymized)
+            accountCreatedAt: currentUserData.createdAt || admin.firestore.Timestamp.now(),
+            plan: currentUserData.plan || 'free',
+            
+            // Update timestamp
+            updatedAt: admin.firestore.Timestamp.now()
+        });
+        console.log(`[DeleteAccount] ✅ User document anonymized`);
+
+        // STEP 2: Anonymize cards document
+        if (cardsDoc.exists && currentCardsData.cards && Array.isArray(currentCardsData.cards)) {
+            console.log(`[DeleteAccount] 🔄 Anonymizing ${currentCardsData.cards.length} cards...`);
+            
+            const anonymizedCards = currentCardsData.cards.map((card, index) => ({
+                // Anonymize personal data
+                name: 'Deleted',
+                surname: 'User',
+                email: anonymizedEmail,
+                phone: null,
+                company: null,
+                occupation: null,
+                profileImage: null,
+                companyLogo: null,
+                bio: null,
+                website: null,
+                address: null,
+                
+                // Clear socials
+                socials: {},
+                
+                // Keep metadata (anonymized)
+                cardIndex: index,
+                deletedAt: admin.firestore.Timestamp.now(),
+                wasActive: true,
+                
+                // Keep color scheme for analytics
+                colorScheme: card.colorScheme || null
+            }));
+
+            await cardsRef.update({
+                cards: anonymizedCards,
+                updatedAt: admin.firestore.Timestamp.now()
+            });
+            
+            console.log(`[DeleteAccount] ✅ Cards anonymized: ${anonymizedCards.length} cards`);
+        } else {
+            console.log(`[DeleteAccount] ℹ️  No cards to anonymize`);
+        }
+
+        // STEP 3: Delete Firebase Authentication
+        try {
+            console.log(`[DeleteAccount] 🔥 Deleting Firebase Auth account: ${userId}`);
+            await admin.auth().deleteUser(userId);
+            console.log(`[DeleteAccount] ✅ Firebase Auth account deleted successfully`);
+        } catch (authError) {
+            console.error(`[DeleteAccount] ❌ Failed to delete Firebase Auth account:`, authError.message);
+            // Continue even if auth deletion fails
+            console.log(`[DeleteAccount] ⚠️  Continuing with data anonymization despite auth error`);
+        }
+
+        // STEP 4: Log the deletion (for audit trail)
+        console.log(`[DeleteAccount] 📝 Logging deletion event...`);
+        await db.collection('deletionLogs').add({
+            originalUserId: userId,
+            anonymizedEmail: anonymizedEmail,
+            deletedAt: admin.firestore.Timestamp.now(),
+            hadCards: cardsDoc.exists,
+            cardCount: currentCardsData?.cards?.length || 0,
+            userPlan: currentUserData.plan || 'free',
+            accountAge: currentUserData.createdAt 
+                ? Math.floor((Date.now() - currentUserData.createdAt.toMillis()) / (1000 * 60 * 60 * 24))
+                : null
+        });
+        console.log(`[DeleteAccount] ✅ Deletion logged for audit`);
+
+        console.log(`[DeleteAccount] 🎉 Account deletion completed successfully`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Account permanently deleted and data anonymized',
+            data: {
+                deletedAt: new Date().toISOString(),
+                authDeleted: true,
+                dataAnonymized: true
+            }
+        });
+
+    } catch (error) {
+        console.error('[DeleteAccount] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete account',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Reactivate user account (admin function)
+ * Re-enables both database and Firebase Auth access
+ */
+exports.reactivateUser = async (req, res) => {
+    try {
+        const userId = req.user.uid;
+        const { targetUserId } = req.body; // Admin can reactivate other users
+
+        const targetUser = targetUserId || userId;
+        console.log(`[ReactivateUser] 🔄 Reactivating user: ${targetUser}`);
+
+        const userRef = db.collection('users').doc(targetUser);
+        const userDoc = await userRef.get();
+
+        if (!userDoc.exists) {
+            console.log(`[ReactivateUser] ❌ User not found: ${targetUser}`);
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Update user active status
+        console.log(`[ReactivateUser] 🔄 Updating active field to: true`);
+        await userRef.update({
+            active: true,
+            reactivatedAt: admin.firestore.Timestamp.now(),
+            updatedAt: admin.firestore.Timestamp.now()
+        });
+        console.log(`[ReactivateUser] ✅ Database update completed`);
+
+        // ENABLE Firebase Auth account
+        try {
+            console.log(`[ReactivateUser] 🔓 Enabling Firebase Auth account: ${targetUser}`);
+            await admin.auth().updateUser(targetUser, {
+                disabled: false
+            });
+            console.log(`[ReactivateUser] ✅ Firebase Auth account enabled successfully`);
+        } catch (authError) {
+            console.error(`[ReactivateUser] ❌ Failed to enable Firebase Auth account:`, authError.message);
+            // Don't fail the entire operation if auth enable fails
+            console.log(`[ReactivateUser] ⚠️ Continuing with database reactivation despite auth error`);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Account reactivated successfully',
+            data: {
+                userId: targetUser,
+                active: true,
+                reactivatedAt: new Date().toISOString()
+            }
+        });
+
+    } catch (error) {
+        console.error('Reactivate user error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reactivate account',
+            error: error.message
+        });
+    }
+};
+
+// Public resend verification (no authentication required)
+exports.resendVerificationPublic = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email is required'
+            });
+        }
+
+        console.log(`[ResendVerificationPublic] 📧 Processing resend request for email: ${email}`);
+
+        // Find user by email in Firestore
+        const usersRef = db.collection('users');
+        const snapshot = await usersRef.where('email', '==', email).get();
+
+        if (snapshot.empty) {
+            console.log(`[ResendVerificationPublic] ❌ No account found with email: ${email}`);
+            return res.status(404).json({
+                success: false,
+                message: 'No account found with this email address'
+            });
+        }
+
+        const userDoc = snapshot.docs[0];
+        const userData = userDoc.data();
+        const uid = userDoc.id;
+
+        console.log(`[ResendVerificationPublic] ✅ Found user: ${uid}`);
+
+        // Check if already verified
+        if (userData.isEmailVerified) {
+            console.log(`[ResendVerificationPublic] ✅ Email already verified for: ${email}`);
+            return res.status(400).json({
+                success: false,
+                message: 'Email is already verified'
+            });
+        }
+
+        // Check cooldown (prevent spam)
+        const lastSent = userData.lastVerificationEmailSent;
+        if (lastSent) {
+            const timeSinceLastSent = Date.now() - lastSent;
+            const cooldownPeriod = 60 * 1000; // 60 seconds
+            
+            if (timeSinceLastSent < cooldownPeriod) {
+                const remainingTime = Math.ceil((cooldownPeriod - timeSinceLastSent) / 1000);
+                console.log(`[ResendVerificationPublic] ⏰ Cooldown active, ${remainingTime}s remaining`);
+                return res.status(429).json({
+                    success: false,
+                    message: `Please wait ${remainingTime} seconds before requesting another verification email`
+                });
+            }
+        }
+
+        // Generate new verification token
+        const verificationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        
+        // Update user record with new token and timestamp
+        await userDoc.ref.update({
+            verificationToken: verificationToken,
+            lastVerificationEmailSent: Date.now()
+        });
+
+        console.log(`[ResendVerificationPublic] 🔄 Updated verification token for user: ${uid}`);
+
+        // Send verification email
+        const verificationUrl = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}&uid=${uid}`;
+        
+        await sendMailWithStatus({
+            to: email,
+            subject: EMAIL_TEMPLATES.verification.subject,
+            html: EMAIL_TEMPLATES.verification.getHtml(userData.name || 'User', verificationUrl)
+        });
+
+        console.log(`[ResendVerificationPublic] ✅ Verification email sent to: ${email}`);
+
+        res.json({
+            success: true,
+            message: 'Verification email sent successfully'
+        });
+
+    } catch (error) {
+        console.error('[ResendVerificationPublic] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send verification email'
         });
     }
 };

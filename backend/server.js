@@ -1,4 +1,4 @@
-/**
+    /**
  * XS Card Backend Server
  */
 
@@ -18,6 +18,8 @@ const CAPTCHA_RATE_LIMIT = {
 };
 const { db, admin, storage, bucket } = require('./firebase.js');
 const { sendMailWithStatus } = require('./public/Utils/emailService');
+const { checkUserExistsByEmail } = require('./utils/userDetection');
+const { linkContactToXsCardUser } = require('./utils/contactLinking');
 const { handleSingleUpload } = require('./middleware/fileUpload');
 const app = express();
 const port = 8383;
@@ -50,17 +52,254 @@ const testRoutes = require('./routes/testRoutes'); // Add test routes for debugg
 const ticketRoutes = require('./routes/ticketRoutes'); // Add ticket routes
 const eventOrganiserRoutes = require('./routes/eventOrganiserRoutes'); // Add event organiser routes
 const bulkRegistrationRoutes = require('./routes/bulkRegistrationRoutes'); // Add bulk registration routes
+const revenueCatRoutes = require('./routes/revenueCatRoutes'); // Add RevenueCat routes
+const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple receipt validation routes
+const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// ========================================================================
+// CRITICAL: Add Contact Handler - MUST be mounted at top to prevent 404s
+// Static middleware moved AFTER routes to prevent interference
+// ========================================================================
+
+// Extract handler function for reuse across multiple route aliases
+const addContactHandler = async (req, res) => {
+    const { userId, contactInfo } = req.body;
+    
+    // Detailed logging
+    console.log('Add Contact called - Public endpoint in server.js');
+    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
+    
+    if (!userId || !contactInfo) {
+        return res.status(400).send({ 
+            success: false,
+            message: 'User ID and contact info are required'
+        });
+    }
+
+    // Validate that email is provided (required for user detection)
+    if (!contactInfo.email || !contactInfo.email.trim()) {
+        return res.status(400).send({ 
+            success: false,
+            message: 'Email is required for contact saving'
+        });
+    }
+
+    try {
+        // Get user's plan information
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        const userData = userDoc.data();
+
+        if (!userData) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        const contactRef = db.collection('contacts').doc(userId);
+        const doc = await contactRef.get();
+
+        let currentContacts = [];
+        if (doc.exists) {
+            currentContacts = doc.data().contactList || [];
+        }
+
+        // Free plan contact limit
+        const FREE_PLAN_CONTACT_LIMIT = 20;
+
+        // Check if free user has reached contact limit
+        if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
+            console.log(`Contact limit reached for free user ${userId}. Current contacts: ${currentContacts.length}`);
+            return res.status(403).send({
+                message: 'Contact limit reached',
+                error: 'FREE_PLAN_LIMIT_REACHED',
+                currentContacts: currentContacts.length,
+                limit: FREE_PLAN_CONTACT_LIMIT
+            });
+        }
+
+        // Create base contact
+        const baseContact = {
+            ...contactInfo,
+            email: contactInfo.email || '', // Add email field with fallback
+            createdAt: admin.firestore.Timestamp.now()
+        };
+
+        // Check if the contact email belongs to an existing XS Card user
+        let newContact = baseContact;
+        try {
+            console.log('Checking if contact is an XS Card user...');
+            const existingUser = await checkUserExistsByEmail(contactInfo.email);
+            
+            if (existingUser) {
+                console.log(`Contact is XS Card user: ${existingUser.userId}`);
+                // Link the contact to the XS Card user (using card index 0 as primary)
+                // Make linking non-blocking for better performance
+                setImmediate(async () => {
+                    try {
+                        const linkedContact = await linkContactToXsCardUser(baseContact, existingUser.userId, 0);
+                        console.log('Linked contact created in background');
+                        // Update the contact in the database with linking info
+                        const updatedContacts = [...currentContacts];
+                        const contactIndex = updatedContacts.findIndex(c => c.email === baseContact.email);
+                        if (contactIndex !== -1) {
+                            updatedContacts[contactIndex] = linkedContact;
+                            await contactRef.set({
+                                userId: db.doc(`users/${userId}`),
+                                contactList: updatedContacts
+                            }, { merge: true });
+                            console.log('Contact updated with linking info');
+                        }
+                    } catch (linkingError) {
+                        console.error('Error during background linking:', linkingError);
+                    }
+                });
+                console.log('Contact saved, linking will happen in background');
+            } else {
+                console.log('Contact is not an XS Card user, saving as regular contact');
+            }
+        } catch (linkingError) {
+            console.error('Error during user detection (non-blocking):', linkingError);
+            // Continue with regular contact if linking fails
+            newContact = baseContact;
+        }
+
+        currentContacts.push(newContact);
+
+        await contactRef.set({
+            userId: db.doc(`users/${userId}`),
+            contactList: currentContacts
+        }, { merge: true });
+        
+        // Send email notification if user has email (non-blocking)
+        if (userData.email) {
+            // Send email in background - don't wait for it
+            setImmediate(async () => {
+                try {
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: userData.email,
+                        subject: 'Someone Saved Your Contact Information',
+                        html: `
+                            <h2>New Contact Added</h2>
+                            <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
+                            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                                <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
+                                    <li><strong>Name:</strong> ${contactInfo.name}</li>
+                                    <li><strong>Surname:</strong> ${contactInfo.surname}</li>
+                                    <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
+                                    <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
+                                    ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
+                                    <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
+                                </ul>
+                            </div>
+                            <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
+                            ${userData.plan === 'free' ? 
+                                `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
+                                : ''}
+                        `
+                    };
+
+                    const mailResult = await sendMailWithStatus(mailOptions);
+                    if (!mailResult.success) {
+                        console.error('Failed to send email notification:', mailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('Email sending error:', emailError);
+                }
+            });
+        }
+        
+        res.status(201).send({ 
+            success: true,
+            message: 'Contact added successfully',
+            contactList: currentContacts.map(contact => ({
+                ...contact,
+                createdAt: contact.createdAt ? contact.createdAt.toDate().toISOString() : new Date().toISOString()
+            })),
+            remainingContacts: userData.plan === 'free' ? 
+                FREE_PLAN_CONTACT_LIMIT - currentContacts.length : 
+                'unlimited'
+        });
+    } catch (error) {
+        console.error('Error adding contact:', error);
+        res.status(500).send({ 
+            success: false,
+            message: 'Internal Server Error', 
+            error: error.message 
+        });
+    }
+};
+
+// Mount all aliases for AddContact at TOP (critical for saveContact.html)
+app.post('/AddContact', addContactHandler);
+app.post('/public/saveContact', addContactHandler);
+app.post('/saveContact', addContactHandler);
 
 // Define critical public routes FIRST to avoid middleware conflicts
 app.get('/saveContact', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
 });
+app.get('/saveContact.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
+});
+
+// Now mount static middleware AFTER critical routes
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Define public endpoints that need to be accessible without authentication
 // These MUST be defined before any routes that might have authentication middleware
+
+// Public video endpoint - accessible without authentication
+app.get('/api/feature-videos', async (req, res) => {
+    try {
+        console.log('Fetching all feature videos (public)');
+
+        const videosRef = db.collection('feature_videos');
+        const snapshot = await videosRef.orderBy('uploadDate', 'desc').get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({
+                success: true,
+                message: 'No videos found',
+                videos: []
+            });
+        }
+
+        const videos = [];
+        snapshot.forEach(doc => {
+            const videoData = doc.data();
+            videos.push({
+                id: doc.id,
+                ...videoData,
+                uploadDate: videoData.uploadDate ? new Date(videoData.uploadDate._seconds * 1000).toLocaleString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    timeZone: 'UTC',
+                    timeZoneName: 'short'
+                }).replace(',', '').replace(/\s+/g, ' ') : null
+            });
+        });
+
+        console.log(`Found ${videos.length} videos`);
+
+        res.status(200).json({
+            success: true,
+            videos: videos
+        });
+    } catch (error) {
+        console.error('Error in public getAllVideos:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching videos',
+            error: error.message
+        });
+    }
+});
 
 // Modified public endpoint to get specific card by userId and cardIndex - MOVED TO VERY TOP
 app.get('/public/cards/:id', async (req, res) => {
@@ -84,9 +323,10 @@ app.get('/public/cards/:id', async (req, res) => {
         }
 
         // Get the specific card and add user ID
+        // Ensure the returned id is ALWAYS the userId by assigning it LAST
         const card = {
-            id: userId,
-            ...userData.cards[cardIndex]
+            ...userData.cards[cardIndex],
+            id: userId
         };
 
         // Log image URLs for debugging
@@ -196,27 +436,32 @@ app.post('/submit-query', async (req, res) => {
     
     const { name, email, message, to, type, captchaToken, ...rest } = req.body;
     
-    // Verify hCaptcha first
-    const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
-    const captchaValid = await verifyHCaptcha(captchaToken, clientIP);
+    // Validate required fields first
+    if (!name || !email || !message || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields (name, email, message, to)',
+      });
+    }
+    
+    // Environment-aware captcha verification
+    console.log('Environment check - NODE_ENV:', process.env.NODE_ENV);
+    console.log('Environment check - ALLOW_CAPTCHA_BYPASS:', process.env.ALLOW_CAPTCHA_BYPASS);
+    console.log('Captcha token received:', captchaToken);
+    
+    const captchaValid = await verifyCaptchaEnvironmentAware(captchaToken);
     if (!captchaValid) {
+      console.log('Captcha verification failed for token:', captchaToken);
       return res.status(400).json({
         success: false,
         message: 'Captcha verification failed. Please try again.',
       });
     }
     
-    if (!name || !email || !message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields (name, email, message)',
-      });
-    }
-    
     const mailOptions = {
       from: process.env.EMAIL_USER, // Use system email as from address
       replyTo: email, // Set reply-to as the user's email address
-      to: to || 'xscard@xspark.co.za', // Use provided destination or default
+      to: to || 'support@xscard.co.za', // Use provided destination or default
       subject: `New Contact Query from ${name}`,
       html: `
         <h2>New Query from XS Card Website</h2>
@@ -254,152 +499,83 @@ app.post('/submit-query', async (req, res) => {
     if (result.success) {
       res.json({
         success: true,
-        message: 'Your message has been sent successfully'
+        message: 'Submitted'
       });
     } else {
       res.status(500).json({
         success: false,
-        message: 'Failed to send your message',
-        details: result
+        message: 'Internal server error'
       });
     }
   } catch (error) {
     console.error('Query submission error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to process your message',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 });
 
-// Add the AddContact endpoint directly to server.js - MOVED TO TOP
-// This bypasses any router or authentication middleware issues
-app.post('/AddContact', async (req, res) => {
-    const { userId, contactInfo } = req.body;
-    
-    // Detailed logging
-    console.log('Add Contact called - Public endpoint in server.js');
-    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
-    
-    if (!userId || !contactInfo) {
-        return res.status(400).send({ 
-            success: false,
-            message: 'User ID and contact info are required'
-        });
-    }
+// NOTE: AddContact handler moved to top of file (line 67) for route priority
 
+// Profile image endpoint - public
+app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
+    const { userId, cardIndex } = req.params;
+    
+    console.log(`Profile image requested for user: ${userId}, card: ${cardIndex}`);
+    
     try {
-        // Get user's plan information
-        const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
-        const userData = userDoc.data();
-
-        if (!userData) {
-            return res.status(404).send({ message: 'User not found' });
-        }
-
-        const contactRef = db.collection('contacts').doc(userId);
-        const doc = await contactRef.get();
-
-        let currentContacts = [];
-        if (doc.exists) {
-            currentContacts = doc.data().contactList || [];
-        }
-
-        // Free plan contact limit
-        const FREE_PLAN_CONTACT_LIMIT = 20;
-
-        // Check if free user has reached contact limit
-        if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
-            console.log(`Contact limit reached for free user ${userId}. Current contacts: ${currentContacts.length}`);
-            return res.status(403).send({
-                message: 'Contact limit reached',
-                error: 'FREE_PLAN_LIMIT_REACHED',
-                currentContacts: currentContacts.length,
-                limit: FREE_PLAN_CONTACT_LIMIT
+        // Validate parameters
+        if (!userId || cardIndex === undefined) {
+            return res.status(400).send({
+                success: false,
+                message: 'User ID and card index are required'
             });
         }
 
-        const newContact = {
-            ...contactInfo,
-            email: contactInfo.email || '', // Add email field with fallback
-            createdAt: admin.firestore.Timestamp.now()
-        };
-
-        currentContacts.push(newContact);
-
-        await contactRef.set({
-            userId: db.doc(`users/${userId}`),
-            contactList: currentContacts
-        }, { merge: true });
-        
-        // Send email notification if user has email
-        if (userData.email) {
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: userData.email,
-                subject: 'Someone Saved Your Contact Information',
-                html: `
-                    <h2>New Contact Added</h2>
-                    <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-                    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                        <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
-                            <li><strong>Name:</strong> ${contactInfo.name}</li>
-                            <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                            <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
-                            <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
-                            ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
-                            <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
-                        </ul>
-                    </div>
-                    <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-                    ${userData.plan === 'free' ? 
-                        `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
-                        : ''}
-                `
-            };
-
-            try {
-                const mailResult = await sendMailWithStatus(mailOptions);
-                if (!mailResult.success) {
-                    console.error('Failed to send email notification:', mailResult.error);
-                }
-            } catch (emailError) {
-                console.error('Email sending error:', emailError);
-                // Continue execution even if email fails
-            }
+        const cardIndexNum = parseInt(cardIndex);
+        if (isNaN(cardIndexNum) || cardIndexNum < 0) {
+            return res.status(400).send({
+                success: false,
+                message: 'Card index must be a non-negative number'
+            });
         }
+
+        // Generate the profile image URL
+        const { getCardProfileImageUrl } = require('./utils/contactLinking');
+        const profileImageUrl = getCardProfileImageUrl(userId, cardIndexNum);
         
-        res.status(201).send({ 
+        console.log(`Generated profile image URL: ${profileImageUrl}`);
+        
+        // Return the URL - the frontend can handle checking if the image actually exists
+        res.status(200).send({
             success: true,
-            message: 'Contact added successfully',
-            contactList: currentContacts.map(contact => ({
-                ...contact,
-                createdAt: contact.createdAt ? contact.createdAt.toDate().toISOString() : new Date().toISOString()
-            })),
-            remainingContacts: userData.plan === 'free' ? 
-                FREE_PLAN_CONTACT_LIMIT - currentContacts.length : 
-                'unlimited'
+            userId: userId,
+            cardIndex: cardIndexNum,
+            profileImageUrl: profileImageUrl
         });
+
     } catch (error) {
-        console.error('Error adding contact:', error);
-        res.status(500).send({ 
+        console.error('Error getting profile image URL:', error);
+        res.status(500).send({
             success: false,
-            message: 'Internal Server Error', 
-            error: error.message 
+            message: 'Failed to get profile image URL',
+            error: error.message
         });
     }
 });
 
 // Public routes - must be before authentication middleware
-app.use(express.static(path.join(__dirname, 'public')));
+// NOTE: express.static moved to line 248 (after critical routes, before other endpoints)
 app.use('/', paymentRoutes); // Add this line before protected routes
 app.use('/', subscriptionRoutes); // Add subscription routes
+app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
+app.use('/api/apple-receipt', appleReceiptRoutes); // Add Apple receipt validation routes
 app.use('/', apkRoutes); // Add APK routes for public download
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
 app.use('/', userRoutes); // Move user routes to public section so SignIn works
 app.use('/', contactRoutes); // Move contact routes to public section to keep save contact public
+app.use('/api/feature-videos', videoRoutes); // Add video routes BEFORE other /api routes
 app.use('/api', contactRequestRoutes); // Add contact request routes
 app.use('/api', eventOrganiserRoutes); // Add event organiser routes
 app.use('/api', bulkRegistrationRoutes); // Add bulk registration routes
@@ -407,86 +583,7 @@ app.use('/api', testRoutes); // Add test routes for debugging
 
 
 
-// Add new contact saving endpoint
-app.post('/saveContact', async (req, res) => {
-    const { userId, contactInfo } = req.body;
-    
-    if (!userId || !contactInfo) {
-        return res.status(400).send({ message: 'User ID and contact info are required' });
-    }
-
-    try {
-        // Save contact to database
-        const contactsRef = db.collection('contacts').doc(userId);
-        const contactsDoc = await contactsRef.get();
-
-        let contactList = contactsDoc.exists ? (contactsDoc.data().contactList || []) : [];
-        if (!Array.isArray(contactList)) contactList = [];
-
-        // Add new contact with Firestore Timestamp
-        contactList.push({
-            name: contactInfo.name,
-            surname: contactInfo.surname,
-            phone: contactInfo.phone,
-            howWeMet: contactInfo.howWeMet,
-            createdAt: admin.firestore.Timestamp.now()
-        });
-
-        await contactsRef.set({
-            contactList: contactList
-        }, { merge: true });
-
-        // Send email notification
-        const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
-        const userData = userDoc.data();
-
-        if (userData && userData.email) {
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: userData.email,
-                subject: 'Someone Saved Your Contact Information',
-                html: `
-                    <h2>New Contact Added</h2>
-                    <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-                    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                        <p><strong>Contact Details:</strong></p>
-                        <ul style="list-style: none; padding-left: 0;">
-                            <li><strong>Name:</strong> ${contactInfo.name}</li>
-                            <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                            <li><strong>Phone Number:</strong> ${contactInfo.phone}</li>
-                            <li><strong>How You Met:</strong> ${contactInfo.howWeMet}</li>
-                        </ul>
-                    </div>
-                    <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-                `
-            };
-
-            const mailResult = await sendMailWithStatus(mailOptions);
-            console.log('Email sending result:', mailResult);
-
-            if (!mailResult.success) {
-                console.error('Failed to send email:', mailResult.error);
-            }
-        }
-
-        // Send success response
-        res.status(200).send({ 
-            success: true,
-            message: 'Contact saved successfully',
-            contact: contactList[contactList.length - 1],
-            emailSent: userData?.email ? true : false
-        });
-
-    } catch (error) {
-        console.error('Error saving contact:', error);
-        res.status(500).send({ 
-            success: false,
-            message: 'Failed to save contact',
-            error: error.message 
-        });
-    }
-});
+// NOTE: saveContact handler moved to top of file (line 67) for route priority
 
 
 
@@ -758,6 +855,83 @@ const recordFailedAttempt = (ip) => {
  * @param {string} ip - The client IP address for rate limiting
  * @returns {Promise<boolean>} - Whether the captcha is valid
  */
+/**
+ * Environment-aware captcha verification
+ * Supports development bypass, dummy tokens, and real hCaptcha verification
+ * @param {string} token - The captcha token from the frontend
+ * @returns {Promise<boolean>} - Whether the captcha is valid
+ */
+const verifyCaptchaEnvironmentAware = async (token) => {
+  const HCAPTCHA_VERIFY_URL = 'https://hcaptcha.com/siteverify';
+  const DUMMY_SITE_TOKEN = '10000000-aaaa-bbbb-cccc-000000000001';
+  const DUMMY_SECRET = '0x0000000000000000000000000000000000000000';
+  const BYPASS_TOKEN = 'BYPASSED_FOR_DEV';
+
+  try {
+    // Handle bypass token - should only work in development or when explicitly allowed
+    if (token === BYPASS_TOKEN) {
+      // Only allow bypass in development environment or when explicitly configured
+      const isDevelopment = process.env.NODE_ENV === 'development' || 
+                           process.env.NODE_ENV === 'dev' || 
+                           process.env.ALLOW_CAPTCHA_BYPASS === 'true';
+      
+      if (isDevelopment) {
+        console.log('Bypassing captcha for development environment');
+        return true;
+      } else {
+        console.log('Bypass token received in production - rejecting');
+        return false;
+      }
+    }
+
+    // Handle dummy token for testing
+    if (token === DUMMY_SITE_TOKEN) {
+      console.log('Using dummy token for testing');
+      const secret = DUMMY_SECRET;
+      
+      const formData = new URLSearchParams();
+      formData.append('secret', secret);
+      formData.append('response', token);
+
+      const response = await axios.post(HCAPTCHA_VERIFY_URL, formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      console.log('hCaptcha verification response:', response.data);
+      return response.data.success === true;
+    }
+
+    // Handle real hCaptcha tokens
+    const secret = process.env.HCAPTCHA_SECRET_KEY;
+    
+    if (!secret) {
+      console.error('No hCaptcha secret available for verification');
+      return false;
+    }
+
+    console.log('Using hCaptcha secret key:', secret.substring(0, 10) + '...');
+    console.log('Verifying token:', token.substring(0, 20) + '...');
+
+    const formData = new URLSearchParams();
+    formData.append('secret', secret);
+    formData.append('response', token);
+
+    const response = await axios.post(HCAPTCHA_VERIFY_URL, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    console.log('hCaptcha verification response:', response.data);
+    return response.data.success === true;
+  } catch (error) {
+    console.error('Captcha verification error:', error);
+    return false;
+  }
+};
+
 const verifyHCaptcha = async (token, ip) => {
   try {
     // Check rate limiting first
@@ -824,152 +998,8 @@ setInterval(async () => {
     }
 }, 10 * 60 * 1000);
 
-// Check for expired trials every minute
-const checkExpiredTrials = async () => {
-    try {
-        const now = new Date();
-        console.log(`Checking for any expired trials: ${now.toISOString()}`);
-        
-        // Get all trial users first, then filter in memory
-        // This avoids the need for a composite index
-        const trialUsersSnapshot = await db.collection('users')
-            .where('subscriptionStatus', '==', 'trial')
-            .get();
-        
-        if (trialUsersSnapshot.empty) {
-            console.log('No trial users found');
-            return;
-        }
-        
-        // Filter expired trials in memory
-        const expiredTrials = trialUsersSnapshot.docs.filter(doc => {
-            const data = doc.data();
-            return data.trialEndDate && data.trialEndDate <= now.toISOString();
-        });
-        
-        if (expiredTrials.length === 0) {
-            console.log('No expired trials found');
-            return;
-        }
-        
-        console.log(`Found ${expiredTrials.length} expired trials to process`);
-        
-        for (const doc of expiredTrials) {
-            const userId = doc.id;
-            const userData = doc.data();
-            
-            // Verify subscription is still valid with Paystack before converting
-            let isSubscriptionValid = true;
-            if (userData.subscriptionCode) {
-                try {
-                    // Check subscription status with Paystack
-                    const subscriptionStatus = await verifySubscriptionStatus(userData.subscriptionCode);
-                    isSubscriptionValid = subscriptionStatus === 'active';
-                    
-                    if (!isSubscriptionValid) {
-                        console.log(`Subscription ${userData.subscriptionCode} is no longer valid for user ${userId}`);
-                    }
-                } catch (error) {
-                    console.error(`Error verifying subscription for ${userId}:`, error);
-                    // Continue with conversion, we'll handle errors separately
-                }
-            }
-            
-            if (isSubscriptionValid) {
-                console.log(`Converting trial to active subscription for user: ${userId}`);
-                
-                // Update user status from trial to active
-                await doc.ref.update({
-                    subscriptionStatus: 'active',
-                    lastUpdated: new Date().toISOString(),
-                    trialEndDate: new Date().toISOString(),
-                    firstBillingDate: new Date().toISOString()
-                });
-                
-                // Also update the subscription document
-                await db.collection('subscriptions').doc(userId).update({
-                    status: 'active',
-                    trialEndDate: new Date().toISOString(),
-                    firstBillingDate: new Date().toISOString(),
-                    lastUpdated: new Date().toISOString()
-                });
-                
-                console.log(`User ${userId} subscription updated from trial to active`);
-            } else {
-                // User cancelled during trial
-                console.log(`Marking cancelled trial for user: ${userId}`);
-                
-                // Update user status to reflect cancellation and change plan to free
-                await doc.ref.update({
-                    subscriptionStatus: 'cancelled',
-                    plan: 'free', // Change plan back to free when subscription is cancelled
-                    lastUpdated: new Date().toISOString(),
-                    trialEndDate: new Date().toISOString(),
-                    cancellationDate: new Date().toISOString()
-                });
-                
-                // Also update the subscription document
-                await db.collection('subscriptions').doc(userId).update({
-                    status: 'cancelled',
-                    trialEndDate: new Date().toISOString(),
-                    cancellationDate: new Date().toISOString(),
-                    lastUpdated: new Date().toISOString(),
-                });
-                
-                console.log(`User ${userId} trial marked as cancelled and plan changed to free`);
-            }
-        }
-    } catch (error) {
-        console.error('Error checking expired trials:', error);
-    }
-};
-
-/**
- * Verify subscription status with Paystack
- */
-const verifySubscriptionStatus = async (subscriptionCode) => {
-    const options = {
-        hostname: 'api.paystack.co',
-        port: 443,
-        path: `/subscription/${subscriptionCode}`,
-        method: 'GET',
-        headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`
-        }
-    };
-
-    return new Promise((resolve, reject) => {
-        const req = https.request(options, res => {
-            let data = '';
-
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-
-            res.on('end', () => {
-                try {
-                    const response = JSON.parse(data);
-                    if (response.status && response.data) {
-                        resolve(response.data.status);
-                    } else {
-                        reject(new Error('Invalid response from Paystack'));
-                    }
-                } catch (error) {
-                    reject(error);
-                }
-            });
-        });
-
-        req.on('error', (error) => {
-            reject(error);
-        });
-
-        req.end();
-    });
-};
-
-// Run the check every 12 hours
-setInterval(checkExpiredTrials, 12 * 60 * 60 * 1000);
+// Import jobs
+const jobs = require('./jobs');
 
 // Error handler
 app.use((error, req, res, next) => {
@@ -988,6 +1018,15 @@ app.use((error, req, res, next) => {
 const server = app.listen(port, '0.0.0.0', () => {
     console.log(`XS Card Server is running on http://localhost:${port}`);
     console.log(`API Documentation available at http://localhost:${port}/docs`);
+    
+    // Validate RevenueCat configuration
+    const { validateConfig } = require('./config/revenueCatConfig');
+    console.log('\n🔧 Validating RevenueCat configuration...');
+    validateConfig();
+    console.log('');
+    
+    // Start all scheduled jobs
+    jobs.startAllJobs(db);
 });
 
 // Initialize WebSocket Service (Phase 2)
@@ -1000,6 +1039,32 @@ global.socketService = socketService;
 console.log('🚀 WebSocket service initialized and ready for Phase 2 event broadcasting');
 
 // Graceful shutdown handling
+// ========================================================================
+// 404 Logger - Catch-all for unmatched routes
+// ========================================================================
+app.use((req, res) => {
+    // Don't log 404s for known static file extensions (common static files)
+    const path = req.path;
+    const staticExtensions = ['.html', '.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.json', '.xml', '.pdf', '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.flv', '.webm'];
+    const isStaticFile = staticExtensions.some(ext => path.toLowerCase().endsWith(ext));
+    
+    // Log non-static 404s to help diagnose broken public endpoints
+    if (!isStaticFile) {
+        console.log(`⚠️  404 NOT FOUND: ${req.method} ${path}`);
+        if (req.headers.referer) {
+            console.log(`   Referer: ${req.headers.referer}`);
+        }
+        console.log(`   Headers: ${JSON.stringify(req.headers, null, 2)}`);
+    }
+    
+    res.status(404).json({ 
+        success: false,
+        message: 'Not found',
+        path: path
+    });
+});
+
+// Mount AddContact routes AFTER 404 to force failure (temporary test)
 process.on('SIGINT', () => {
     console.log('\n🛑 Shutting down gracefully...');
     server.close(() => {

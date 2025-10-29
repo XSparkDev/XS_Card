@@ -30,6 +30,7 @@ router.get('/reset-password', (req, res) => {
     res.redirect(`/templates/passwordReset.html?token=${token}&uid=${uid}`);
 });
 router.get('/reset-user-info', userController.getResetUserInfo);
+router.post('/public/resend-verification', userController.resendVerificationPublic);
 
 // All routes below this middleware will require authentication
 router.use(authenticateUser);
@@ -42,6 +43,11 @@ router.post('/test-token-refresh-success', userController.testTokenRefreshSucces
 router.post('/logout', userController.logout);
 router.post('/resend-verification/:uid', userController.resendVerification);
 router.get('/Users', userController.getAllUsers);
+
+// Account deletion endpoint (permanent - deletes auth & anonymizes data)
+// MUST be before /Users/:id to avoid route conflict
+router.delete('/Users/delete-account', authenticateUser, userController.deleteUserAccount);
+
 router.get('/Users/:id', userController.getUserById);
 router.patch('/UpdateUser/:id', handleSingleUpload('profileImage'), userController.updateUser);
 router.delete('/Users/:id', userController.deleteUser);
@@ -60,5 +66,11 @@ router.post('/user/subscription-level', userController.setUserSubscriptionLevel)
 
 // Account deactivation endpoint
 router.patch('/Users', userController.deactivateUser);
+
+// Account reactivation endpoint (admin function)
+router.patch('/Users/reactivate', authenticateUser, userController.reactivateUser);
+
+// Change password endpoint
+router.post('/change-password', userController.changePassword);
 
 module.exports = router;

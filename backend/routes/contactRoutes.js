@@ -3,10 +3,11 @@ const router = express.Router();
 const contactController = require('../controllers/contactController');
 const { authenticateUser } = require('../middleware/auth');
 
-// Keep these public routes
+// NOTE: Public save contact routes moved to server.js top (lines 235-237) for route priority
+// Only keep saveContactInfo if still used elsewhere, otherwise remove
 router.post('/saveContactInfo', contactController.saveContactInfo);
-router.post('/saveContact', contactController.saveContactInfo);
-router.post('/public/saveContact', contactController.saveContactInfo);
+
+// Note: Profile image endpoint moved to server.js
 
 // Protected routes - apply authentication middleware individually
 router.get('/Contacts', authenticateUser, contactController.getAllContacts);
