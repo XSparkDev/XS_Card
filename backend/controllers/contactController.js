@@ -244,7 +244,7 @@ exports.saveContactInfo = async (req, res) => {
             const mailOptions = {
                 from: process.env.EMAIL_USER,
                 to: userData.email,
-                subject: 'Someone Saved Your Contact Information',
+                subject: `${contactInfo.name} Saved Your Contact Information`,
                 html: `
                     <h2>New Contact Added</h2>
                     <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>

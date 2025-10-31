@@ -12,6 +12,7 @@ import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import { saveAltNumber } from '../../utils/tempAltNumber';
 
 type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -44,6 +45,10 @@ export default function AddCards() {
   const [customColor, setCustomColor] = useState('#1B2B5B');
   const [showQuickColors, setShowQuickColors] = useState(false);
   const [socialNotification, setSocialNotification] = useState<string | null>(null);
+  // Alt number state
+  const [altNumber, setAltNumber] = useState('');
+  const [altCountryCode, setAltCountryCode] = useState('+27');
+  const [showAltNumber, setShowAltNumber] = useState(false);
 
   // Social media platforms data
   const socials = [
@@ -436,6 +441,25 @@ export default function AddCards() {
         throw new Error(responseData.message || 'Failed to create card');
       }
 
+      // Get the new card index (it should be the last card in the array)
+      // Fetch updated cards list to get the correct index
+      try {
+        const cardsResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+        const cardsData = await cardsResponse.json();
+        const cardsArray = cardsData.cards || (Array.isArray(cardsData) ? cardsData : []);
+        const newCardIndex = cardsArray.length > 0 ? cardsArray.length - 1 : 0;
+        
+        // Save alt number to temp file
+        await saveAltNumber(newCardIndex, {
+          altNumber,
+          altCountryCode,
+          showAltNumber,
+        });
+      } catch (altError) {
+        console.error('Error saving alt number:', altError);
+        // Don't fail the whole operation if alt number save fails
+      }
+
       Alert.alert('Success', 'Card created successfully', [
         {
           text: 'OK',
@@ -575,6 +599,24 @@ export default function AddCards() {
               onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
               placeholder="Phone number"
               />
+              
+            <PhoneNumberInput
+                value={altNumber}
+                onChangeText={(text) => setAltNumber(text)}
+              onCountryCodeChange={(code) => setAltCountryCode(code)}
+              placeholder="Alt number"
+              />
+              
+            {/* Toggle to show/hide alt number on card */}
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Show alt number on card</Text>
+              <TouchableOpacity
+                style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
+                onPress={() => setShowAltNumber(!showAltNumber)}
+              >
+                <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Add Button - Now inside ScrollView */}
@@ -672,6 +714,39 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
     marginBottom: 15,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    paddingHorizontal: 5,
+  },
+  toggleLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  toggleSwitch: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ccc',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleSwitchActive: {
+    backgroundColor: COLORS.secondary,
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    alignSelf: 'flex-start',
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end',
   },
   actionButtons: {
     flexDirection: 'row',

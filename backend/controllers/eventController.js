@@ -142,7 +142,7 @@ exports.createEvent = async (req, res) => {
       currentAttendees: 0,
       attendeesList: [],
       status: 'draft',
-      // Bulk registration support
+      // Bulk registration support (will be coerced below by capacity rule)
       allowBulkRegistrations: req.body.allowBulkRegistrations === 'true' || req.body.allowBulkRegistrations === true,
       // Image data from Firebase Storage
       bannerImage: bannerImageUrl,
@@ -170,6 +170,16 @@ exports.createEvent = async (req, res) => {
     // Validate required location fields
     if (!eventData.location.venue || !eventData.location.city) {
       return sendError(res, 400, 'Missing required location fields: venue, city');
+    }
+
+    // Validate maximum attendees (required and >= 1)
+    if (!Number.isFinite(eventData.maxAttendees) || eventData.maxAttendees < 1) {
+      return sendError(res, 400, 'Invalid maximum attendees: value is required and must be at least 1');
+    }
+
+    // Enforce bulk registration capacity rule: only when maxAttendees > 10
+    if (eventData.maxAttendees <= 10) {
+      eventData.allowBulkRegistrations = false;
     }
 
     // Validate organiser permissions for paid events
@@ -290,6 +300,17 @@ exports.publishEvent = async (req, res) => {
     if (eventData.status === 'published') {
       return sendError(res, 400, 'Event is already published');
     }
+
+  // Enforce bulk registration capacity rule before publishing
+  if (eventData.maxAttendees <= 10 && eventData.allowBulkRegistrations === true) {
+    await eventRef.update({
+      allowBulkRegistrations: false,
+      updatedAt: admin.firestore.Timestamp.now()
+    });
+    // Refresh eventData after coercion
+    const refreshed = await eventRef.get();
+    Object.assign(eventData, refreshed.data());
+  }
 
     // Check if event is pending payment
     if (eventData.status === 'pending_payment') {
@@ -1243,6 +1264,22 @@ exports.updateEvent = async (req, res) => {
       images: finalImages,
       updatedAt: admin.firestore.Timestamp.now()
     };
+
+    // Enforce bulk registration capacity rule on update
+    const finalMaxAttendees = Number.isFinite(updates.maxAttendees) && updates.maxAttendees > 0
+      ? updates.maxAttendees
+      : eventData.maxAttendees;
+
+    let desiredAllowBulk = undefined;
+    if (typeof updateData.allowBulkRegistrations !== 'undefined') {
+      desiredAllowBulk = (updateData.allowBulkRegistrations === 'true' || updateData.allowBulkRegistrations === true);
+    }
+
+    const finalAllowBulk = finalMaxAttendees <= 10
+      ? false
+      : (typeof desiredAllowBulk !== 'undefined' ? desiredAllowBulk : !!eventData.allowBulkRegistrations);
+
+    updates.allowBulkRegistrations = finalAllowBulk;
 
     // Convert dates if provided with validation
     if (updateData.eventDate && typeof updateData.eventDate === 'string') {

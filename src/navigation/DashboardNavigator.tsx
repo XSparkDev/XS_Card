@@ -1,14 +1,29 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { AdminTabParamList } from '../types';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import AdminDashboard from '../screens/admin/AdminDashboard';
 import Calendar from '../screens/admin/Calendar';
 // import Settings from '../screens/admin/Settings';
 
 const Tab = createBottomTabNavigator<AdminTabParamList>();
+
+// A tiny screen that redirects the tab to the Contacts tab in MainTabs
+function ContactsRedirect() {
+  const navigation = useNavigation<any>();
+
+  useFocusEffect(
+    useCallback(() => {
+      // Navigate to the main app tabs -> Contacts
+      navigation.navigate('MainTabs', { screen: 'Contacts' });
+    }, [navigation])
+  );
+
+  return null;
+}
 
 export default function DashboardNavigator() {
   return (
@@ -42,6 +57,17 @@ export default function DashboardNavigator() {
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="dashboard" size={24} color={color} />
+          ),
+        }}
+      />
+      {/* Contacts redirect tab - navigates to MainTabs > Contacts */}
+      <Tab.Screen
+        name="Contacts"
+        component={ContactsRedirect}
+        options={{
+          title: 'Contacts',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="people" size={24} color={color} />
           ),
         }}
       />

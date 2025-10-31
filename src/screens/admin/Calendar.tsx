@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Dimensions } from 'react-native';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { isTablet } from '../../utils/responsive';
 
 type CalendarNavigationProp = BottomTabNavigationProp<AdminTabParamList, 'Calendar'>;
 type CalendarScreenNavigationProp = StackNavigationProp<AuthStackParamList>;
@@ -1219,7 +1220,8 @@ const isDateTimeInPast = (dateString: string, timeString: string) => {
 
 export default function Calendar() {
   const [selectedYear, setSelectedYear] = useState('2024');
-  const [selectedDate, setSelectedDate] = useState('');
+  const todayString = getTodayDateString();
+  const [selectedDate, setSelectedDate] = useState(todayString);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isContactsModalVisible, setIsContactsModalVisible] = useState(false);
   const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
@@ -1250,6 +1252,27 @@ export default function Calendar() {
   const navigation = useNavigation<CalendarScreenNavigationProp>();
   const [userInfo, setUserInfo] = useState<{ name: string; surname: string; email: string } | null>(null);
 
+  // Tablet-only calendar sizing and scaling
+  const windowHeight = Dimensions.get('window').height;
+  const calendarHeight = isTablet() ? Math.round(windowHeight * 0.5) : undefined;
+  // Approximate combined height of header + weekday row in the calendar
+  const headerHeights = 90;
+  const dayCellHeight = isTablet() ? Math.max(36, Math.floor(((calendarHeight || 0) - headerHeights) / 6)) : undefined;
+
+  // Base theme for RNCalendar; augmented on tablets to scale day cells/text
+  const baseTheme: any = {
+    backgroundColor: '#ffffff',
+    calendarBackground: '#ffffff',
+    textSectionTitleColor: '#000000',
+    selectedDayBackgroundColor: COLORS.primary,
+    selectedDayTextColor: '#ffffff',
+    todayTextColor: COLORS.primary,
+    dayTextColor: '#2d4150',
+    monthTextColor: COLORS.primary,
+    textMonthFontSize: 20,
+    textMonthFontWeight: 'bold',
+  };
+
   // Safety function to reset all modal states
   const resetAllModals = () => {
     console.log('🔄 Resetting all modal states');
@@ -1274,7 +1297,6 @@ export default function Calendar() {
     attendees: [],
     startTime: '',
     endTime: '',  });
-  const [todayString, setTodayString] = useState(getTodayDateString());
   
   const timeSlots = [
     '09:00', '10:00', '11:00', '12:00',
@@ -1991,17 +2013,8 @@ const renderEventDate = (dateStr: string) => {
     </TouchableOpacity>
   );
 
-  // Update the todayString if the component is mounted past midnight
-  useEffect(() => {
-    const todayUpdateInterval = setInterval(() => {
-      const newTodayString = getTodayDateString();
-      if (newTodayString !== todayString) {
-        setTodayString(newTodayString);
-      }
-    }, 60000); // Check every minute
-    
-    return () => clearInterval(todayUpdateInterval);
-  }, [todayString]);
+  // Note: Removed todayString state update logic since todayString is now a constant
+  // The calendar automatically handles date changes through its own state management
 
   // Filter available time slots for today
   const getAvailableTimeSlots = () => {
@@ -2021,19 +2034,30 @@ const renderEventDate = (dateStr: string) => {
         showsVerticalScrollIndicator={false}
       >
         <RNCalendar
-          style={styles.calendar}
+          style={[
+            styles.calendar,
+            isTablet() && { height: calendarHeight },
+          ]}
           minDate={todayString} // Add minimum date to prevent selecting past dates
           theme={{
-            backgroundColor: '#ffffff',
-            calendarBackground: '#ffffff',
-            textSectionTitleColor: '#000000',
-            selectedDayBackgroundColor: COLORS.primary,
-            selectedDayTextColor: '#ffffff',
-            todayTextColor: COLORS.primary,
-            dayTextColor: '#2d4150',
-            monthTextColor: COLORS.primary,
-            textMonthFontSize: 20,
-            textMonthFontWeight: 'bold',
+            ...baseTheme,
+            ...(isTablet() && {
+              textDayFontSize: 18,
+              textDayHeaderFontSize: 14,
+              textMonthFontSize: 22,
+              // Override internal stylesheet so day cells grow with height
+              stylesheet: {
+                calendar: {
+                  main: {
+                    week: { marginVertical: 0 },
+                    dayContainer: { height: dayCellHeight },
+                  },
+                  header: {
+                    header: { paddingVertical: 8 },
+                  },
+                },
+              },
+            }),
           }}
           markedDates={{
             ...markedDates,
@@ -2046,23 +2070,21 @@ const renderEventDate = (dateStr: string) => {
         <TouchableOpacity
           style={[
             styles.scheduleMeetingButton,
-            selectedDate && styles.scheduleMeetingButtonActive
+            styles.scheduleMeetingButtonActive
           ]}
           onPress={() => {
-            if (selectedDate) {
-              setIsTimeModalVisible(true);
-            }
+            setIsTimeModalVisible(true);
           }}
         >
           <MaterialCommunityIcons 
             name="calendar-plus" 
             size={20} 
-            color={selectedDate ? COLORS.white : COLORS.primary} 
+            color={COLORS.white} 
             style={styles.scheduleMeetingIcon}
           />
           <Text style={[
             styles.scheduleMeetingText,
-            selectedDate && styles.scheduleMeetingTextActive
+            styles.scheduleMeetingTextActive
           ]}>
             Schedule Meeting
           </Text>

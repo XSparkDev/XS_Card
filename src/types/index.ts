@@ -28,6 +28,7 @@ export interface PaymentPendingParams {
 
 export type AdminTabParamList = {
   Analytics: undefined;
+  Contacts: undefined;
   Calendar: undefined;
   Settings: undefined;
   Cards: undefined;
@@ -61,7 +62,7 @@ export type RootStackParamList = {
   EventAnalytics: { event: any };
   OrganiserRegistration: undefined;
   Settings: undefined;
-  AdminDashboard: undefined;
+  AdminDashboard: { screen?: 'Analytics' | 'Calendar' } | undefined;
 };
 
 export type RootTabParamList = {

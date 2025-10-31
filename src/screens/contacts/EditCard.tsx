@@ -15,6 +15,7 @@ import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import { getAltNumber, saveAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -87,6 +88,12 @@ export default function EditCard() {
   const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
   const [customColor, setCustomColor] = useState('#1B2B5B');
   const [showQuickColors, setShowQuickColors] = useState(false);
+  const [pickerInitialized, setPickerInitialized] = useState(false);
+  const [isHexEditing, setIsHexEditing] = useState(false);
+  // Alt number state
+  const [altNumber, setAltNumber] = useState('');
+  const [altCountryCode, setAltCountryCode] = useState('+27');
+  const [showAltNumber, setShowAltNumber] = useState(false);
 
   // Helper function to parse phone number and extract country code
   const parsePhoneNumber = (phone: string) => {
@@ -119,7 +126,22 @@ export default function EditCard() {
     loadUserData();
     }
     getUserPlan();
-  }, [cardData]);
+    loadAltNumber();
+  }, [cardData, cardIndex]);
+  
+  // Load alt number from temp file
+  const loadAltNumber = async () => {
+    try {
+      const altData = await getAltNumber(cardIndex);
+      if (altData) {
+        setAltNumber(altData.altNumber || '');
+        setAltCountryCode(altData.altCountryCode || '+27');
+        setShowAltNumber(altData.showAltNumber || false);
+      }
+    } catch (error) {
+      console.error('Error loading alt number:', error);
+    }
+  };
 
   // New function to load data from passed props (no API call)
   const loadCardDataFromProps = () => {
@@ -349,6 +371,13 @@ export default function EditCard() {
 
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
+      
+      // Save alt number to temp file
+      await saveAltNumber(cardIndex, {
+        altNumber,
+        altCountryCode,
+        showAltNumber,
+      });
       
       setModalMessage('Card updated');
       setIsSuccessModalVisible(true);
@@ -982,9 +1011,9 @@ export default function EditCard() {
                 <Image
                   style={styles.profileImage}
                   source={
-                    formData.profileImage
+                        formData.profileImage
                       ? { uri: getImageUrl(formData.profileImage) }
-                      : require('../../../assets/images/profile.png')
+                      : require('../../../assets/images/profile2.jpg')
                   }
                 />
                 <TouchableOpacity 
@@ -1053,6 +1082,24 @@ export default function EditCard() {
               onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
               placeholder="Phone number"
             />
+            
+            <PhoneNumberInput
+              value={altNumber}
+              onChangeText={(text) => setAltNumber(text)}
+              onCountryCodeChange={(code) => setAltCountryCode(code)}
+              placeholder="Alt number"
+            />
+            
+            {/* Toggle to show/hide alt number on card */}
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Show alt number on card</Text>
+              <TouchableOpacity
+                style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
+                onPress={() => setShowAltNumber(!showAltNumber)}
+              >
+                <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
+              </TouchableOpacity>
+            </View>
 
             {/* Social Media URL Inputs */}
             {selectedSocials.map((socialId) => (
@@ -1302,7 +1349,7 @@ export default function EditCard() {
                       source={
                         formData.profileImage
                           ? { uri: getImageUrl(formData.profileImage) }
-                          : require('../../../assets/images/profile.png')
+                          : require('../../../assets/images/profile2.jpg')
                       }
                     />
                   </View>
@@ -1382,6 +1429,13 @@ export default function EditCard() {
         animationOut="fadeOut"
         backdropOpacity={0.5}
         style={{ margin: 20 }}
+        propagateSwipe
+        useNativeDriver={false}
+        onModalShow={() => {
+          // Force ColorPicker to re-initialize when modal opens
+          setPickerInitialized(false);
+          setTimeout(() => setPickerInitialized(true), 100);
+        }}
       >
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>Choose Custom Color</Text>
@@ -1390,14 +1444,20 @@ export default function EditCard() {
           <View style={styles.visualColorPickerContainer}>
             <Text style={styles.colorPickerLabel}>Select your color:</Text>
             <View style={styles.professionalColorPicker}>
-              <ColorPicker
-                onColorChangeComplete={(color: string) => setCustomColor(color)}
-                color={customColor}
-                thumbSize={30}
-                sliderSize={30}
-                gapSize={10}
-                swatches={false}
-              />
+              {pickerInitialized && (
+                <ColorPicker
+                  // Update in real-time for iOS drag gestures
+                  onColorChange={isHexEditing ? undefined : (color: string) => setCustomColor(color)}
+                  onColorChangeComplete={isHexEditing ? undefined : (color: string) => setCustomColor(color)}
+                  color={customColor}
+                  thumbSize={36}
+                  sliderSize={36}
+                  gapSize={10}
+                  swatches={false}
+                  noSnap
+                  discrete={false}
+                />
+              )}
             </View>
           </View>
           
@@ -1414,14 +1474,19 @@ export default function EditCard() {
             <TextInput
               style={styles.colorInput}
               value={customColor}
+              onFocus={() => setIsHexEditing(true)}
+              onBlur={() => setIsHexEditing(false)}
               onChangeText={(text) => {
                 // Ensure it starts with # and is valid hex
                 let cleanText = text.replace(/[^0-9A-Fa-f]/g, '');
                 if (cleanText.length > 6) cleanText = cleanText.substring(0, 6);
-                setCustomColor('#' + cleanText);
+                setCustomColor('#' + cleanText.toUpperCase());
               }}
               placeholder="#000000"
               placeholderTextColor="#999"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              selectTextOnFocus
               maxLength={7}
             />
           </View>
@@ -2036,6 +2101,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1976D2',
     flex: 1,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    paddingHorizontal: 5,
+  },
+  toggleLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  toggleSwitch: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ccc',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleSwitchActive: {
+    backgroundColor: COLORS.secondary,
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    alignSelf: 'flex-start',
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end',
   },
   previewModalContainer: {
     flex: 1,

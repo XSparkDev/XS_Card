@@ -179,7 +179,7 @@ const addContactHandler = async (req, res) => {
                     const mailOptions = {
                         from: process.env.EMAIL_USER,
                         to: userData.email,
-                        subject: 'Someone Saved Your Contact Information',
+                        subject: `${contactInfo.name} Saved Your Contact Information`,
                         html: `
                             <h2>New Contact Added</h2>
                             <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
@@ -876,8 +876,8 @@ const verifyCaptchaEnvironmentAware = async (token) => {
                            process.env.ALLOW_CAPTCHA_BYPASS === 'true';
       
       if (isDevelopment) {
-        console.log('Bypassing captcha for development environment');
-        return true;
+      console.log('Bypassing captcha for development environment');
+      return true;
       } else {
         console.log('Bypass token received in production - rejecting');
         return false;

@@ -73,11 +73,11 @@ export default function CreateEventScreen() {
     category: 'other' as EventCategory,
     eventType: 'free' as 'free' | 'paid', // Paid events temporarily disabled
     ticketPrice: 0,
-    maxAttendees: 0,
+    maxAttendees: 1,
     visibility: 'public' as 'public' | 'private' | 'invite-only',
     images: [],
     tags: [],
-    allowBulkRegistrations: true, // Enable by default for testing
+    allowBulkRegistrations: false,
   });
 
   // UI state - Updated for Android compatibility
@@ -178,8 +178,8 @@ export default function CreateEventScreen() {
         if (formData.eventType === 'paid' && formData.ticketPrice <= 0) {
           newErrors.ticketPrice = 'Ticket price must be greater than 0 for paid events';
         }
-        if (formData.maxAttendees < 0) {
-          newErrors.maxAttendees = 'Maximum attendees cannot be negative (0 = unlimited)';
+        if (!Number.isFinite(formData.maxAttendees) || formData.maxAttendees < 1) {
+          newErrors.maxAttendees = 'Maximum attendees is required and must be at least 1';
         }
         break;
 
@@ -374,7 +374,9 @@ export default function CreateEventScreen() {
       payload.append('ticketPrice', formData.ticketPrice.toString());
       payload.append('maxAttendees', formData.maxAttendees.toString());
       payload.append('visibility', formData.visibility);
-      payload.append('allowBulkRegistrations', formData.allowBulkRegistrations?.toString() || 'true');
+      payload.append('allowBulkRegistrations',
+        (formData.allowBulkRegistrations || false).toString()
+      );
 
       // Location & tags as JSON strings for backend parsing
       payload.append('location', JSON.stringify(formData.location));
@@ -676,7 +678,7 @@ export default function CreateEventScreen() {
       )}
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Maximum Attendees</Text>
+        <Text style={styles.label}>Maximum Attendees *</Text>
         <TextInput
           style={[styles.input, errors.maxAttendees && styles.inputError]}
           value={formData.maxAttendees.toString()}
@@ -684,10 +686,16 @@ export default function CreateEventScreen() {
             const parsed = parseInt(text);
             // Allow empty string (will be 0) or valid numbers
             if (text === '' || !isNaN(parsed)) {
-              updateFormData({ maxAttendees: parsed || 0 });
+              const value = parsed || 0;
+              const bulkAllowed = value > 10;
+              updateFormData({ 
+                maxAttendees: value,
+                // Force disable bulk when capacity is 10 or less
+                ...(bulkAllowed ? {} : { allowBulkRegistrations: false })
+              });
             }
           }}
-          placeholder="0 (unlimited)"
+          placeholder="Enter a number (minimum 1)"
           placeholderTextColor={COLORS.gray}
           keyboardType="numeric"
         />
@@ -703,13 +711,20 @@ export default function CreateEventScreen() {
           <Switch
             value={formData.allowBulkRegistrations || false}
             onValueChange={(value) => updateFormData({ allowBulkRegistrations: value })}
+            disabled={formData.maxAttendees <= 10}
             trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
             thumbColor={COLORS.white}
           />
         </View>
-        <Text style={styles.helpText}>
-          When enabled, attendees can register 2-50 people in a single transaction
-        </Text>
+        {formData.maxAttendees <= 10 ? (
+          <Text style={styles.helpText}>
+            Bulk registration is only available for events with more than 10 attendees.
+          </Text>
+        ) : (
+          <Text style={styles.helpText}>
+            When enabled, attendees can register 2-50 people in a single transaction
+          </Text>
+        )}
       </View>
 
       <View style={styles.inputGroup}>

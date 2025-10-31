@@ -212,7 +212,7 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
     return (
       <View ref={viewRef} style={style} onLayout={handleLayout}>
         <Image 
-          source={require('../../../assets/images/profile.png')} 
+          source={require('../../../assets/images/profile2.jpg')} 
           style={style} 
         />
         {contact.isXsCardUser && (
