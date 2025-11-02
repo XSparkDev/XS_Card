@@ -41,6 +41,7 @@ export default function AddCards() {
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState('#1B2B5B'); // Default color
   const [selectedSocials, setSelectedSocials] = useState<string[]>([]);
+  const [template, setTemplate] = useState<number>(1);
   const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
   const [customColor, setCustomColor] = useState('#1B2B5B');
   const [showQuickColors, setShowQuickColors] = useState(false);
@@ -409,6 +410,8 @@ export default function AddCards() {
 
       // Add color scheme
       form.append('colorScheme', selectedColor);
+      // Add template
+      form.append('template', String(template));
 
       if (profileImage) {
         const imageName = profileImage.split('/').pop() || 'profile.jpg';
@@ -545,6 +548,76 @@ export default function AddCards() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Template Selection */}
+          <Text style={styles.sectionTitle}>Template</Text>
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <TouchableOpacity
+              onPress={() => setTemplate(1)}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: template === 1 ? COLORS.secondary : '#ddd',
+                backgroundColor: template === 1 ? '#F6F7FF' : '#FFF'
+              }}
+            >
+              <Text style={{ color: COLORS.black }}>Template 1</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setTemplate(2)}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: template === 2 ? COLORS.secondary : '#ddd',
+                backgroundColor: template === 2 ? '#F6F7FF' : '#FFF'
+              }}
+            >
+              <Text style={{ color: COLORS.black }}>Template 2</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setTemplate(3)}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: template === 3 ? COLORS.secondary : '#ddd',
+                backgroundColor: template === 3 ? '#F6F7FF' : '#FFF'
+              }}
+            >
+              <Text style={{ color: COLORS.black }}>Template 3</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setTemplate(4)}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: template === 4 ? COLORS.secondary : '#ddd',
+                backgroundColor: template === 4 ? '#F6F7FF' : '#FFF'
+              }}
+            >
+              <Text style={{ color: COLORS.black }}>Template 4</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setTemplate(5)}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: template === 5 ? COLORS.secondary : '#ddd',
+                backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
+              }}
+            >
+              <Text style={{ color: COLORS.black }}>Template 5</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Personal Details Section */}

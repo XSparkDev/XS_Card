@@ -716,7 +716,8 @@ exports.uploadUserImages = async (req, res) => {
                 companyLogo: req.firebaseStorageUrls?.companyLogo ?? null,
                 socials: {},
                 colorScheme: '#1B2B5B', // Default color
-                createdAt: admin.firestore.Timestamp.now() // Changed to Firestore Timestamp
+                createdAt: admin.firestore.Timestamp.now(), // Changed to Firestore Timestamp
+                template: 1
             }]
         };
         console.log('Creating card with data:', JSON.stringify(cardData.cards[0], null, 2));

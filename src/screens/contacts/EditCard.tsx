@@ -90,6 +90,7 @@ export default function EditCard() {
   const [showQuickColors, setShowQuickColors] = useState(false);
   const [pickerInitialized, setPickerInitialized] = useState(false);
   const [isHexEditing, setIsHexEditing] = useState(false);
+  const [template, setTemplate] = useState<number>(1);
   // Alt number state
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
@@ -171,6 +172,11 @@ export default function EditCard() {
         companyLogo: cardData.companyLogo || '',
         logoZoomLevel: cardData.logoZoomLevel || 1.0,
       });
+      if (typeof cardData.template === 'number' && cardData.template >= 1) {
+        setTemplate(cardData.template);
+      } else {
+        setTemplate(1);
+      }
 
       // Set zoom level if it exists in the card data
       if (cardData.logoZoomLevel) {
@@ -238,6 +244,11 @@ export default function EditCard() {
           companyLogo: userData.companyLogo || '',
           logoZoomLevel: userData.logoZoomLevel || 1.0,
         });
+        if (typeof userData.template === 'number' && userData.template >= 1) {
+          setTemplate(userData.template);
+        } else {
+          setTemplate(1);
+        }
 
         // Set zoom level if it exists in the card data
         if (userData.logoZoomLevel) {
@@ -351,7 +362,8 @@ export default function EditCard() {
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
         logoZoomLevel: Number(zoomLevel) // Ensure it's a number
-      };
+      } as any;
+      cardData.template = template;
 
       console.log('Saving card with zoom level:', cardData.logoZoomLevel);
       console.log('Full card data:', JSON.stringify(cardData, null, 2));
@@ -1023,6 +1035,82 @@ export default function EditCard() {
                   <MaterialIcons name="edit" size={24} color={COLORS.white} />
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+
+          {/* Template Selection */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Template</Text>
+            <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+              <TouchableOpacity
+                onPress={() => setTemplate(1)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 1 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 1 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 1</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(2)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 2 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 2 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 2</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(3)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 3 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 3 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 3</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(4)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 4 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 4 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 4</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(5)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 5 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 5</Text>
+              </TouchableOpacity>
             </View>
           </View>
           </View>

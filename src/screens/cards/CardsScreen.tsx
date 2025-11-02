@@ -15,6 +15,10 @@ import { isProfileIncompleteError } from '../../utils/profileErrorHandler';
 import ProfileCompletionModal from '../../components/ProfileCompletionModal';
 import { isTablet, getCardWidth, scale, getSpacing } from '../../utils/responsive';
 import { LinearGradient } from 'expo-linear-gradient';
+import CardTemplate2 from '../../components/cards/CardTemplate2';
+import CardTemplate3 from '../../components/cards/CardTemplate3';
+import CardTemplate4 from '../../components/cards/CardTemplate4';
+import CardTemplate5 from '../../components/cards/CardTemplate5';
 import { getAltNumber } from '../../utils/tempAltNumber';
 
 // Update interfaces to match new data structure
@@ -49,6 +53,7 @@ interface CardData {
   createdAt: string;
   UserId: any;
   logoZoomLevel?: number;
+  template?: number;
 }
 
 interface ShareOption {
@@ -917,6 +922,92 @@ export default function CardsScreen() {
               </>
             )}
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={isTablet() ? { paddingVertical: 0 } : undefined}>
+              {/* Render by template: 2 uses alternative layout; 3 uses outlined version; default keeps existing */}
+              {card.template === 2 ? (
+                <View
+                  style={[
+                    styles.cardContent,
+                    isTablet() && styles.cardContentTablet,
+                    isTablet() && { borderWidth: 0.5, borderColor: COLORS.border + '30', marginTop: 4, marginBottom: 4, borderRadius: 15 }
+                  ]}
+                >
+                  <CardTemplate2
+                    card={card}
+                    qrUri={qrCodes[index]}
+                    colorFallback={colorScheme}
+                    isWalletLoading={isWalletLoading}
+                    onPressShare={() => setIsShareModalVisible(true)}
+                    onPressWallet={handleAddToWallet}
+                    onPressEmail={handleEmailPress}
+                    onPressPhone={handlePhonePress}
+                    onPressSocial={handleSocialPress}
+                    altNumber={altNumbers[index]}
+                  />
+                </View>
+              ) : card.template === 3 ? (
+                <View
+                  style={[
+                    styles.cardContent,
+                    isTablet() && styles.cardContentTablet,
+                    isTablet() && { borderWidth: 0.5, borderColor: COLORS.border + '30', marginTop: 4, marginBottom: 4, borderRadius: 15 }
+                  ]}
+                >
+                  <CardTemplate3
+                    card={card}
+                    qrUri={qrCodes[index]}
+                    colorFallback={colorScheme}
+                    isWalletLoading={isWalletLoading}
+                    onPressShare={() => setIsShareModalVisible(true)}
+                    onPressWallet={handleAddToWallet}
+                    onPressEmail={handleEmailPress}
+                    onPressPhone={handlePhonePress}
+                    onPressSocial={handleSocialPress}
+                    altNumber={altNumbers[index]}
+                  />
+                </View>
+              ) : card.template === 4 ? (
+                <View
+                  style={[
+                    styles.cardContent,
+                    isTablet() && styles.cardContentTablet,
+                    isTablet() && { borderWidth: 0.5, borderColor: COLORS.border + '30', marginTop: 4, marginBottom: 4, borderRadius: 15 }
+                  ]}
+                >
+                  <CardTemplate4
+                    card={card}
+                    qrUri={qrCodes[index]}
+                    colorFallback={colorScheme}
+                    isWalletLoading={isWalletLoading}
+                    onPressShare={() => setIsShareModalVisible(true)}
+                    onPressWallet={handleAddToWallet}
+                    onPressEmail={handleEmailPress}
+                    onPressPhone={handlePhonePress}
+                    onPressSocial={handleSocialPress}
+                    altNumber={altNumbers[index]}
+                  />
+                </View>
+              ) : card.template === 5 ? (
+                <View
+                  style={[
+                    styles.cardContent,
+                    isTablet() && styles.cardContentTablet,
+                    isTablet() && { borderWidth: 0.5, borderColor: COLORS.border + '30', marginTop: 4, marginBottom: 4, borderRadius: 15 }
+                  ]}
+                >
+                  <CardTemplate5
+                    card={card}
+                    qrUri={qrCodes[index]}
+                    colorFallback={colorScheme}
+                    isWalletLoading={isWalletLoading}
+                    onPressShare={() => setIsShareModalVisible(true)}
+                    onPressWallet={handleAddToWallet}
+                    onPressEmail={handleEmailPress}
+                    onPressPhone={handlePhonePress}
+                    onPressSocial={handleSocialPress}
+                    altNumber={altNumbers[index]}
+                  />
+                </View>
+              ) : (
               <View 
                 style={[
                   styles.cardContent,
@@ -1218,6 +1309,7 @@ export default function CardsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+              )}
             </ScrollView>
           </View>
         ))}

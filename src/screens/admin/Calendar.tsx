@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager } from 'react-native';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
@@ -11,7 +11,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { isTablet } from '../../utils/responsive';
 
 type CalendarNavigationProp = BottomTabNavigationProp<AdminTabParamList, 'Calendar'>;
 type CalendarScreenNavigationProp = StackNavigationProp<AuthStackParamList>;
@@ -1252,27 +1251,6 @@ export default function Calendar() {
   const navigation = useNavigation<CalendarScreenNavigationProp>();
   const [userInfo, setUserInfo] = useState<{ name: string; surname: string; email: string } | null>(null);
 
-  // Tablet-only calendar sizing and scaling
-  const windowHeight = Dimensions.get('window').height;
-  const calendarHeight = isTablet() ? Math.round(windowHeight * 0.5) : undefined;
-  // Approximate combined height of header + weekday row in the calendar
-  const headerHeights = 90;
-  const dayCellHeight = isTablet() ? Math.max(36, Math.floor(((calendarHeight || 0) - headerHeights) / 6)) : undefined;
-
-  // Base theme for RNCalendar; augmented on tablets to scale day cells/text
-  const baseTheme: any = {
-    backgroundColor: '#ffffff',
-    calendarBackground: '#ffffff',
-    textSectionTitleColor: '#000000',
-    selectedDayBackgroundColor: COLORS.primary,
-    selectedDayTextColor: '#ffffff',
-    todayTextColor: COLORS.primary,
-    dayTextColor: '#2d4150',
-    monthTextColor: COLORS.primary,
-    textMonthFontSize: 20,
-    textMonthFontWeight: 'bold',
-  };
-
   // Safety function to reset all modal states
   const resetAllModals = () => {
     console.log('🔄 Resetting all modal states');
@@ -2034,30 +2012,19 @@ const renderEventDate = (dateStr: string) => {
         showsVerticalScrollIndicator={false}
       >
         <RNCalendar
-          style={[
-            styles.calendar,
-            isTablet() && { height: calendarHeight },
-          ]}
+          style={styles.calendar}
           minDate={todayString} // Add minimum date to prevent selecting past dates
           theme={{
-            ...baseTheme,
-            ...(isTablet() && {
-              textDayFontSize: 18,
-              textDayHeaderFontSize: 14,
-              textMonthFontSize: 22,
-              // Override internal stylesheet so day cells grow with height
-              stylesheet: {
-                calendar: {
-                  main: {
-                    week: { marginVertical: 0 },
-                    dayContainer: { height: dayCellHeight },
-                  },
-                  header: {
-                    header: { paddingVertical: 8 },
-                  },
-                },
-              },
-            }),
+            backgroundColor: '#ffffff',
+            calendarBackground: '#ffffff',
+            textSectionTitleColor: '#000000',
+            selectedDayBackgroundColor: COLORS.primary,
+            selectedDayTextColor: '#ffffff',
+            todayTextColor: COLORS.primary,
+            dayTextColor: '#2d4150',
+            monthTextColor: COLORS.primary,
+            textMonthFontSize: 20,
+            textMonthFontWeight: 'bold',
           }}
           markedDates={{
             ...markedDates,

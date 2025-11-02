@@ -71,3 +71,4 @@ export const getSpacing = (mobileSpacing: number, tabletMultiplier: number = 1.5
   return Math.round(mobileSpacing * tabletMultiplier);
 };
 
+
