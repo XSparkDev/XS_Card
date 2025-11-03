@@ -264,6 +264,7 @@ export default function CardTemplate4(props: Props) {
             />
             <Text style={[
               styles.walletButtonText,
+              { color: theme },
               isTablet() && { fontSize: scale(16) }
             ]}>
               Add to {Platform.OS === 'ios' ? 'Apple' : 'Google'} Wallet

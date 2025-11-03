@@ -57,7 +57,7 @@ const getBaseUrl = () => {
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-   return 'http://192.168.68.106:8383';
+   return 'http://192.168.3.12:8383';
  // return 'https://2f0c56695d5a.ngrok-free.app';
   
 };
@@ -148,6 +148,11 @@ export const ENDPOINTS = {
     GET_ORGANISER_STATUS: '/api/event-organisers/status',
     GET_ORGANISER_PROFILE: '/api/event-organisers/profile',
     UPDATE_ORGANISER_PROFILE: '/api/event-organisers/profile',
+    
+    // Recurring Events
+    GET_EVENT_INSTANCES: '/events/:eventId/instances',
+    GET_EVENT_INSTANCE: '/events/:eventId/instances/:instanceId',
+    END_RECURRING_SERIES: '/events/:eventId/series/end',
     
     // User Management
     DEACTIVATE_USER: '/Users',

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.2.3",
+    "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "~14.0.4",
     "@miblanchard/react-native-slider": "^2.6.0",
     "@react-native-async-storage/async-storage": "1.23.1",
@@ -39,9 +40,11 @@
     "firebase": "^11.9.1",
     "helmet": "^7.2.0",
     "ics": "^3.1.0",
+    "moment-timezone": "^0.6.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^7.0.9",
     "react": "*",
+    "react-dom": "18.3.1",
     "react-native": "0.76.9",
     "react-native-calendars": "^1.1309.1",
     "react-native-chart-kit": "^6.12.0",
@@ -57,6 +60,7 @@
     "react-native-screens": "~4.4.0",
     "react-native-share": "^12.0.11",
     "react-native-svg": "15.8.0",
+    "react-native-web": "~0.19.13",
     "react-native-webview": "13.12.5",
     "react-native-wheel-color-picker": "^1.3.1",
     "socket.io-client": "^4.8.1"
