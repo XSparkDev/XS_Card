@@ -57,7 +57,7 @@ const getBaseUrl = () => {
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-   return 'http://192.168.68.106:8383';
+   return 'http://192.168.8.220:8383';
  // return 'https://2f0c56695d5a.ngrok-free.app';
   
 };
@@ -640,6 +640,59 @@ export const manuallyExpireToken = async (): Promise<void> => {
     console.log('[Test] Token manually expired - next API call will trigger logout');
   } catch (error) {
     console.error('[Test] Error manually expiring token:', error);
+  }
+};
+
+// ============= CALENDAR PREFERENCES API =============
+
+/**
+ * Get calendar preferences
+ */
+export const getCalendarPreferences = async (): Promise<any> => {
+  try {
+    const response = await authenticatedFetchWithRefresh('/meetings/preferences', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Calendar Preferences] API error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to fetch calendar preferences (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[Calendar Preferences] Error fetching preferences:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update calendar preferences
+ */
+export const updateCalendarPreferences = async (preferences: any): Promise<any> => {
+  try {
+    const response = await authenticatedFetchWithRefresh('/meetings/preferences', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(preferences),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Calendar Preferences] Update error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to update calendar preferences (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[Calendar Preferences] Error updating preferences:', error);
+    throw error;
   }
 };
 

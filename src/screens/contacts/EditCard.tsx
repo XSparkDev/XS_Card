@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking, ActivityIndicator } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import { getAltNumber, saveAltNumber, AltNumberData } from '../../utils/tempAltNumber';
+import GradientAvatar from '../../components/GradientAvatar';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -54,6 +55,7 @@ export default function EditCard() {
   const navigation = useNavigation();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -304,7 +306,7 @@ export default function EditCard() {
     { id: 'instagram' as SocialMediaPlatform, icon: 'instagram', label: 'Instagram', color: '#E4405F' },
   ];
 
-  const handleCancel = () => {
+  const handleBack = () => {
     navigation.goBack();
   };
 
@@ -335,9 +337,13 @@ export default function EditCard() {
         return;
       }
 
+      setIsSaving(true);
+      setError(''); // Clear any previous errors
+
       const userId = await getUserId();
       if (!userId) {
         setError('User ID not found');
+        setIsSaving(false);
         return;
       }
 
@@ -393,10 +399,12 @@ export default function EditCard() {
       
       setModalMessage('Card updated');
       setIsSuccessModalVisible(true);
+      setIsSaving(false);
 
     } catch (error) {
       console.error('Error updating card:', error);
       setError('Failed to update card');
+      setIsSaving(false);
     }
   };
 
@@ -855,11 +863,17 @@ export default function EditCard() {
     <View style={styles.container}>
       <Header title="Edit Card" />
       
-      {/* Cancel and Preview buttons */}
+      {/* Back, Preview and Save buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity onPress={handleCancel} style={styles.cancelButtonContainer}>
-          <Text style={styles.cancelButton}>Cancel</Text>
+
+
+        <TouchableOpacity onPress={handleBack}>
+            <View style={styles.previewButton}>
+            <MaterialIcons name="arrow-back" size={16} color="#666" />
+              <Text style={styles.previewButtonText}>Back</Text>
+            </View>
         </TouchableOpacity>
+        
         <View style={styles.rightButtons}>
           <TouchableOpacity onPress={handlePreview}>
             <View style={styles.previewButton}>
@@ -867,8 +881,12 @@ export default function EditCard() {
               <Text style={styles.previewButtonText}>Preview</Text>
             </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer}>
-          <Text style={styles.saveButton}>Save</Text>
+        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer} disabled={isSaving}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveButton}>Save</Text>
+          )}
         </TouchableOpacity>
         </View>
       </View>
@@ -1020,14 +1038,17 @@ export default function EditCard() {
             {/* Profile Image Overlaying Logo */}
             <View style={styles.profileOverlayContainer}>
               <View style={styles.profileImageContainer}>
-                <Image
-                  style={styles.profileImage}
-                  source={
-                        formData.profileImage
-                      ? { uri: getImageUrl(formData.profileImage) }
-                      : require('../../../assets/images/profile2.jpg')
-                  }
-                />
+                {formData.profileImage ? (
+                  <Image
+                    style={styles.profileImage}
+                    source={{ uri: getImageUrl(formData.profileImage) || '' }}
+                  />
+                ) : (
+                  <GradientAvatar 
+                    size={110}
+                    style={styles.profileImage}
+                  />
+                )}
                 <TouchableOpacity 
                   style={styles.editProfileButton}
                   onPress={handleProfileImageEdit}
@@ -1432,14 +1453,17 @@ export default function EditCard() {
                 {/* Profile Image */}
                 <View style={previewStyles.profileContainer}>
                   <View style={previewStyles.profileImageContainer}>
-                    <Image
-                      style={previewStyles.profileImage}
-                      source={
-                        formData.profileImage
-                          ? { uri: getImageUrl(formData.profileImage) }
-                          : require('../../../assets/images/profile2.jpg')
-                      }
-                    />
+                    {formData.profileImage ? (
+                      <Image
+                        style={previewStyles.profileImage}
+                        source={{ uri: getImageUrl(formData.profileImage) || '' }}
+                      />
+                    ) : (
+                      <GradientAvatar 
+                        size={110}
+                        style={previewStyles.profileImage}
+                      />
+                    )}
                   </View>
                 </View>
               </View>
@@ -1720,6 +1744,22 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: '500',
+  },
+  backButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  backButton: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 4,
   },
   previewButton: {
     flexDirection: 'row',

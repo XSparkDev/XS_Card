@@ -4,6 +4,7 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
+import GradientAvatar from '../GradientAvatar';
 
 type CardData = any;
 
@@ -18,6 +19,7 @@ interface Props {
   onPressPhone: (phone: string) => void;
   onPressSocial: (platform: string, value: string) => void;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
+  onPressEdit?: () => void;
 }
 
 // Social icons mapping - EXACT same as Template 1
@@ -32,7 +34,7 @@ const socialIcons: { [key: string]: keyof typeof MaterialCommunityIcons.glyphMap
 };
 
 export default function CardTemplate5(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit } = props;
   const theme = card.colorScheme || colorFallback;
 
   // EXACT same getDynamicStyles as Template 1
@@ -69,6 +71,28 @@ export default function CardTemplate5(props: Props) {
 
   return (
     <View style={styles.container}>
+      {/* Edit Button for Tablet - top-right position */}
+      {isTablet() && onPressEdit && (
+        <TouchableOpacity
+          style={[
+            styles.editButton,
+            {
+              width: scale(40),
+              height: scale(40),
+              borderRadius: scale(20),
+              top: scale(10),
+              right: scale(10),
+            }
+          ]}
+          onPress={onPressEdit}
+        >
+          <MaterialIcons 
+            name="edit" 
+            size={scale(20)} 
+            color={COLORS.white} 
+          />
+        </TouchableOpacity>
+      )}
       {/* QR Code Section - Large with generous spacing */}
       <View style={styles.qrContainer}>
         {qrUri ? (
@@ -101,13 +125,17 @@ export default function CardTemplate5(props: Props) {
 
         {/* Profile on right */}
         <View style={styles.profileContainer}>
-          <Image
-            style={styles.profileImage}
-            source={card.profileImage && getImageUrl(card.profileImage) ? 
-              { uri: getImageUrl(card.profileImage) } : 
-              require('../../../assets/images/profile2.jpg')
-            }
-          />
+          {card.profileImage && getImageUrl(card.profileImage) ? (
+            <Image
+              style={styles.profileImage}
+              source={{ uri: getImageUrl(card.profileImage) || '' }}
+            />
+          ) : (
+            <GradientAvatar 
+              size={120}
+              style={styles.profileImage}
+            />
+          )}
         </View>
       </View>
 
@@ -274,6 +302,22 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 12,
     padding: 20,
+    position: 'relative',
+  },
+  editButton: {
+    position: 'absolute',
+    backgroundColor: COLORS.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   // QR Code Section - Large with generous spacing
   qrContainer: {
@@ -332,22 +376,24 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   name: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: COLORS.black,
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: '600',
+    marginBottom: 5,
+    marginTop: 20,
     fontFamily: 'Montserrat-Bold',
+    marginLeft: 25,
   },
   position: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 8,
+    fontSize: 20,
+    marginBottom: 5,
     fontFamily: 'Montserrat-Regular',
+    marginLeft: 25,
   },
   company: {
-    fontSize: 16,
-    color: '#333',
-    fontFamily: 'Montserrat-Regular',
+    fontSize: 17,
+    marginBottom: 10,
+    fontFamily: 'Montserrat-Bold',
+    marginLeft: 25,
   },
   // Contact Section - Circular icon backgrounds
   contactSection: {
@@ -372,7 +418,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#333',
-    fontFamily: 'Montserrat-Regular',
+    marginLeft: 10,
   },
   // Button Section
   buttonSection: {

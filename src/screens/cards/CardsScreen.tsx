@@ -20,6 +20,7 @@ import CardTemplate3 from '../../components/cards/CardTemplate3';
 import CardTemplate4 from '../../components/cards/CardTemplate4';
 import CardTemplate5 from '../../components/cards/CardTemplate5';
 import { getAltNumber } from '../../utils/tempAltNumber';
+import GradientAvatar from '../../components/GradientAvatar';
 
 // Update interfaces to match new data structure
 interface UserData {
@@ -850,11 +851,13 @@ export default function CardsScreen() {
         title="Cards" 
         showAddButton={true}  // Add this prop
         rightIcon={
-          <TouchableOpacity onPress={handleEditCard}>
-            <Text style={styles.headerIconContainer}>
-              <MaterialIcons name="edit" size={24} color={COLORS.white} />
-            </Text>
-          </TouchableOpacity>
+          !isTablet() ? (
+            <TouchableOpacity onPress={handleEditCard}>
+              <Text style={styles.headerIconContainer}>
+                <MaterialIcons name="edit" size={24} color={COLORS.white} />
+              </Text>
+            </TouchableOpacity>
+          ) : undefined
         }
       />
       <ScrollView 
@@ -942,6 +945,7 @@ export default function CardsScreen() {
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
                     altNumber={altNumbers[index]}
+                    onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
               ) : card.template === 3 ? (
@@ -963,6 +967,7 @@ export default function CardsScreen() {
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
                     altNumber={altNumbers[index]}
+                    onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
               ) : card.template === 4 ? (
@@ -984,6 +989,7 @@ export default function CardsScreen() {
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
                     altNumber={altNumbers[index]}
+                    onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
               ) : card.template === 5 ? (
@@ -1005,6 +1011,7 @@ export default function CardsScreen() {
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
                     altNumber={altNumbers[index]}
+                    onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
               ) : (
@@ -1123,28 +1130,34 @@ export default function CardsScreen() {
                       },
                       { transform: [{ rotate: rotateInterpolate }] }
                     ]}>
-                      <Image
-                        style={[
-                          styles.profileImage,
-                          isTablet() && {
-                            width: scale(110),
-                            height: scale(110),
+                      {card.profileImage && getImageUrl(card.profileImage) ? (
+                        <Image
+                          style={[
+                            styles.profileImage,
+                            isTablet() && {
+                              width: scale(110),
+                              height: scale(110),
+                              borderRadius: scale(55),
+                            }
+                          ]}
+                          source={{ uri: getImageUrl(card.profileImage) || '' }}
+                          onError={(error) => {
+                            console.warn('Failed to load profile image:', error.nativeEvent.error);
+                            console.log('Profile image URL that failed:', card.profileImage);
+                            console.log('Processed URL:', getImageUrl(card.profileImage));
+                          }}
+                          onLoad={() => {
+                            console.log('Profile image loaded successfully:', card.profileImage);
+                          }}
+                        />
+                      ) : (
+                        <GradientAvatar 
+                          size={isTablet() ? scale(110) : 110}
+                          style={isTablet() ? {
                             borderRadius: scale(55),
-                          }
-                        ]}
-                        source={card.profileImage && getImageUrl(card.profileImage) ? 
-                          { uri: getImageUrl(card.profileImage) } : 
-                          require('../../../assets/images/profile2.jpg')
-                        }
-                        onError={(error) => {
-                          console.warn('Failed to load profile image:', error.nativeEvent.error);
-                          console.log('Profile image URL that failed:', card.profileImage);
-                          console.log('Processed URL:', getImageUrl(card.profileImage));
-                        }}
-                        onLoad={() => {
-                          console.log('Profile image loaded successfully:', card.profileImage);
-                        }}
-                      />
+                          } : undefined}
+                        />
+                      )}
                     </Animated.View>
                   </View>
                 </View>

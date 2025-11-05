@@ -44,6 +44,7 @@ const cardRoutes = require('./routes/cardRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const contactRequestRoutes = require('./routes/contactRequestRoutes'); // Add contact request routes
 const meetingRoutes = require('./routes/meetingRoutes');
+const meetingController = require('./controllers/meetingController');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes'); // Add subscription routes
 const apkRoutes = require('./routes/apkRoutes'); // Add APK routes
@@ -243,6 +244,14 @@ app.get('/saveContact', (req, res) => {
 app.get('/saveContact.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
 });
+
+// Public calendar booking routes (NO AUTH REQUIRED)
+// IMPORTANT: .html route MUST come before the API route to avoid route conflicts
+app.get('/public/calendar/:userId.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'bookCalendar.html'));
+});
+app.get('/public/calendar/:userId', meetingController.getPublicCalendarAvailability);
+app.post('/public/calendar/:userId/book', meetingController.createPublicBooking);
 
 // Now mount static middleware AFTER critical routes
 app.use(express.static(path.join(__dirname, 'public')));

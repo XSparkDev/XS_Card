@@ -36,6 +36,7 @@ import {
 } from '../../utils/api';
 import { formatTimestamp } from '../../utils/dateFormatter';
 import { AuthManager } from '../../utils/authManager';
+import GradientAvatar from '../../components/GradientAvatar';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -209,11 +210,23 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
   // Render appropriate image
   if (!contact.isXsCardUser || imageError || (!imageLoaded && !isVisible)) {
     // Show default avatar for non-XS Card users or when image failed/not loaded
+    // Extract size from style if available, otherwise use default 50
+    // Handle percentage-based sizes (100% means use parent container size)
+    let size = 50; // default
+    if (style?.width && typeof style.width === 'number') {
+      size = style.width;
+    } else if (style?.height && typeof style.height === 'number') {
+      size = style.height;
+    } else if (style?.width === '100%' || style?.height === '100%') {
+      // For percentage-based styles, check if parent container has a defined size
+      // If modalContactImage, parent container is 60x60
+      size = 60; // Default for modal/percentage-based styles
+    }
     return (
       <View ref={viewRef} style={style} onLayout={handleLayout}>
-        <Image 
-          source={require('../../../assets/images/profile2.jpg')} 
-          style={style} 
+        <GradientAvatar 
+          size={size}
+          style={style}
         />
         {contact.isXsCardUser && (
           <View style={styles.xsCardBadge}>

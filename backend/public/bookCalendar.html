@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Book a Meeting</title>
+    <style>
+        :root {
+            --primary: #007AFF;
+            --secondary: #1B2B5B;
+            --white: #FFFFFF;
+            --black: #000000;
+            --gray: #8E8E93;
+            --light-gray: #F5F5F5;
+            --border-gray: #E5E5E5;
+            --error: #FF3B30;
+            --success: #34C759;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--white);
+            color: var(--black);
+            min-height: 100vh;
+        }
+
+        /* Layout Container */
+        .booking-container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        /* Left Side - User Info (Top Panel) */
+        .left-panel {
+            width: 100%;
+            padding: 40px;
+            border-bottom: 1px solid var(--border-gray);
+            background-color: var(--white);
+        }
+
+        .user-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #92278F 0%, #BE1E2D 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .user-name {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .meeting-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: var(--black);
+        }
+
+        .meeting-info {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--gray);
+            font-size: 15px;
+        }
+
+        .info-icon {
+            font-size: 18px;
+        }
+
+        /* Right Side - Calendar (Bottom Panel) */
+        .right-panel {
+            flex: 1;
+            width: calc(100% - 40px);
+            padding: 40px;
+            margin: 20px;
+            border: 1px solid var(--border-gray);
+            border-radius: 12px;
+            background-color: var(--white);
+        }
+
+        .calendar-section {
+            max-width: 900px;
+        }
+
+        .calendar-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .timezone {
+            color: var(--gray);
+            font-size: 14px;
+            margin-bottom: 30px;
+            text-align: right;
+        }
+
+        .calendar-layout {
+            display: flex;
+            gap: 30px;
+        }
+
+        /* Small Month Calendar */
+        .mini-calendar {
+            width: 280px;
+            flex-shrink: 0;
+        }
+
+        .mini-calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .month-name {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .nav-btn {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background-color: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: var(--gray);
+        }
+
+        .nav-btn:hover {
+            background-color: var(--light-gray);
+        }
+
+        .mini-calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+
+        .mini-day-header {
+            text-align: center;
+            padding: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--gray);
+            text-transform: uppercase;
+        }
+
+        .mini-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mini-day.disabled {
+            color: var(--border-gray);
+            cursor: not-allowed;
+        }
+
+        .mini-day.available {
+            background-color: rgba(0, 122, 255, 0.1);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .mini-day.available:hover {
+            background-color: var(--primary);
+            color: var(--white);
+        }
+
+        .mini-day.selected {
+            background-color: var(--primary);
+            color: var(--white);
+            font-weight: 700;
+        }
+
+        /* Day Selector */
+        .day-selector {
+            flex: 1;
+        }
+
+        .day-selector-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .day-selector-nav {
+            display: flex;
+            gap: 10px;
+        }
+
+        .days-row {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+
+        .day-card {
+            min-width: 100px;
+            padding: 16px 12px;
+            border: 1px solid var(--border-gray);
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: var(--white);
+        }
+
+        .day-card.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: var(--border-gray);
+        }
+
+        .day-card.available:hover {
+            border-color: var(--primary);
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+        }
+
+        .day-card.selected {
+            border-color: var(--primary);
+            background-color: var(--primary);
+            border-width: 2px;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            min-width: 60px;
+            max-width: 60px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .day-name {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--gray);
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .day-number {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--black);
+        }
+
+        .day-card.selected .day-name {
+            color: var(--white);
+            font-size: 11px;
+            margin-bottom: 2px;
+        }
+
+        .day-card.selected .day-number {
+            color: var(--white);
+            font-size: 20px;
+        }
+
+        /* Time Slots */
+        .time-slots-section {
+            margin-top: 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .time-slots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .no-availability {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .no-availability-text {
+            font-size: 18px;
+            color: var(--gray);
+            margin-bottom: 15px;
+        }
+
+        .jump-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .jump-link:hover {
+            text-decoration: underline;
+        }
+
+        .time-slot {
+            padding: 14px;
+            border: 1.5px solid var(--border-gray);
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            background-color: var(--white);
+            transition: all 0.2s;
+            font-weight: 500;
+            font-size: 15px;
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            position: relative;
+            z-index: 1;
+        }
+
+        .time-slot:hover {
+            border-color: var(--primary);
+            background-color: rgba(0, 122, 255, 0.05);
+        }
+
+        .time-slot.selected {
+            border-color: var(--primary);
+            background-color: var(--primary);
+            color: var(--white);
+            border-width: 2px;
+        }
+
+        /* Duration Pills */
+        .duration-pills {
+            display: flex;
+            gap: 8px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .duration-pill {
+            padding: 8px 16px;
+            border: 1.5px solid var(--border-gray);
+            border-radius: 20px;
+            cursor: pointer;
+            background-color: var(--white);
+            transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .duration-pill:hover {
+            border-color: var(--primary);
+            background-color: rgba(0, 122, 255, 0.05);
+        }
+
+        .duration-pill.selected {
+            border-color: var(--primary);
+            background-color: var(--primary);
+            color: var(--white);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background-color: var(--white);
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 32px;
+            height: 32px;
+            border: none;
+            background-color: var(--light-gray);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .modal-subtitle {
+            color: var(--gray);
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid var(--border-gray);
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+            background-color: var(--white);
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-error {
+            color: var(--error);
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: var(--white);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .btn-primary:disabled {
+            background-color: var(--gray);
+            cursor: not-allowed;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 60px;
+        }
+
+        .spinner {
+            border: 3px solid var(--light-gray);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Success State */
+        .success-container {
+            display: none;
+            text-align: center;
+            padding: 60px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .success-container.active {
+            display: block;
+        }
+
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: var(--success);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            font-size: 40px;
+            color: var(--white);
+        }
+
+        .success-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .success-message {
+            color: var(--gray);
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+
+        .success-details {
+            background-color: var(--light-gray);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .success-details h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .success-details p {
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
+
+        .success-details strong {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .left-panel {
+                padding: 30px 20px;
+            }
+
+            .right-panel {
+                margin: 15px;
+                padding: 30px 20px;
+                width: calc(100% - 30px);
+            }
+
+            .calendar-layout {
+                flex-direction: column;
+            }
+
+            .mini-calendar {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .left-panel {
+                padding: 20px 15px;
+            }
+
+            .right-panel {
+                margin: 10px;
+                padding: 20px 15px;
+                width: calc(100% - 20px);
+                border-radius: 8px;
+            }
+
+            .days-row {
+                gap: 10px;
+            }
+
+            .day-card {
+                min-width: 80px;
+                padding: 12px 8px;
+            }
+
+            .day-number {
+                font-size: 24px;
+            }
+
+            .time-slots-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+
+            .calendar-title {
+                font-size: 18px;
+            }
+
+            .user-name {
+                font-size: 20px;
+            }
+
+            .meeting-title {
+                font-size: 24px;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading State -->
+    <div id="loadingState" class="loading">
+        <div class="spinner"></div>
+        <p>Loading availability...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="errorState" class="loading hidden">
+        <p style="color: var(--error); font-size: 18px; font-weight: 600; margin-bottom: 10px;">Unable to load calendar</p>
+        <p id="errorMessage" style="color: var(--gray);"></p>
+        <button class="btn btn-primary" onclick="window.location.reload()" style="max-width: 200px; margin: 20px auto 0;">Try Again</button>
+    </div>
+
+    <!-- Main Content -->
+    <div id="mainContent" class="booking-container hidden">
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <div class="user-avatar" id="userAvatar"></div>
+            <div class="user-name" id="userName"></div>
+            <div class="meeting-title" id="meetingTitle">1 Hour Meetings</div>
+            
+            <div class="meeting-info">
+                <div class="info-item">
+                    <span class="info-icon">🕐</span>
+                    <span id="meetingDuration">60 min appointments</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-icon">📹</span>
+                    <span>Google Meet video conference info added after booking</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <div class="calendar-section">
+                <div class="calendar-title">Select an appointment time</div>
+                <div class="timezone" id="timezone">(GMT+00:00) UTC</div>
+                
+                <div class="calendar-layout">
+                    <!-- Mini Calendar -->
+                    <div class="mini-calendar">
+                        <div class="mini-calendar-header">
+                            <span class="month-name" id="miniMonthName"></span>
+                            <div class="nav-buttons">
+                                <button class="nav-btn" id="prevMonth">◀</button>
+                                <button class="nav-btn" id="nextMonth">▶</button>
+                            </div>
+                        </div>
+                        <div class="mini-calendar-grid" id="miniCalendarGrid"></div>
+                    </div>
+
+                    <!-- Day Selector & Time Slots -->
+                    <div class="day-selector">
+                        <div class="day-selector-header">
+                            <div class="day-selector-nav">
+                                <button class="nav-btn" id="prevDays">◀</button>
+                                <button class="nav-btn" id="nextDays">▶</button>
+                            </div>
+                        </div>
+                        <div class="days-row" id="daysRow"></div>
+                        
+                        <div id="timeSlotsContainer" class="time-slots-section hidden">
+                            <div id="timeSlotsGrid" class="time-slots-grid"></div>
+                            <div id="durationPills" class="duration-pills hidden"></div>
+                        </div>
+
+                        <div id="noAvailability" class="no-availability hidden">
+                            <p class="no-availability-text">No availability during these days</p>
+                            <a class="jump-link" onclick="jumpToNextAvailable()">Jump to the next bookable date</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Booking Form Modal -->
+    <div id="bookingModal" class="modal-overlay">
+        <div class="modal">
+            <button class="modal-close" onclick="closeModal()">×</button>
+            <h2 class="modal-title">Enter Details</h2>
+            <p class="modal-subtitle" id="modalSubtitle"></p>
+            
+            <form id="bookingForm">
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" required>
+                    <div class="form-error" id="nameError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input type="email" id="email" required>
+                    <div class="form-error" id="emailError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="phone">Phone Number *</label>
+                    <input type="tel" id="phone" required>
+                    <div class="form-error" id="phoneError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="message">Additional Notes (Optional)</label>
+                    <textarea id="message"></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="submitBtn">Confirm Booking</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Success State -->
+    <div id="successState" class="success-container">
+        <div class="success-icon">✓</div>
+        <h2 class="success-title">Booking Confirmed!</h2>
+        <p class="success-message">Your meeting has been successfully scheduled. A confirmation email with calendar invite has been sent to your email address.</p>
+        
+        <div class="success-details">
+            <h3>Meeting Details</h3>
+            <p><strong>With:</strong> <span id="successUserName"></span></p>
+            <p><strong>Date:</strong> <span id="successDate"></span></p>
+            <p><strong>Time:</strong> <span id="successTime"></span></p>
+            <p><strong>Duration:</strong> <span id="successDuration"></span></p>
+        </div>
+    </div>
+
+    <script>
+        // Get userId from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        let userId = window.location.pathname.split('/').pop();
+        
+        if (userId.endsWith('.html')) {
+            userId = userId.replace('.html', '');
+        }
+        
+        userId = userId.trim();
+        console.log('[Calendar] User ID:', userId);
+
+        // State
+        let availabilityData = {};
+        let userData = {};
+        let allowedDurations = [];
+        let timezone = 'UTC';
+        let currentMonth = new Date();
+        let currentDaysStart = new Date();
+        let selectedDate = null;
+        let selectedTime = null;
+        let selectedDuration = null;
+        let availableDatesArray = [];
+
+        // Convert 24-hour time to 12-hour format (e.g., "14:30" -> "2:30pm")
+        function formatTime12Hour(time24) {
+            if (!time24) return '';
+            const [hours, minutes] = time24.split(':').map(Number);
+            const period = hours >= 12 ? 'pm' : 'am';
+            const hours12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+            return `${hours12}:${minutes.toString().padStart(2, '0')}${period}`;
+        }
+
+        // Format timezone display (e.g., "UTC" -> "(GMT+00:00) UTC")
+        function formatTimezone(tz) {
+            if (!tz || tz === 'UTC') {
+                return '(GMT+00:00) UTC';
+            }
+            try {
+                const now = new Date();
+                
+                // Get timezone name
+                const formatter = new Intl.DateTimeFormat('en-US', {
+                    timeZone: tz,
+                    timeZoneName: 'long'
+                });
+                const parts = formatter.formatToParts(now);
+                const tzName = parts.find(p => p.type === 'timeZoneName')?.value || tz;
+                
+                // Calculate offset using a more reliable method
+                // Format the same moment in UTC and in the target timezone
+                const utcStr = now.toLocaleString('en-US', {
+                    timeZone: 'UTC',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                const tzStr = now.toLocaleString('en-US', {
+                    timeZone: tz,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                
+                // Parse times to get hour and minute
+                const utcMatch = utcStr.match(/(\d{2}):(\d{2})/);
+                const tzMatch = tzStr.match(/(\d{2}):(\d{2})/);
+                
+                if (utcMatch && tzMatch) {
+                    const utcHours = parseInt(utcMatch[1]);
+                    const utcMins = parseInt(utcMatch[2]);
+                    const tzHours = parseInt(tzMatch[1]);
+                    const tzMins = parseInt(tzMatch[2]);
+                    
+                    // Calculate offset in minutes
+                    const utcTotalMins = utcHours * 60 + utcMins;
+                    const tzTotalMins = tzHours * 60 + tzMins;
+                    let offsetMins = tzTotalMins - utcTotalMins;
+                    
+                    // Handle day boundaries (add/subtract 24 hours)
+                    if (offsetMins > 12 * 60) offsetMins -= 24 * 60;
+                    if (offsetMins < -12 * 60) offsetMins += 24 * 60;
+                    
+                    const offsetHours = Math.floor(Math.abs(offsetMins) / 60);
+                    const offsetMinsRem = Math.abs(offsetMins) % 60;
+                    const sign = offsetMins >= 0 ? '+' : '-';
+                    
+                    const hoursStr = offsetHours.toString().padStart(2, '0');
+                    const minsStr = offsetMinsRem.toString().padStart(2, '0');
+                    
+                    return `(GMT${sign}${hoursStr}:${minsStr}) ${tzName}`;
+                }
+                
+                // Fallback to timezone name only
+                return `(GMT+00:00) ${tzName}`;
+            } catch (e) {
+                console.warn('[Calendar] Timezone formatting error:', e);
+                // Fallback: try to extract common timezone patterns
+                const tzLower = tz.toLowerCase();
+                if (tzLower.includes('africa') && tzLower.includes('south')) {
+                    return '(GMT+02:00) South Africa Standard Time';
+                }
+                if (tzLower.includes('america') && tzLower.includes('new_york')) {
+                    return '(GMT-05:00) Eastern Time';
+                }
+                if (tzLower.includes('europe') && tzLower.includes('london')) {
+                    return '(GMT+00:00) Greenwich Mean Time';
+                }
+                return `(GMT+00:00) ${tz}`;
+            }
+        }
+
+        // Initialize
+        async function init() {
+            if (!userId) {
+                showError('Invalid calendar link');
+                return;
+            }
+            
+            try {
+                await fetchAvailability();
+                renderUserInfo();
+                renderMiniCalendar();
+                renderDaysRow();
+                hideLoading();
+            } catch (error) {
+                console.error('[Calendar] Init error:', error);
+                showError(error.message);
+            }
+        }
+
+        // Fetch availability
+        async function fetchAvailability() {
+            const startDate = new Date().toISOString().split('T')[0];
+            const apiUrl = `/public/calendar/${userId}?startDate=${startDate}&days=90`;
+            console.log('[Calendar] Fetching from:', apiUrl);
+            
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to load availability');
+            }
+
+            const data = await response.json();
+            availabilityData = data.data.availability;
+            userData = data.data.user;
+            allowedDurations = data.data.allowedDurations;
+            timezone = data.data.timezone || 'UTC';
+            
+            // Build array of available dates
+            availableDatesArray = Object.keys(availabilityData)
+                .filter(date => availabilityData[date] && availabilityData[date].length > 0)
+                .sort();
+            
+            console.log('[Calendar] Available dates:', availableDatesArray.length);
+        }
+
+        // Render user info
+        function renderUserInfo() {
+            const avatar = document.getElementById('userAvatar');
+            const name = document.getElementById('userName');
+            const timezoneEl = document.getElementById('timezone');
+            const meetingTitle = document.getElementById('meetingTitle');
+            const meetingDuration = document.getElementById('meetingDuration');
+
+            if (userData.profileImage) {
+                avatar.innerHTML = `<img src="${userData.profileImage}" alt="${userData.name}">`;
+            } else {
+                const initials = userData.name.split(' ').map(n => n[0]).join('').toUpperCase();
+                avatar.innerHTML = `<span style="color: white; font-size: 32px; font-weight: 700;">${initials}</span>`;
+            }
+
+            name.textContent = userData.name;
+            
+            // Update timezone display
+            if (timezoneEl) {
+                timezoneEl.textContent = formatTimezone(timezone);
+            }
+            
+            // Update meeting title and duration based on allowed durations
+            if (allowedDurations.length > 0) {
+                const primaryDuration = allowedDurations[0];
+                if (allowedDurations.length === 1) {
+                    meetingTitle.textContent = `${primaryDuration} Minute Meeting`;
+                    meetingDuration.textContent = `${primaryDuration} min appointments`;
+                } else {
+                    const durationRange = `${Math.min(...allowedDurations)}-${Math.max(...allowedDurations)} min`;
+                    meetingTitle.textContent = `${Math.max(...allowedDurations)} Minute Meeting`;
+                    meetingDuration.textContent = `${durationRange} appointments`;
+                }
+            }
+        }
+
+        // Render mini calendar
+        function renderMiniCalendar() {
+            const grid = document.getElementById('miniCalendarGrid');
+            const monthName = document.getElementById('miniMonthName');
+
+            monthName.textContent = currentMonth.toLocaleDateString('en-US', { 
+                month: 'long', 
+                year: 'numeric' 
+            });
+
+            grid.innerHTML = '';
+
+            // Day headers
+            const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+            days.forEach(day => {
+                const header = document.createElement('div');
+                header.className = 'mini-day-header';
+                header.textContent = day;
+                grid.appendChild(header);
+            });
+
+            // Days
+            const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+            const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            for (let i = 0; i < firstDay; i++) {
+                grid.appendChild(document.createElement('div'));
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+                const dateString = date.toISOString().split('T')[0];
+                
+                const dayCell = document.createElement('div');
+                dayCell.className = 'mini-day';
+                dayCell.textContent = day;
+
+                const hasSlots = availabilityData[dateString] && availabilityData[dateString].length > 0;
+                
+                if (date < today) {
+                    dayCell.classList.add('disabled');
+                } else if (hasSlots) {
+                    dayCell.classList.add('available');
+                    dayCell.onclick = () => {
+                        selectDate(dateString);
+                        // Jump to this date in days row
+                        currentDaysStart = new Date(date);
+                        currentDaysStart.setDate(currentDaysStart.getDate() - 3);
+                        renderDaysRow();
+                    };
+                } else {
+                    dayCell.classList.add('disabled');
+                }
+
+                if (selectedDate === dateString) {
+                    dayCell.classList.add('selected');
+                }
+
+                grid.appendChild(dayCell);
+            }
+        }
+
+        // Navigate month
+        document.getElementById('prevMonth').onclick = () => {
+            currentMonth.setMonth(currentMonth.getMonth() - 1);
+            renderMiniCalendar();
+        };
+
+        document.getElementById('nextMonth').onclick = () => {
+            currentMonth.setMonth(currentMonth.getMonth() + 1);
+            renderMiniCalendar();
+        };
+
+        // Render days row (horizontal)
+        function renderDaysRow() {
+            const container = document.getElementById('daysRow');
+            container.innerHTML = '';
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(currentDaysStart);
+                date.setDate(date.getDate() + i);
+                const dateString = date.toISOString().split('T')[0];
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'day-card';
+
+                const hasSlots = availabilityData[dateString] && availabilityData[dateString].length > 0;
+                
+                if (date < today || !hasSlots) {
+                    dayCard.classList.add('disabled');
+                } else {
+                    dayCard.classList.add('available');
+                    dayCard.onclick = () => selectDate(dateString);
+                }
+
+                if (selectedDate === dateString) {
+                    dayCard.classList.add('selected');
+                }
+
+                dayCard.innerHTML = `
+                    <div class="day-name">${date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</div>
+                    <div class="day-number">${date.getDate()}</div>
+                `;
+
+                container.appendChild(dayCard);
+            }
+
+            // Check if all days are unavailable
+            const hasAnyAvailable = Array.from(container.children).some(child => child.classList.contains('available'));
+            document.getElementById('noAvailability').classList.toggle('hidden', hasAnyAvailable || selectedDate);
+        }
+
+        // Navigate days
+        document.getElementById('prevDays').onclick = () => {
+            currentDaysStart.setDate(currentDaysStart.getDate() - 7);
+            renderDaysRow();
+        };
+
+        document.getElementById('nextDays').onclick = () => {
+            currentDaysStart.setDate(currentDaysStart.getDate() + 7);
+            renderDaysRow();
+        };
+
+        // Jump to next available date
+        function jumpToNextAvailable() {
+            if (availableDatesArray.length === 0) {
+                alert('No available dates found');
+                return;
+            }
+
+            const nextDate = availableDatesArray[0];
+            const date = new Date(nextDate + 'T00:00:00');
+            
+            // Update month calendar
+            currentMonth = new Date(date);
+            renderMiniCalendar();
+            
+            // Update days row
+            currentDaysStart = new Date(date);
+            currentDaysStart.setDate(currentDaysStart.getDate() - 3);
+            renderDaysRow();
+            
+            // Select the date
+            selectDate(nextDate);
+        }
+
+        // Select date
+        function selectDate(dateString) {
+            selectedDate = dateString;
+            selectedTime = null;
+            selectedDuration = null;
+            
+            renderMiniCalendar();
+            renderDaysRow();
+            renderTimeSlots();
+        }
+
+        // Render time slots
+        function renderTimeSlots() {
+            const container = document.getElementById('timeSlotsGrid');
+            const slotsContainer = document.getElementById('timeSlotsContainer');
+            const noAvail = document.getElementById('noAvailability');
+            
+            if (!container || !slotsContainer) {
+                console.error('[Calendar] Container elements not found');
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            const slots = availabilityData[selectedDate] || [];
+            console.log('[Calendar] Rendering time slots for', selectedDate, 'Slots:', slots);
+            
+            if (slots.length === 0) {
+                slotsContainer.classList.add('hidden');
+                noAvail.classList.remove('hidden');
+                return;
+            }
+            
+            slotsContainer.classList.remove('hidden');
+            noAvail.classList.add('hidden');
+
+            slots.forEach((slot, index) => {
+                // Ensure slot has required properties
+                if (!slot || !slot.time) {
+                    console.warn('[Calendar] Invalid slot structure at index', index, ':', slot);
+                    return;
+                }
+
+                const timeSlot = document.createElement('div');
+                timeSlot.className = 'time-slot';
+                const formattedTime = formatTime12Hour(slot.time);
+                timeSlot.textContent = formattedTime;
+                timeSlot.dataset.time24 = slot.time; // Store original 24-hour time
+                
+                // Ensure availableDurations exists
+                const availableDurations = slot.availableDurations || allowedDurations || [];
+                
+                // Attach click handler with event listener (more reliable than onclick)
+                timeSlot.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('[Calendar] Time slot clicked:', slot.time, 'Available durations:', availableDurations);
+                    selectTime(slot.time, availableDurations);
+                });
+                
+                // Also set onclick as fallback
+                timeSlot.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('[Calendar] Time slot clicked (onclick):', slot.time);
+                    selectTime(slot.time, availableDurations);
+                };
+                
+                // Ensure it's clickable
+                timeSlot.style.cursor = 'pointer';
+                timeSlot.style.pointerEvents = 'auto';
+                timeSlot.style.userSelect = 'none';
+                
+                // Add hover effect manually
+                timeSlot.addEventListener('mouseenter', () => {
+                    timeSlot.style.borderColor = 'var(--primary)';
+                    timeSlot.style.backgroundColor = 'rgba(0, 122, 255, 0.05)';
+                });
+                timeSlot.addEventListener('mouseleave', () => {
+                    if (!timeSlot.classList.contains('selected')) {
+                        timeSlot.style.borderColor = 'var(--border-gray)';
+                        timeSlot.style.backgroundColor = 'var(--white)';
+                    }
+                });
+                
+                container.appendChild(timeSlot);
+            });
+            
+            console.log('[Calendar] Rendered', container.children.length, 'time slots');
+        }
+
+        // Select time
+        function selectTime(time, availableDurations) {
+            selectedTime = time;
+            selectedDuration = null;
+
+            // Update UI
+            document.querySelectorAll('.time-slot').forEach(slot => {
+                slot.classList.remove('selected');
+                if (slot.dataset.time24 === time) {
+                    slot.classList.add('selected');
+                }
+            });
+
+            // Render duration pills
+            const container = document.getElementById('durationPills');
+            container.innerHTML = '';
+            
+            if (availableDurations && availableDurations.length > 0) {
+                container.classList.remove('hidden');
+                
+                availableDurations.forEach(duration => {
+                    const pill = document.createElement('div');
+                    pill.className = 'duration-pill';
+                    pill.textContent = `${duration} min`;
+                    pill.onclick = () => selectDuration(duration);
+                    container.appendChild(pill);
+                });
+            } else {
+                container.classList.add('hidden');
+                // Auto-select default duration if only one option
+                if (allowedDurations.length === 1) {
+                    selectDuration(allowedDurations[0]);
+                }
+            }
+        }
+
+        // Select duration
+        function selectDuration(duration) {
+            selectedDuration = duration;
+
+            // Update UI
+            document.querySelectorAll('.duration-pill').forEach(pill => {
+                pill.classList.remove('selected');
+                if (pill.textContent === `${duration} min`) {
+                    pill.classList.add('selected');
+                }
+            });
+
+            // Open booking modal
+            setTimeout(() => openModal(), 300);
+        }
+
+        // Modal
+        function openModal() {
+            const modal = document.getElementById('bookingModal');
+            const subtitle = document.getElementById('modalSubtitle');
+            
+            const date = new Date(selectedDate + 'T00:00:00');
+            const dateStr = date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            });
+            
+            const formattedTime = formatTime12Hour(selectedTime);
+            subtitle.textContent = `${dateStr} at ${formattedTime} (${selectedDuration} minutes)`;
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('bookingModal').classList.remove('active');
+        }
+
+        // Handle form submission
+        document.getElementById('bookingForm').onsubmit = async (e) => {
+            e.preventDefault();
+            
+            // Clear errors
+            document.querySelectorAll('.form-error').forEach(el => el.textContent = '');
+            
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const message = document.getElementById('message').value.trim();
+            
+            // Validate
+            let hasError = false;
+            
+            if (!name) {
+                document.getElementById('nameError').textContent = 'Name is required';
+                hasError = true;
+            }
+            
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                document.getElementById('emailError').textContent = 'Valid email is required';
+                hasError = true;
+            }
+            
+            if (!phone) {
+                document.getElementById('phoneError').textContent = 'Phone is required';
+                hasError = true;
+            }
+            
+            if (hasError) return;
+            
+            // Submit
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Booking...';
+            
+            try {
+                const response = await fetch(`/public/calendar/${userId}/book`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        email,
+                        phone,
+                        message,
+                        date: selectedDate,
+                        time: selectedTime,
+                        duration: selectedDuration
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.message || 'Booking failed');
+                }
+                
+                showSuccess();
+            } catch (error) {
+                alert('Booking failed: ' + error.message);
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Confirm Booking';
+            }
+        };
+
+        // Show success
+        function showSuccess() {
+            document.getElementById('mainContent').classList.add('hidden');
+            document.getElementById('bookingModal').classList.remove('active');
+            document.getElementById('successState').classList.add('active');
+            
+            const date = new Date(selectedDate + 'T00:00:00');
+            document.getElementById('successUserName').textContent = userData.name;
+            document.getElementById('successDate').textContent = date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            });
+            document.getElementById('successTime').textContent = formatTime12Hour(selectedTime);
+            document.getElementById('successDuration').textContent = `${selectedDuration} minutes`;
+        }
+
+        // Show/hide states
+        function hideLoading() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        }
+
+        function showError(message) {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('errorState').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>
