@@ -4,6 +4,7 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
+import GradientAvatar from '../GradientAvatar';
 
 type CardData = any;
 
@@ -18,10 +19,11 @@ interface Props {
   onPressPhone: (phone: string) => void;
   onPressSocial: (platform: string, value: string) => void;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
+  onPressEdit?: () => void;
 }
 
 export default function CardTemplate3(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit } = props;
   const theme = card.colorScheme || colorFallback;
 
   // Use exact same icon mapping as Template 1
@@ -41,6 +43,28 @@ export default function CardTemplate3(props: Props) {
 
   return (
     <View style={styles.container}>
+      {/* Edit Button for Tablet - positioned to the right of QR code (same as OG template) */}
+      {isTablet() && onPressEdit && (
+        <TouchableOpacity
+          style={[
+            styles.editButton,
+            {
+              width: scale(40),
+              height: scale(40),
+              borderRadius: scale(20),
+              top: scale(10),
+              right: scale(10),
+            }
+          ]}
+          onPress={onPressEdit}
+        >
+          <MaterialIcons 
+            name="edit" 
+            size={scale(20)} 
+            color={COLORS.white} 
+          />
+        </TouchableOpacity>
+      )}
       {/* QR Code at top (same position as Template 1) */}
       <View style={styles.qrWrap}>
         {qrUri ? (
@@ -69,13 +93,17 @@ export default function CardTemplate3(props: Props) {
             resizeMode="contain"
           />
         </View>
-        <Image
-          source={card.profileImage && getImageUrl(card.profileImage) ? 
-            { uri: getImageUrl(card.profileImage) } : 
-            require('../../../assets/images/profile2.jpg')
-          }
-          style={styles.profile}
-        />
+        {card.profileImage && getImageUrl(card.profileImage) ? (
+          <Image
+            source={{ uri: getImageUrl(card.profileImage) || '' }}
+            style={styles.profile}
+          />
+        ) : (
+          <GradientAvatar 
+            size={120}
+            style={styles.profile}
+          />
+        )}
       </View>
 
       {/* Personal details */}
@@ -154,6 +182,22 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 12,
     padding: 16,
+    position: 'relative',
+  },
+  editButton: {
+    position: 'absolute',
+    backgroundColor: COLORS.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   qrWrap: {
     alignItems: 'center',
@@ -197,21 +241,24 @@ const styles = StyleSheet.create({
     borderColor: COLORS.white,
   },
   name: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: COLORS.black,
-    marginBottom: 6,
+    fontSize: 22,
+    fontWeight: '600',
+    marginBottom: 5,
     marginTop: 20,
+    fontFamily: 'Montserrat-Bold',
+    marginLeft: 25,
   },
   position: {
-    fontSize: 18,
-    color: '#374151',
-    marginBottom: 6,
+    fontSize: 20,
+    marginBottom: 5,
+    fontFamily: 'Montserrat-Regular',
+    marginLeft: 25,
   },
   company: {
-    fontSize: 18,
-    color: '#374151',
-    marginBottom: 16,
+    fontSize: 17,
+    marginBottom: 10,
+    fontFamily: 'Montserrat-Bold',
+    marginLeft: 25,
   },
   pill: {
     flexDirection: 'row',
@@ -225,7 +272,6 @@ const styles = StyleSheet.create({
   },
   pillText: {
     fontSize: 16,
-    fontWeight: '700',
     marginLeft: 10,
     flex: 1,
   },

@@ -656,7 +656,7 @@ exports.getAllEvents = async (req, res) => {
     // IMPORTANT: No visibility filtering in the Firestore query to avoid index requirement
     let query = db.collection('events')
       .where('status', '==', 'published')
-      .orderBy('eventDate', 'asc');
+      .orderBy('eventDate', 'desc');
 
     // Apply filters
     if (category) {
@@ -1510,7 +1510,7 @@ exports.searchEvents = async (req, res) => {
     // IMPORTANT: No visibility filtering in the Firestore query to avoid index requirement
     let query = db.collection('events')
       .where('status', '==', 'published')
-      .orderBy('eventDate', 'asc')
+      .orderBy('eventDate', 'desc')
       .limit(parseInt(limit) * 3); // Get extra to account for visibility filtering
 
     const snapshot = await query.get();
