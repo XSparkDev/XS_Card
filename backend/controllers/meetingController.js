@@ -4,6 +4,7 @@ const { getUserInfo } = require('../utils/userUtils');
 const { sendMailWithStatus } = require('../public/Utils/emailService');
 const { createCalendarEvent } = require('../public/Utils/calendarService');
 const availabilityService = require('../services/availabilityService');
+const crypto = require('crypto');
 
 // Helper function for error responses
 const sendError = (res, status, message, error = null) => {
@@ -922,6 +923,9 @@ exports.createPublicBooking = async (req, res) => {
             });
         }
 
+        // Generate unique cancellation token
+        const cancellationToken = crypto.randomBytes(32).toString('hex');
+        
         // Create booking
         const newMeeting = {
             meetingWith: name,
@@ -936,6 +940,7 @@ exports.createPublicBooking = async (req, res) => {
                 phone,
                 message: message || ''
             },
+            cancellationToken,
             createdAt: new Date()
         };
 
@@ -1002,7 +1007,15 @@ exports.createPublicBooking = async (req, res) => {
                         </div>
                         
                         <p>A calendar event has been attached to this email. Please add it to your calendar.</p>
-                        <p>If you need to reschedule or cancel, please contact ${ownerInfo.name} at ${ownerEmail}.</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="${process.env.API_BASE_URL || 'https://xscard.com'}/public/calendar/${userId}/cancel/${cancellationToken}" 
+                               style="background-color: #FF3B30; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                                Cancel this booking
+                            </a>
+                        </div>
+                        
+                        <p style="font-size: 12px; color: #666;">Need to reschedule? Cancel this booking and book a new time. For questions, contact ${ownerInfo.name} at ${ownerEmail}.</p>
                     </div>
                 `,
                 attachments: [{
@@ -1040,6 +1053,10 @@ exports.createPublicBooking = async (req, res) => {
                             </div>
                             
                             <p>This meeting has been added to your calendar in the XSCard app.</p>
+                            
+                            <p style="font-size: 12px; color: #666; margin-top: 20px;">
+                                <strong>Note:</strong> The booker can cancel this meeting using the cancellation link sent to their email. You will be notified if they cancel.
+                            </p>
                         </div>
                     `
                 });
@@ -1068,5 +1085,264 @@ exports.createPublicBooking = async (req, res) => {
             message: 'Failed to create booking',
             error: error.message
         });
+    }
+};
+
+/**
+ * Cancel public booking (no auth required)
+ */
+exports.cancelPublicBooking = async (req, res) => {
+    try {
+        const { userId, token } = req.params;
+        
+        console.log(`[Public Booking] Cancellation request for user: ${userId}, token: ${token}`);
+        
+        // Get all bookings for this user
+        const meetingRef = db.collection('meetings').doc(userId);
+        const meetingDoc = await meetingRef.get();
+        
+        if (!meetingDoc.exists || !meetingDoc.data().bookings) {
+            return res.status(404).json({
+                success: false,
+                message: 'No bookings found'
+            });
+        }
+        
+        const bookings = meetingDoc.data().bookings;
+        
+        // Find booking by cancellation token
+        const bookingIndex = bookings.findIndex(b => b.cancellationToken === token);
+        
+        if (bookingIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Booking not found or invalid cancellation link'
+            });
+        }
+        
+        const booking = bookings[bookingIndex];
+        
+        // Check if booking has already passed
+        const meetingDateTime = booking.meetingWhen.toDate ? booking.meetingWhen.toDate() : new Date(booking.meetingWhen);
+        if (meetingDateTime < new Date()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot cancel a booking that has already passed'
+            });
+        }
+        
+        // Remove booking from array
+        bookings.splice(bookingIndex, 1);
+        await meetingRef.update({ bookings });
+        
+        console.log(`[Public Booking] Booking cancelled successfully`);
+        
+        // Get calendar owner info
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.data();
+        const ownerInfo = await getUserInfo(userId);
+        
+        // Get notification email
+        let ownerEmail = userData.email;
+        const preferences = userData.calendarPreferences || {};
+        if (preferences.notificationEmail && preferences.notificationEmail.trim()) {
+            ownerEmail = preferences.notificationEmail.trim();
+        }
+        
+        // Send cancellation confirmation to booker
+        try {
+            await sendMailWithStatus({
+                to: booking.bookerInfo.email,
+                subject: `Booking Cancelled - ${ownerInfo.name}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #FF3B30;">Booking Cancelled</h2>
+                        <p>Hi ${booking.bookerInfo.name},</p>
+                        <p>Your booking with <strong>${ownerInfo.name}</strong> has been cancelled.</p>
+                        
+                        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                            <h3 style="margin-top: 0;">Cancelled Booking Details</h3>
+                            <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                            <p><strong>Duration:</strong> ${booking.duration} minutes</p>
+                        </div>
+                        
+                        <p>If you need to reschedule, you can book a new meeting at: ${process.env.API_BASE_URL || 'https://xscard.com'}/public/calendar/${userId}.html</p>
+                    </div>
+                `
+            });
+            console.log(`[Public Booking] Cancellation email sent to booker: ${booking.bookerInfo.email}`);
+        } catch (emailError) {
+            console.error('[Public Booking] Error sending booker cancellation email:', emailError);
+        }
+        
+        // Send cancellation notification to owner
+        if (ownerEmail) {
+            try {
+                await sendMailWithStatus({
+                    to: ownerEmail,
+                    subject: `Booking Cancelled: ${booking.bookerInfo.name}`,
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #FF3B30;">Booking Cancelled</h2>
+                            <p>Hi ${ownerInfo.name},</p>
+                            <p>A booking has been cancelled by <strong>${booking.bookerInfo.name}</strong>.</p>
+                            
+                            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                <h3 style="margin-top: 0;">Cancelled Booking Details</h3>
+                                <p><strong>Name:</strong> ${booking.bookerInfo.name}</p>
+                                <p><strong>Email:</strong> ${booking.bookerInfo.email}</p>
+                                <p><strong>Phone:</strong> ${booking.bookerInfo.phone}</p>
+                                <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                                <p><strong>Duration:</strong> ${booking.duration} minutes</p>
+                            </div>
+                            
+                            <p>This time slot is now available for other bookings.</p>
+                        </div>
+                    `
+                });
+                console.log(`[Public Booking] Cancellation email sent to owner: ${ownerEmail}`);
+            } catch (emailError) {
+                console.error('[Public Booking] Error sending owner cancellation email:', emailError);
+            }
+        }
+        
+        // Serve a simple HTML page confirming cancellation
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Booking Cancelled - XSCard</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 12px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+                        max-width: 500px;
+                        text-align: center;
+                    }
+                    .icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    h1 {
+                        color: #FF3B30;
+                        margin-bottom: 10px;
+                    }
+                    p {
+                        color: #666;
+                        line-height: 1.6;
+                        margin-bottom: 20px;
+                    }
+                    .details {
+                        background: #f5f5f5;
+                        padding: 20px;
+                        border-radius: 8px;
+                        margin: 20px 0;
+                        text-align: left;
+                    }
+                    .details p {
+                        margin: 8px 0;
+                        color: #333;
+                    }
+                    .button {
+                        display: inline-block;
+                        padding: 12px 24px;
+                        background: #007AFF;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        margin-top: 20px;
+                    }
+                    .button:hover {
+                        background: #0056b3;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">✓</div>
+                    <h1>Booking Cancelled</h1>
+                    <p>Your booking has been successfully cancelled.</p>
+                    
+                    <div class="details">
+                        <p><strong>Meeting with:</strong> ${ownerInfo.name}</p>
+                        <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    
+                    <p>A confirmation email has been sent to ${booking.bookerInfo.email}</p>
+                    <p>If you need to reschedule, you can book a new meeting below.</p>
+                    
+                    <a href="${process.env.API_BASE_URL || 'https://xscard.com'}/public/calendar/${userId}.html" class="button">Book Another Meeting</a>
+                </div>
+            </body>
+            </html>
+        `);
+        
+    } catch (error) {
+        console.error('[Public Booking] Error cancelling booking:', error);
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Error - XSCard</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 12px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+                        max-width: 500px;
+                        text-align: center;
+                    }
+                    .icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    h1 {
+                        color: #FF3B30;
+                        margin-bottom: 10px;
+                    }
+                    p {
+                        color: #666;
+                        line-height: 1.6;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">⚠️</div>
+                    <h1>Error</h1>
+                    <p>Unable to cancel booking. The link may be invalid or the booking may have already been cancelled.</p>
+                    <p>Please contact support if you need assistance.</p>
+                </div>
+            </body>
+            </html>
+        `);
     }
 };

@@ -250,6 +250,7 @@ app.get('/saveContact.html', (req, res) => {
 app.get('/public/calendar/:userId.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'bookCalendar.html'));
 });
+app.get('/public/calendar/:userId/cancel/:token', meetingController.cancelPublicBooking);
 app.get('/public/calendar/:userId', meetingController.getPublicCalendarAvailability);
 app.post('/public/calendar/:userId/book', meetingController.createPublicBooking);
 

@@ -1275,6 +1275,7 @@ export default function Calendar() {
     attendees: [],
     startTime: '',
     endTime: '',  });
+  const [showOnlyPublic, setShowOnlyPublic] = useState(false);
   
   const timeSlots = [
     '09:00', '10:00', '11:00', '12:00',
@@ -1854,7 +1855,10 @@ const renderEventDate = (dateStr: string) => {
   const renderEventCard = (event: Event, index: number) => (
     <TouchableOpacity 
       key={event.id ? `event-${event.id}-${index}` : `event-${index}`}
-      style={styles.eventCard}
+      style={[
+        styles.eventCard,
+        (event as any).source === 'public' && styles.publicEventCard
+      ]}
       onPress={() => setSelectedEventIndex(selectedEventIndex === index ? null : index)}
     >
       {selectedEventIndex === index && (
@@ -1878,7 +1882,14 @@ const renderEventDate = (dateStr: string) => {
       )}
       
       {/* Title and Date */}
-      <Text style={styles.eventTitle}>{event.title || `Meeting with ${event.meetingWith}`}</Text>
+      <View style={styles.eventTitleRow}>
+        <Text style={styles.eventTitle}>{event.title || `Meeting with ${event.meetingWith}`}</Text>
+        {(event as any).source === 'public' && (
+          <View style={styles.publicBadge}>
+            <Text style={styles.publicBadgeText}>Public</Text>
+          </View>
+        )}
+      </View>
       <Text style={styles.eventDate}>{renderEventDate(event.meetingWhen)}</Text>
 
       {/* Time Details */}
@@ -1938,6 +1949,21 @@ const renderEventDate = (dateStr: string) => {
             <Text style={styles.eventDetailTitle}>Notes</Text>
           </View>
           <Text style={styles.eventNote}>{event.description}</Text>
+        </View>
+      )}
+
+      {/* Booker Information for Public Bookings */}
+      {(event as any).source === 'public' && (event as any).bookerInfo && (
+        <View style={styles.eventDetailSection}>
+          <View style={styles.eventDetailHeader}>
+            <MaterialCommunityIcons name="calendar-check" size={14} color="#007AFF" />
+            <Text style={[styles.eventDetailTitle, { color: '#007AFF' }]}>Booked via Public Calendar</Text>
+          </View>
+          <Text style={styles.eventDetailText}>Email: {(event as any).bookerInfo.email}</Text>
+          <Text style={styles.eventDetailText}>Phone: {(event as any).bookerInfo.phone}</Text>
+          {(event as any).bookerInfo.message && (
+            <Text style={styles.eventNote}>Message: {(event as any).bookerInfo.message}</Text>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -2059,11 +2085,29 @@ const renderEventDate = (dateStr: string) => {
 
 
         <View style={styles.eventsSection}>
-          <Text style={styles.upcomingTitle}>
-            Upcoming Meetings
-          </Text>
+          <View style={styles.eventsSectionHeader}>
+            <Text style={styles.upcomingTitle}>
+              Upcoming Meetings
+            </Text>
+            <TouchableOpacity 
+              style={[styles.filterButton, showOnlyPublic && styles.filterButtonActive]}
+              onPress={() => setShowOnlyPublic(!showOnlyPublic)}
+            >
+              <MaterialCommunityIcons 
+                name="filter" 
+                size={18} 
+                color={showOnlyPublic ? '#FFFFFF' : '#007AFF'} 
+              />
+              <Text style={[styles.filterButtonText, showOnlyPublic && styles.filterButtonTextActive]}>
+                {showOnlyPublic ? 'All' : 'Public Only'}
+              </Text>
+            </TouchableOpacity>
+          </View>
           {(() => {
-            return events.length > 0 ? (
+            const filteredEvents = showOnlyPublic 
+              ? events.filter(e => (e as any).source === 'public') 
+              : events;
+            return filteredEvents.length > 0 ? (
             Platform.OS === 'ios' ? (
               <View style={styles.eventsWrapper}>
                 <ScrollView 
@@ -2073,7 +2117,7 @@ const renderEventDate = (dateStr: string) => {
                   style={styles.eventsScrollContainer}
                   nestedScrollEnabled={true}
                 >
-                  {events.map((event, index) => renderEventCard(event, index))}
+                  {filteredEvents.map((event, index) => renderEventCard(event, index))}
                 </ScrollView>
               </View>
             ) : (
@@ -2086,14 +2130,14 @@ const renderEventDate = (dateStr: string) => {
                   nestedScrollEnabled={true}
                 >
                   <View style={styles.androidEventsGrid}>
-                    {events.map((event, index) => renderAndroidEventCard(event, index))}
+                    {filteredEvents.map((event, index) => renderAndroidEventCard(event, index))}
                   </View>
                 </ScrollView>
               </View>
             )
           ) : (
               <Text style={styles.emptyEventsMessage}>
-                No meetings scheduled
+                {showOnlyPublic ? 'No public bookings' : 'No meetings scheduled'}
             </Text>
             );
           })()}
@@ -2303,10 +2347,39 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 20, // Add some bottom margin
   },
+  eventsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingHorizontal: 20,
+  },
   upcomingTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 15,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F0F8FF',
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    gap: 4,
+  },
+  filterButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  filterButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  filterButtonTextActive: {
+    color: '#FFFFFF',
   },
   eventCard: {
     backgroundColor: 'white',
@@ -2320,6 +2393,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     position: 'relative',
+  },
+  publicEventCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+    backgroundColor: '#F8FBFF',
   },
   eventsScrollView: {
     paddingLeft: 20, // Add left padding
@@ -2341,6 +2419,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 5,
+    flex: 1,
+  },
+  eventTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  publicBadge: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  publicBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   eventTime: {
     color: '#666',
