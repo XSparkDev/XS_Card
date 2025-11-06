@@ -103,6 +103,8 @@ export default function CalendarPreferencesScreen() {
   const [selectedRangeEnd, setSelectedRangeEnd] = useState<string | null>(null);
   const [currentViewMonth, setCurrentViewMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM format
   const [repeatMonthly, setRepeatMonthly] = useState(false);
+  const [blockedExpanded, setBlockedExpanded] = useState(true);
+  const blockedRangesAnimation = useRef(new Animated.Value(1)).current;
   const [newSlotInputs, setNewSlotInputs] = useState<Record<string, string>>({});
   const [showTimePicker, setShowTimePicker] = useState<Record<string, boolean>>({});
   const [tempTimeSlot, setTempTimeSlot] = useState<Record<string, Date>>({});
@@ -438,6 +440,16 @@ export default function CalendarPreferencesScreen() {
     animateWorkingHours(newExpanded);
   };
 
+  const toggleBlockedRanges = () => {
+    const toValue = blockedExpanded ? 0 : 1;
+    setBlockedExpanded(!blockedExpanded);
+    Animated.timing(blockedRangesAnimation, {
+      toValue,
+      duration: ANIMATION_DURATION,
+      useNativeDriver: false,
+    }).start();
+  };
+
   // Blocked Dates Functions
   const getMarkedDates = () => {
     const marked: { [key: string]: any } = {};
@@ -590,12 +602,31 @@ export default function CalendarPreferencesScreen() {
   };
 
   const removeBlockedRange = (index: number) => {
-    const updatedRanges = [...(preferences.blockedDateRanges || [])];
-    updatedRanges.splice(index, 1);
-    setPreferences({
-      ...preferences,
-      blockedDateRanges: updatedRanges,
-    });
+    const ranges = preferences.blockedDateRanges || [];
+    const target = ranges[index];
+    const start = target?.startDate ? new Date(target.startDate).toLocaleDateString() : '';
+    const end = target?.endDate ? new Date(target.endDate).toLocaleDateString() : '';
+    const repeatSuffix = target?.repeatMonthly ? ' (repeats monthly)' : '';
+
+    Alert.alert(
+      'Remove blocked range?',
+      `${start} - ${end}${repeatSuffix}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            const updatedRanges = [...ranges];
+            updatedRanges.splice(index, 1);
+            setPreferences({
+              ...preferences,
+              blockedDateRanges: updatedRanges,
+            });
+          },
+        },
+      ]
+    );
   };
 
   const openBlockedDatesModal = () => {
@@ -628,7 +659,8 @@ export default function CalendarPreferencesScreen() {
 
       <ScrollView 
         ref={scrollViewRef}
-        style={styles.content} 
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         onScrollBeginDrag={() => {
           if (showEmailDropdown) {
@@ -764,10 +796,21 @@ export default function CalendarPreferencesScreen() {
 
             {/* Blocked Dates - Moved above Allow Weekend Bookings */}
             <View style={[styles.section, { zIndex: 1 }]}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="calendar-outline" size={24} color={COLORS.primary} />
-                <Text style={styles.sectionTitle}>Blocked Dates</Text>
-              </View>
+              <TouchableOpacity
+                style={[styles.sectionHeader, { justifyContent: 'space-between' }]}
+                onPress={toggleBlockedRanges}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionHeaderLeft}>
+                  <Ionicons name="calendar-outline" size={24} color={COLORS.primary} />
+                  <Text style={styles.sectionTitle}>Blocked Dates</Text>
+                </View>
+                <MaterialIcons
+                  name={blockedExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                  size={24}
+                  color={COLORS.primary}
+                />
+              </TouchableOpacity>
               <Text style={styles.sectionDescription}>
                 Select date ranges where bookings are not allowed
               </Text>
@@ -777,144 +820,40 @@ export default function CalendarPreferencesScreen() {
                 <Text style={styles.addBlockedButtonTextOutlined}>Add Blocked Date Range</Text>
               </TouchableOpacity>
 
-              {(preferences.blockedDateRanges || []).length > 0 && (
-                <View style={styles.blockedRangesList}>
-                  {(preferences.blockedDateRanges || []).map((range, index) => (
-                    <View key={index} style={styles.blockedRangeItem}>
-                      <View style={styles.blockedRangeInfo}>
-                        <Text style={styles.blockedRangeText}>
-                          {new Date(range.startDate).toLocaleDateString()} - {new Date(range.endDate).toLocaleDateString()}
-                        </Text>
-                        {range.repeatMonthly && (
-                          <Text style={styles.repeatBadge}>Repeats monthly</Text>
-                        )}
+              <Animated.View
+                style={{
+                  maxHeight: blockedRangesAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 600],
+                  }),
+                  opacity: blockedRangesAnimation,
+                  overflow: 'hidden',
+                }}
+                pointerEvents={blockedExpanded ? 'auto' : 'none'}
+              >
+                {(preferences.blockedDateRanges || []).length > 0 && (
+                  <View style={styles.blockedRangesList}>
+                    {(preferences.blockedDateRanges || []).map((range, index) => (
+                      <View key={index} style={styles.blockedRangeItem}>
+                        <View style={styles.blockedRangeInfo}>
+                          <Text style={styles.blockedRangeText}>
+                            {new Date(range.startDate).toLocaleDateString()} - {new Date(range.endDate).toLocaleDateString()}
+                          </Text>
+                          {range.repeatMonthly && (
+                            <Text style={styles.repeatBadge}>Repeats monthly</Text>
+                          )}
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => removeBlockedRange(index)}
+                          style={styles.removeBlockedButton}
+                        >
+                          <Ionicons name="close-circle" size={24} color={COLORS.error} />
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => removeBlockedRange(index)}
-                        style={styles.removeBlockedButton}
-                      >
-                        <Ionicons name="close-circle" size={24} color={COLORS.error} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Weekend Bookings */}
-            <View style={styles.section}>
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Allow Weekend Bookings</Text>
-                  <Text style={styles.settingDescription}>
-                    Enable Saturday and Sunday bookings
-                  </Text>
-                </View>
-                <Switch
-                  value={preferences.allowWeekends}
-                  onValueChange={(value) => {
-                    // When toggling weekends off, disable Saturday and Sunday
-                    if (!value) {
-                      setPreferences({
-                        ...preferences,
-                        allowWeekends: value,
-                        workingHours: {
-                          ...preferences.workingHours,
-                          saturday: { ...preferences.workingHours.saturday, enabled: false },
-                          sunday: { ...preferences.workingHours.sunday, enabled: false },
-                        },
-                      });
-                    } else {
-                      setPreferences({ ...preferences, allowWeekends: value });
-                    }
-                  }}
-                  trackColor={{ false: COLORS.gray, true: COLORS.primary }}
-                />
-              </View>
-            </View>
-
-            {/* Default Times Section */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="time-outline" size={24} color={COLORS.primary} />
-                <Text style={styles.sectionTitle}>Default Times</Text>
-              </View>
-              <Text style={styles.sectionDescription}>
-                Set default working hours that apply to all days. Enable "Custom Times" to set specific time slots for individual days.
-              </Text>
-              
-              {/* Default Time Range */}
-              <View style={styles.timeInputsContainer}>
-                <View style={styles.timeInputs}>
-                  <View style={styles.timeInputContainer}>
-                    <Text style={styles.timeLabel}>Start</Text>
-                    <TextInput
-                      style={styles.timeInput}
-                      value={preferences.defaultTimeRange?.start || '09:00'}
-                      onChangeText={(value) => {
-                        setPreferences({
-                          ...preferences,
-                          defaultTimeRange: {
-                            start: value,
-                            end: preferences.defaultTimeRange?.end || '17:00',
-                          },
-                        });
-                      }}
-                      placeholder="09:00"
-                      keyboardType="numbers-and-punctuation"
-                    />
+                    ))}
                   </View>
-                  <Text style={styles.timeSeparator}>-</Text>
-                  <View style={styles.timeInputContainer}>
-                    <Text style={styles.timeLabel}>End</Text>
-                    <TextInput
-                      style={styles.timeInput}
-                      value={preferences.defaultTimeRange?.end || '17:00'}
-                      onChangeText={(value) => {
-                        setPreferences({
-                          ...preferences,
-                          defaultTimeRange: {
-                            start: preferences.defaultTimeRange?.start || '09:00',
-                            end: value,
-                          },
-                        });
-                      }}
-                      placeholder="17:00"
-                      keyboardType="numbers-and-punctuation"
-                    />
-                  </View>
-                </View>
-              </View>
-
-              {/* Custom Times Toggle */}
-              <View style={[styles.settingRow, { marginTop: 15 }]}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Custom Times</Text>
-                  <Text style={styles.settingDescription}>
-                    Enable to set specific time slots for each day in Working Hours
-                  </Text>
-                </View>
-                <Switch
-                  value={preferences.customTimes || false}
-                  onValueChange={(value) => {
-                    setPreferences({
-                      ...preferences,
-                      customTimes: value,
-                      // Clear all specific slots when disabling custom times
-                      ...(value === false && {
-                        workingHours: Object.keys(preferences.workingHours).reduce((acc, day) => {
-                          acc[day as keyof typeof preferences.workingHours] = {
-                            ...preferences.workingHours[day as keyof typeof preferences.workingHours],
-                            specificSlots: undefined,
-                          };
-                          return acc;
-                        }, {} as typeof preferences.workingHours),
-                      }),
-                    });
-                  }}
-                  trackColor={{ false: COLORS.gray, true: COLORS.primary }}
-                />
-              </View>
+                )}
+              </Animated.View>
             </View>
 
             {/* Available Time Slots - Collapsible */}
@@ -939,13 +878,162 @@ export default function CalendarPreferencesScreen() {
                 style={{
                   maxHeight: workingHoursAnimation.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 1000], // Large enough for all days
+                    outputRange: [0, 5000], // Allow long content to expand without clipping
                   }),
                   opacity: workingHoursAnimation,
                   overflow: 'hidden',
                 }}
                 pointerEvents={workingHoursExpanded ? 'auto' : 'none'}
               >
+                {/* Visual separator */}
+                <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginHorizontal: 4, marginVertical: 10 }} />
+
+                {/* Scheduling settings (single card) */}
+                <View
+                  style={{
+                    borderWidth: 1,
+                    borderColor: 'rgba(0,0,0,0.08)',
+                    borderRadius: 12,
+                    padding: 12,
+                    marginHorizontal: 4,
+                    marginBottom: 10,
+                    backgroundColor: 'rgba(0,122,255,0.04)'
+                  }}
+                >
+                  
+                  
+                  {/* Default Times */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                    <Ionicons name="time-outline" size={20} color={COLORS.primary} />
+                    <Text style={[styles.settingLabel, { marginLeft: 8 }]}>Default times</Text>
+                  </View>
+                  <Text style={[styles.sectionDescription, { marginBottom: 12 }]}>
+                    Applied to all days unless custom times are set.
+                  </Text>
+                  <View style={styles.timeInputsContainer}>
+                    <View style={styles.timeInputs}>
+                      <View style={styles.timeInputContainer}>
+                        <Text style={styles.timeLabel}>Start</Text>
+                        <TextInput
+                          style={styles.timeInput}
+                          value={preferences.defaultTimeRange?.start || '09:00'}
+                          onChangeText={(value) => {
+                            setPreferences({
+                              ...preferences,
+                              defaultTimeRange: {
+                                start: value,
+                                end: preferences.defaultTimeRange?.end || '17:00',
+                              },
+                            });
+                          }}
+                          placeholder="09:00"
+                          keyboardType="numbers-and-punctuation"
+                        />
+                      </View>
+                      <Text style={styles.timeSeparator}>-</Text>
+                      <View style={styles.timeInputContainer}>
+                        <Text style={styles.timeLabel}>End</Text>
+                        <TextInput
+                          style={styles.timeInput}
+                          value={preferences.defaultTimeRange?.end || '17:00'}
+                          onChangeText={(value) => {
+                            setPreferences({
+                              ...preferences,
+                              defaultTimeRange: {
+                                start: preferences.defaultTimeRange?.start || '09:00',
+                                end: value,
+                              },
+                            });
+                          }}
+                          placeholder="17:00"
+                          keyboardType="numbers-and-punctuation"
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Custom Times */}
+                  <View style={[styles.settingRow, { marginTop: 12 }]}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingLabel}>Custom Times</Text>
+                      <Text style={styles.settingDescription}>Enable to set specific time slots for each day</Text>
+                    </View>
+                    <Switch
+                      value={preferences.customTimes || false}
+                      onValueChange={(value) => {
+                        setPreferences({
+                          ...preferences,
+                          customTimes: value,
+                          ...(value === false && {
+                            workingHours: Object.keys(preferences.workingHours).reduce((acc, day) => {
+                              acc[day as keyof typeof preferences.workingHours] = {
+                                ...preferences.workingHours[day as keyof typeof preferences.workingHours],
+                                specificSlots: undefined,
+                              };
+                              return acc;
+                            }, {} as typeof preferences.workingHours),
+                          }),
+                        });
+                      }}
+                      trackColor={{ false: COLORS.gray, true: COLORS.primary }}
+                    />
+                  </View>
+
+                  {/* Divider */}
+                  <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginVertical: 12 }} />
+
+                  {/* Weekend bookings */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <MaterialIcons name="weekend" size={20} color={COLORS.primary} />
+                      <Text style={[styles.settingLabel, { marginLeft: 8 }]}>Weekend bookings</Text>
+                    </View>
+                    <Switch
+                      value={preferences.allowWeekends}
+                      onValueChange={(value) => {
+                        if (!value) {
+                          const saturdayEnabled = preferences.workingHours?.saturday?.enabled;
+                          const sundayEnabled = preferences.workingHours?.sunday?.enabled;
+                          const saturdaySlots = preferences.workingHours?.saturday?.specificSlots?.length || 0;
+                          const sundaySlots = preferences.workingHours?.sunday?.specificSlots?.length || 0;
+
+                          const hasWeekendConfig = saturdayEnabled || sundayEnabled || saturdaySlots > 0 || sundaySlots > 0;
+
+                          if (hasWeekendConfig) {
+                            Alert.alert(
+                              'Disable weekend bookings?',
+                              'This will turn off Saturday and Sunday and clear any specific weekend time slots.',
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Disable',
+                                  style: 'destructive',
+                                  onPress: () => {
+                                    setPreferences({
+                                      ...preferences,
+                                      allowWeekends: false,
+                                      workingHours: {
+                                        ...preferences.workingHours,
+                                        saturday: { ...preferences.workingHours.saturday, enabled: false, specificSlots: undefined },
+                                        sunday: { ...preferences.workingHours.sunday, enabled: false, specificSlots: undefined },
+                                      },
+                                    });
+                                  },
+                                },
+                              ]
+                            );
+                          } else {
+                            setPreferences({ ...preferences, allowWeekends: false });
+                          }
+                        } else {
+                          setPreferences({ ...preferences, allowWeekends: true });
+                        }
+                      }}
+                      trackColor={{ false: COLORS.gray, true: COLORS.primary }}
+                    />
+                  </View>
+                  <Text style={[styles.sectionDescription, { marginTop: 6 }]}>Enable Saturday and Sunday in working hours</Text>
+                </View>
                 {DAYS.map((day) => {
                   // Saturday and Sunday should only be visible if allowWeekends is enabled
                   const isWeekend = day === 'saturday' || day === 'sunday';
@@ -1197,20 +1285,20 @@ export default function CalendarPreferencesScreen() {
 
           </>
         )}
-
-        {/* Save Button */}
-        <TouchableOpacity
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-          onPress={savePreferences}
-          disabled={saving}
-        >
-          {saving ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.saveButtonText}>Save Preferences</Text>
-          )}
-        </TouchableOpacity>
       </ScrollView>
+
+      {/* Floating Save Button */}
+      <TouchableOpacity
+        style={[styles.saveButton, styles.saveButtonFloating, saving && styles.saveButtonDisabled]}
+        onPress={savePreferences}
+        disabled={saving}
+      >
+        {saving ? (
+          <ActivityIndicator color={COLORS.white} />
+        ) : (
+          <Text style={styles.saveButtonText}>Save Preferences</Text>
+        )}
+      </TouchableOpacity>
 
       {/* Email Dropdown - Rendered outside ScrollView for proper z-index */}
       {showEmailDropdown && availableEmails.length > 0 && (
@@ -1826,6 +1914,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 30,
+  },
+  saveButtonFloating: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    marginHorizontal: 15,
+    marginBottom: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   saveButtonDisabled: {
     opacity: 0.6,

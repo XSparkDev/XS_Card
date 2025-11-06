@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Linking, Share, Clipboard } from 'react-native';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
@@ -11,9 +11,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { MaterialIcons } from '@expo/vector-icons';
 
 type CalendarNavigationProp = BottomTabNavigationProp<AdminTabParamList, 'Calendar'>;
 type CalendarScreenNavigationProp = StackNavigationProp<AuthStackParamList>;
+
+interface ShareOption {
+  id: string;
+  name: string;
+  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
+  color: string;
+  action: () => void;
+}
 
 // Contact interface for calendar (matches ContactScreen.tsx)
 interface Contact {
@@ -1250,6 +1259,48 @@ export default function Calendar() {
   const [expandedMenuIndex, setExpandedMenuIndex] = useState<number | null>(null);
   const navigation = useNavigation<CalendarScreenNavigationProp>();
   const [userInfo, setUserInfo] = useState<{ name: string; surname: string; email: string } | null>(null);
+  const [userId, setUserId] = useState<string>('');
+  const [isShareModalVisible, setIsShareModalVisible] = useState(false);
+
+  // Helper function to detect if location looks like an address or URL
+  const isAddressLike = (location: string): boolean => {
+    if (!location || location.trim().length === 0) return false;
+    
+    // Check if it's a URL
+    if (location.startsWith('http://') || location.startsWith('https://')) {
+      return true;
+    }
+    
+    // Check for common address patterns (street numbers, common words)
+    const addressPatterns = /\d+\s+[A-Za-z]|street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|way|lane|ln|place|pl|circle|cir|court|ct|terrace|ter/i;
+    return addressPatterns.test(location) && location.length > 10;
+  };
+
+  // Function to open location in maps or browser
+  const openLocationInMaps = async (location: string) => {
+    try {
+      let url: string;
+      
+      // If it's a URL, open in browser
+      if (location.startsWith('http://') || location.startsWith('https://')) {
+        url = location;
+      } else {
+        // Otherwise, open in maps (Google Maps works on both iOS and Android)
+        // iOS will offer to open in Apple Maps if available
+        url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+      }
+      
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Error', 'Unable to open location');
+      }
+    } catch (error) {
+      console.error('Error opening location:', error);
+      Alert.alert('Error', 'Unable to open location');
+    }
+  };
 
   // Safety function to reset all modal states
   const resetAllModals = () => {
@@ -1276,6 +1327,152 @@ export default function Calendar() {
     startTime: '',
     endTime: '',  });
   const [showOnlyPublic, setShowOnlyPublic] = useState(false);
+  
+  // Load user ID
+  const loadUserId = async () => {
+    try {
+      const userData = await AsyncStorage.getItem('userData');
+      if (userData) {
+        const parsed = JSON.parse(userData);
+        const extractedUserId = parsed.id || parsed.uid;
+        setUserId(extractedUserId);
+      }
+    } catch (error) {
+      console.error('Error loading user ID:', error);
+    }
+  };
+
+  // Get calendar link for sharing
+  const getCalendarLink = (): string => {
+    if (!userId) return '';
+    return `${API_BASE_URL}/public/calendar/${userId}.html`;
+  };
+
+  // Share calendar link - opens modal
+  const shareCalendarLink = () => {
+    const link = getCalendarLink();
+    if (!link) {
+      Alert.alert('Error', 'Unable to generate calendar link');
+      return;
+    }
+    setIsShareModalVisible(true);
+  };
+
+  // Share options array (same as CalendarPreferencesScreen)
+  const shareOptions: ShareOption[] = [
+    {
+      id: 'whatsapp',
+      name: 'WhatsApp',
+      icon: 'whatsapp',
+      color: '#25D366',
+      action: async () => {
+        const link = getCalendarLink();
+        if (!link) {
+          Alert.alert('Error', 'Unable to generate calendar link');
+          return;
+        }
+        const message = `Schedule a meeting with me: ${link}`;
+        Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`).catch(() => {
+          Alert.alert('Error', 'WhatsApp is not installed on your device');
+        });
+      }
+    },
+    {
+      id: 'telegram',
+      name: 'Telegram',
+      icon: 'send',
+      color: '#0088cc',
+      action: async () => {
+        const link = getCalendarLink();
+        if (!link) {
+          Alert.alert('Error', 'Unable to generate calendar link');
+          return;
+        }
+        const message = `Schedule a meeting with me: ${link}`;
+        Linking.openURL(`tg://msg?text=${encodeURIComponent(message)}`).catch(() => {
+          Alert.alert('Error', 'Telegram is not installed on your device');
+        });
+      }
+    },
+    {
+      id: 'email',
+      name: 'Email',
+      icon: 'email',
+      color: '#EA4335',
+      action: async () => {
+        const link = getCalendarLink();
+        if (!link) {
+          Alert.alert('Error', 'Unable to generate calendar link');
+          return;
+        }
+        const message = `Hello,\n\nSchedule a meeting with me using this link: ${link}\n\nBest regards`;
+        const emailUrl = `mailto:?subject=${encodeURIComponent('Book a Meeting')}&body=${encodeURIComponent(message)}`;
+        Linking.openURL(emailUrl).catch(() => {
+          Alert.alert('Error', 'Could not open email client');
+        });
+      }
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      icon: 'linkedin',
+      color: '#0077B5',
+      action: async () => {
+        const link = getCalendarLink();
+        if (!link) {
+          Alert.alert('Error', 'Unable to generate calendar link');
+          return;
+        }
+        const message = `Schedule a meeting with me!`;
+        const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(link)}&summary=${encodeURIComponent(message)}`;
+        Linking.openURL(linkedinUrl).catch(() => {
+          Alert.alert('Error', 'Could not open LinkedIn');
+        });
+      }
+    },
+    {
+      id: 'more',
+      name: 'More',
+      icon: 'more-horiz',
+      color: '#6B7280',
+      action: async () => {
+        const link = getCalendarLink();
+        if (!link) {
+          Alert.alert('Error', 'Unable to generate calendar link');
+          return;
+        }
+        const message = `Schedule a meeting with me!`;
+        try {
+          await Share.share({
+            message: `${message}\n\n${link}`,
+            url: link,
+            title: 'My Calendar Booking Link'
+          });
+        } catch (error) {
+          Alert.alert('Error', 'Could not open share options');
+        }
+      }
+    }
+  ];
+
+  const handlePlatformSelect = (platform: string) => {
+    const selectedOption = shareOptions.find(opt => opt.id === platform);
+    if (selectedOption) {
+      selectedOption.action();
+      setIsShareModalVisible(false);
+    }
+  };
+
+  const copyCalendarLink = async () => {
+    const link = getCalendarLink();
+    if (!link) {
+      Alert.alert('Error', 'Unable to generate calendar link');
+      return;
+    }
+
+    Clipboard.setString(link);
+    Alert.alert('Copied!', 'Calendar link copied to clipboard');
+  };
   
   const timeSlots = [
     '09:00', '10:00', '11:00', '12:00',
@@ -1421,6 +1618,7 @@ export default function Calendar() {
   useEffect(() => {
     fetchUserInfo();
     loadEvents();
+    loadUserId();
   }, []);
 
 
@@ -1920,7 +2118,16 @@ const renderEventDate = (dateStr: string) => {
             <MaterialCommunityIcons name="map-marker" size={14} color="#666" />
             <Text style={styles.eventDetailTitle}>Location</Text>
           </View>
-          <Text style={styles.eventDetailText}>{event.location}</Text>
+          {isAddressLike(event.location) ? (
+            <TouchableOpacity onPress={() => openLocationInMaps(event.location)}>
+              <View style={styles.locationRow}>
+                <Text style={[styles.eventDetailText, styles.clickableLocation]}>{event.location}</Text>
+                <MaterialCommunityIcons name="open-in-new" size={16} color={COLORS.primary} style={styles.locationIcon} />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.eventDetailText}>{event.location}</Text>
+          )}
         </View>
       )}
 
@@ -2083,25 +2290,41 @@ const renderEventDate = (dateStr: string) => {
           </Text>
         </TouchableOpacity>
 
+        {/* Share and Filter Buttons */}
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity 
+            style={styles.shareButton}
+            onPress={shareCalendarLink}
+          >
+            <MaterialCommunityIcons 
+              name="share-variant" 
+              size={18} 
+              color={COLORS.primary} 
+            />
+            <Text style={styles.shareButtonText}>
+              Share Calendar
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.filterButton, showOnlyPublic && styles.filterButtonActive]}
+            onPress={() => setShowOnlyPublic(!showOnlyPublic)}
+          >
+            <MaterialCommunityIcons 
+              name="filter" 
+              size={18} 
+              color={showOnlyPublic ? '#FFFFFF' : '#007AFF'} 
+            />
+            <Text style={[styles.filterButtonText, showOnlyPublic && styles.filterButtonTextActive]}>
+              {showOnlyPublic ? 'All' : 'Public Only'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.eventsSection}>
           <View style={styles.eventsSectionHeader}>
             <Text style={styles.upcomingTitle}>
               Upcoming Meetings
             </Text>
-            <TouchableOpacity 
-              style={[styles.filterButton, showOnlyPublic && styles.filterButtonActive]}
-              onPress={() => setShowOnlyPublic(!showOnlyPublic)}
-            >
-              <MaterialCommunityIcons 
-                name="filter" 
-                size={18} 
-                color={showOnlyPublic ? '#FFFFFF' : '#007AFF'} 
-              />
-              <Text style={[styles.filterButtonText, showOnlyPublic && styles.filterButtonTextActive]}>
-                {showOnlyPublic ? 'All' : 'Public Only'}
-              </Text>
-            </TouchableOpacity>
           </View>
           {(() => {
             const filteredEvents = showOnlyPublic 
@@ -2314,6 +2537,51 @@ const renderEventDate = (dateStr: string) => {
         userInfo={userInfo}
         contacts={contacts}
       />
+
+      {/* Share Modal */}
+      <Modal
+        visible={isShareModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setIsShareModalVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.shareModalContent}>
+            <TouchableOpacity
+              style={styles.shareModalCloseButton}
+              onPress={() => {
+                setIsShareModalVisible(false);
+              }}
+            >
+              <MaterialIcons name="close" size={24} color={COLORS.black} />
+            </TouchableOpacity>
+
+            <Text style={styles.shareModalTitle}>Share via</Text>
+            <View style={styles.shareOptions}>
+              {shareOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  style={styles.shareOption}
+                  onPress={() => handlePlatformSelect(option.id)}
+                >
+                  <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
+                    {option.id === 'whatsapp' ? (
+                      <MaterialCommunityIcons name="whatsapp" size={22} color={COLORS.white} />
+                    ) : option.id === 'linkedin' ? (
+                      <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
+                    ) : (
+                      <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
+                    )}
+                  </View>
+                  <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
       </View>
     </TouchableWithoutFeedback>
   );
@@ -2347,6 +2615,15 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 20, // Add some bottom margin
   },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
   eventsSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2354,9 +2631,30 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     paddingHorizontal: 20,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   upcomingTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F0F8FF',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    gap: 4,
+  },
+  shareButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.primary,
   },
   filterButton: {
     flexDirection: 'row',
@@ -3168,6 +3466,18 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 18,
   },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 18,
+  },
+  clickableLocation: {
+    color: COLORS.primary,
+    flex: 1,
+  },
+  locationIcon: {
+    marginLeft: 8,
+  },
   eventDuration: {
     fontSize: 12,
     color: '#666',
@@ -3235,5 +3545,60 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shareModalContent: {
+    backgroundColor: COLORS.white,
+    padding: 30,
+    borderRadius: 24,
+    width: '90%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 60,
+    elevation: 20,
+  },
+  shareModalCloseButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+  },
+  shareModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  shareOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    width: '100%',
+    paddingHorizontal: 5,
+  },
+  shareOption: {
+    alignItems: 'center',
+    padding: 4,
+    flex: 1,
+    maxWidth: 60,
+  },
+  shareOptionText: {
+    fontSize: 10,
+    color: COLORS.black,
+    marginTop: 4,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  iconCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

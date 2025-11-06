@@ -817,7 +817,8 @@ exports.getPublicCalendarAvailability = async (req, res) => {
                 },
                 availability,
                 allowedDurations: preferences.allowedDurations || [30, 60],
-                timezone: preferences.timezone || 'UTC'
+                timezone: preferences.timezone || 'UTC',
+                advanceBookingDays: preferences.advanceBookingDays || 30
             }
         });
     } catch (error) {
@@ -841,6 +842,7 @@ exports.createPublicBooking = async (req, res) => {
             email,
             phone,
             message,
+            location,
             date,
             time,
             duration
@@ -932,7 +934,7 @@ exports.createPublicBooking = async (req, res) => {
             meetingWhen: meetingDateTime,
             description: message || '',
             duration: parseInt(duration),
-            location: 'Online meeting',
+            location: location || 'Online meeting',
             source: 'public',
             bookerInfo: {
                 name,
@@ -981,7 +983,7 @@ exports.createPublicBooking = async (req, res) => {
                 description: message || 'Booked via XSCard Calendar',
                 start: meetingDateTime.toISOString(),
                 end: endDateTime.toISOString(),
-                location: 'Online meeting',
+                location: location || 'Online meeting',
                 attendees: [{ name, email }],
                 organizer: {
                     name: ownerInfo.name,
@@ -1003,6 +1005,7 @@ exports.createPublicBooking = async (req, res) => {
                             <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                             <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
                             <p><strong>Duration:</strong> ${duration} minutes</p>
+                            ${location ? `<p><strong>Location:</strong> ${location}</p>` : ''}
                             ${message ? `<p><strong>Your message:</strong> ${message}</p>` : ''}
                         </div>
                         
@@ -1049,6 +1052,7 @@ exports.createPublicBooking = async (req, res) => {
                                 <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                                 <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
                                 <p><strong>Duration:</strong> ${duration} minutes</p>
+                                ${location ? `<p><strong>Location:</strong> ${location}</p>` : ''}
                                 ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
                             </div>
                             
