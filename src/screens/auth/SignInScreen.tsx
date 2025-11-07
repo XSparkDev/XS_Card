@@ -124,13 +124,16 @@ export default function SignInScreen() {
       return;
     }
 
+    const trimmedEmail = email.trim();
+    if (trimmedEmail !== email) {
+      setEmail(trimmedEmail);
+    }
+
     setIsLoading(true);
 
     try {
       console.log('SignIn: Starting Firebase authentication...');
-      
-      // 🔥 FIX: Trim email before Firebase authentication
-      const trimmedEmail = email.trim();
+
       const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
       const firebaseUser = userCredential.user;
       
@@ -239,13 +242,16 @@ export default function SignInScreen() {
       // Handle Firebase authentication errors silently
       if (error.code) {
         console.error('SignIn: Authentication error:', error.code, error.message);
-        
+
+        if (error.code === 'auth/user-not-found') {
+          setErrors(prev => ({ ...prev, email: 'No account found with this email' }));
+          toast.error('Sign In Failed', 'No account found with this email address');
+          navigation.navigate('SignUp', { prefillEmail: trimmedEmail });
+          return;
+        }
+
         // Set field-specific errors and show toast notifications
         switch (error.code) {
-          case 'auth/user-not-found':
-            setErrors(prev => ({ ...prev, email: 'No account found with this email' }));
-            toast.error('Sign In Failed', 'No account found with this email address');
-            break;
           case 'auth/wrong-password':
             setErrors(prev => ({ ...prev, password: 'Invalid password' }));
             toast.error('Sign In Failed', 'Incorrect password. Please try again');

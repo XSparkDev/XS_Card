@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ScrollView,
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
@@ -12,13 +12,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandler, ERROR_CODES, createAppError, handleStorageError } from '../../utils/errorHandler';
 
 type SignUpScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignUp'>;
+type SignUpScreenRouteProp = RouteProp<AuthStackParamList, 'SignUp'>;
 
 export default function SignUpScreen() {
   const navigation = useNavigation<SignUpScreenNavigationProp>();
+  const route = useRoute<SignUpScreenRouteProp>();
   const toast = useToast();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(route.params?.prefillEmail?.trim() ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

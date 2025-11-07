@@ -138,7 +138,7 @@ export interface Meeting {
 export type AuthStackParamList = {
   Splash: undefined;
   SignIn: undefined;
-  SignUp: undefined;
+  SignUp: { prefillEmail?: string } | undefined;
   ForgotPassword: undefined;
   CompleteProfile: { userId: string };
   MainApp: undefined;
