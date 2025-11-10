@@ -66,12 +66,70 @@ exports.getUserById = async (req, res) => {
     const { id } = req.params;
     try {
         const userRef = db.collection('users').doc(id);
-        const userDoc = await userRef.get();
+        let userDoc = await userRef.get();
         
+        // PHASE 3: OAuth Auto-Provision
+        // If user doesn't exist in Firestore but has valid Firebase token,
+        // this is an OAuth user (Google, LinkedIn, etc.) - auto-create their profile
         if (!userDoc.exists) {
-            return res.status(404).send({ message: 'User is not found'});
+            console.log(`[OAuth] User ${id} not found in Firestore, checking Firebase Auth...`);
+            
+            try {
+                // Get user from Firebase Auth
+                const firebaseUser = await admin.auth().getUser(id);
+                console.log(`[OAuth] Found Firebase Auth user: ${firebaseUser.email}, providers:`, firebaseUser.providerData.map(p => p.providerId));
+                
+                // Determine auth provider
+                const providers = firebaseUser.providerData.map(p => p.providerId);
+                const authProvider = providers.includes('google.com') ? 'google.com' 
+                    : providers.includes('linkedin.com') ? 'linkedin.com'
+                    : providers.includes('apple.com') ? 'apple.com'
+                    : 'password'; // fallback
+                
+                // Extract name from displayName
+                const displayName = firebaseUser.displayName || '';
+                const nameParts = displayName.split(' ');
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.slice(1).join(' ') || '';
+                
+                // Create user document with OAuth data
+                const newUserData = {
+                    uid: firebaseUser.uid,
+                    name: firstName,
+                    surname: lastName,
+                    email: firebaseUser.email || '',
+                    status: 'active',
+                    plan: 'free',
+                    createdAt: admin.firestore.Timestamp.now(),
+                    isEmailVerified: firebaseUser.emailVerified || true, // OAuth users are pre-verified
+                    authProvider: authProvider, // Track sign-in method
+                    profileImage: firebaseUser.photoURL || null,
+                    // OAuth users don't need verification token
+                    termsAccepted: true, // Implicit acceptance by using OAuth
+                    privacyAccepted: true,
+                    legalAcceptedAt: admin.firestore.Timestamp.now()
+                };
+                
+                // Store in Firestore
+                await userRef.set(newUserData);
+                console.log(`[OAuth] Created Firestore user document for ${authProvider} user: ${firebaseUser.email}`);
+                
+                // Return the newly created user
+                return res.status(200).send({
+                    id: firebaseUser.uid,
+                    ...newUserData,
+                    _autoCreated: true, // Flag for debugging
+                    _provider: authProvider
+                });
+                
+            } catch (authError) {
+                console.error(`[OAuth] Failed to get Firebase Auth user ${id}:`, authError);
+                // User doesn't exist in Firebase Auth either
+                return res.status(404).send({ message: 'User is not found'});
+            }
         }
 
+        // User exists in Firestore - return their data
         const userData = {
             id: userDoc.id,
             ...userDoc.data()
@@ -138,6 +196,7 @@ exports.addUser = async (req, res) => {
             createdAt: admin.firestore.Timestamp.now(), // Changed to Firestore Timestamp
             isEmailVerified: false,
             verificationToken,
+            authProvider: 'password', // Track auth method (email/password)
             termsAccepted: true,
             privacyAccepted: true,
             legalAcceptedAt: legalAcceptedTimestamp
