@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated, Modal } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ErrorPopup import removed - no popups on signin page
 import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData, getStoredAuthData } from '../../utils/authStorage';
 // Error handler imports removed - no popups on signin page
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
 
@@ -34,8 +34,14 @@ export default function SignInScreen() {
     email: '',
     password: '',
   });
+  const [authFieldErrors, setAuthFieldErrors] = useState({
+    email: false,
+    password: false,
+  });
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [showRetryModal, setShowRetryModal] = useState(false);
   // Error popup removed - no popups on signin page
 
 
@@ -114,6 +120,10 @@ export default function SignInScreen() {
     }
 
     setErrors(newErrors);
+    setAuthFieldErrors({
+      email: false,
+      password: false,
+    });
     return isValid;
   };
 
@@ -205,6 +215,13 @@ export default function SignInScreen() {
         
         // Navigate to root navigator's MainApp screen
         navigation.getParent()?.navigate('MainApp');
+        setAuthFieldErrors({ email: false, password: false });
+        if (failedAttempts !== 0) {
+          setFailedAttempts(0);
+        }
+        if (showRetryModal) {
+          setShowRetryModal(false);
+        }
       } else {
         // Handle backend data retrieval failures
         console.warn('SignIn: Backend user data retrieval failed, using Firebase user data');
@@ -235,6 +252,13 @@ export default function SignInScreen() {
         
         // Navigate to root navigator's MainApp screen
         navigation.getParent()?.navigate('MainApp');
+        setAuthFieldErrors({ email: false, password: false });
+        if (failedAttempts !== 0) {
+          setFailedAttempts(0);
+        }
+        if (showRetryModal) {
+          setShowRetryModal(false);
+        }
       }
     } catch (error: any) {
       console.error('SignIn: Authentication error:', error);
@@ -243,23 +267,59 @@ export default function SignInScreen() {
       if (error.code) {
         console.error('SignIn: Authentication error:', error.code, error.message);
 
-        if (error.code === 'auth/user-not-found') {
-          setErrors(prev => ({ ...prev, email: 'No account found with this email' }));
-          toast.error('Sign In Failed', 'No account found with this email address');
-          navigation.navigate('SignUp', { prefillEmail: trimmedEmail });
-          return;
-        }
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+          try {
+            const signInMethods = await fetchSignInMethodsForEmail(auth, trimmedEmail);
 
+            if (!signInMethods || signInMethods.length === 0) {
+              setFailedAttempts(prev => {
+                const next = prev + 1;
+                if (next >= 3) {
+                  setShowRetryModal(true);
+                }
+                return next;
+              });
+              const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
+              setAuthFieldErrors({ email: true, password: true });
+              setErrors(prev => ({ ...prev, email: '', password: '' }));
+              toast.error('Sign In Failed', neutralMessage);
+              return;
+            }
+          } catch (methodCheckError) {
+            console.warn('SignIn: Failed to check sign-in methods:', methodCheckError);
+          }
+        }
+        
         // Set field-specific errors and show toast notifications
         switch (error.code) {
-          case 'auth/wrong-password':
-            setErrors(prev => ({ ...prev, password: 'Invalid password' }));
-            toast.error('Sign In Failed', 'Incorrect password. Please try again');
+          case 'auth/wrong-password': {
+            const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
+            setAuthFieldErrors({ email: true, password: true });
+            setErrors(prev => ({ ...prev, email: '', password: '' }));
+            toast.error('Sign In Failed', neutralMessage);
+            setFailedAttempts(prev => {
+              const next = prev + 1;
+              if (next >= 3) {
+                setShowRetryModal(true);
+              }
+              return next;
+            });
             break;
-          case 'auth/invalid-credential':
-            setErrors(prev => ({ ...prev, email: 'Invalid credentials' }));
-            toast.error('Sign In Failed', 'Invalid email or password. Please check your credentials and try again');
+          }
+          case 'auth/invalid-credential': {
+            const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
+            setAuthFieldErrors({ email: true, password: true });
+            setErrors(prev => ({ ...prev, email: '', password: '' }));
+            toast.error('Sign In Failed', neutralMessage);
+            setFailedAttempts(prev => {
+              const next = prev + 1;
+              if (next >= 3) {
+                setShowRetryModal(true);
+              }
+              return next;
+            });
             break;
+          }
           case 'auth/invalid-email':
             setErrors(prev => ({ ...prev, email: 'Invalid email format' }));
             toast.error('Invalid Email', 'Please enter a valid email address');
@@ -312,10 +372,15 @@ export default function SignInScreen() {
       <Text style={styles.title}>Sign In</Text>
 
       <TextInput
-        style={[styles.input, errors.email ? styles.inputError : null]}
+        style={[styles.input, (errors.email || authFieldErrors.email) ? styles.inputError : null]}
         placeholder="Email"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(value) => {
+          setEmail(value);
+          if (authFieldErrors.email) {
+            setAuthFieldErrors(prev => ({ ...prev, email: false }));
+          }
+        }}
         keyboardType="email-address"
         autoCapitalize="none"
         placeholderTextColor="#999"
@@ -324,10 +389,15 @@ export default function SignInScreen() {
 
       <View style={styles.passwordContainer}>
         <TextInput
-          style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
+          style={[styles.input, styles.passwordInput, (errors.password || authFieldErrors.password) ? styles.inputError : null]}
           placeholder="Password"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(value) => {
+            setPassword(value);
+            if (authFieldErrors.password) {
+              setAuthFieldErrors(prev => ({ ...prev, password: false }));
+            }
+          }}
           secureTextEntry={!showPassword}
           placeholderTextColor="#999"
         />
@@ -420,6 +490,59 @@ export default function SignInScreen() {
         userEmail={unverifiedEmail}
         onSignOut={handleSignOut}
       />
+
+      <Modal
+        visible={showRetryModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRetryModal(false)}
+      >
+        <View style={styles.retryOverlay}>
+          <View style={styles.retryModal}>
+            <View style={styles.retryIconContainer}>
+              <MaterialIcons name="help-outline" size={36} color={COLORS.primary} />
+            </View>
+            <Text style={styles.retryTitle}>Need a Hand?</Text>
+            <Text style={styles.retryMessage}>
+              We haven’t been able to sign you in after a few tries. You can reset your password or create a new account to keep going.
+            </Text>
+            <View style={styles.retryButtons}>
+              <TouchableOpacity
+                style={[styles.retryButton, styles.retryPrimaryButton]}
+                onPress={() => {
+                  setShowRetryModal(false);
+                  setFailedAttempts(0);
+                  setAuthFieldErrors({ email: false, password: false });
+                  navigation.navigate('ForgotPassword');
+                }}
+              >
+                <Text style={styles.retryPrimaryButtonText}>Reset Password</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.retryButton, styles.retrySecondaryButton]}
+                onPress={() => {
+                  setShowRetryModal(false);
+                  navigation.navigate('SignUp', { prefillEmail: email.trim() });
+                  setFailedAttempts(0);
+                  setAuthFieldErrors({ email: false, password: false });
+                }}
+              >
+                <Text style={styles.retrySecondaryButtonText}>Create Account</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.retryLink}
+              onPress={() => {
+                  setShowRetryModal(false);
+                  setFailedAttempts(0);
+                setAuthFieldErrors({ email: false, password: false });
+                }}
+              >
+              <Text style={styles.retryLinkText}>Back to sign in</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -539,5 +662,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     fontWeight: '500',
+  },
+  retryOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  retryModal: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  retryIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  retryTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  retryMessage: {
+    fontSize: 15,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  retryButtons: {
+    flexDirection: 'column',
+    gap: 12,
+    width: '100%',
+  },
+  retryButton: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  retrySecondaryButton: {
+    backgroundColor: '#F3F4F6',
+  },
+  retrySecondaryButtonText: {
+    color: '#4B5563',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  retryPrimaryButton: {
+    backgroundColor: COLORS.secondary,
+  },
+  retryPrimaryButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  retryLink: {
+    marginTop: 16,
+  },
+  retryLinkText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

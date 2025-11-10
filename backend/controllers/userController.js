@@ -89,11 +89,33 @@ exports.getUserById = async (req, res) => {
 
 exports.addUser = async (req, res) => {
     const { 
-        name, surname, email, password, status = 'active' 
+        name,
+        surname,
+        email,
+        password,
+        status = 'active',
+        termsAccepted = false,
+        privacyAccepted = false,
+        legalAcceptedAt
     } = req.body;
     
     try {
         console.log('Starting user creation process for:', email);
+
+        if (!termsAccepted || !privacyAccepted) {
+            return res.status(400).send({
+                message: 'You must accept the Privacy Policy and Terms of Use before creating an account.',
+                code: 'LEGAL_NOT_ACCEPTED'
+            });
+        }
+
+        let legalAcceptedTimestamp = admin.firestore.Timestamp.now();
+        if (legalAcceptedAt) {
+            const parsedDate = new Date(legalAcceptedAt);
+            if (!isNaN(parsedDate.getTime())) {
+                legalAcceptedTimestamp = admin.firestore.Timestamp.fromDate(parsedDate);
+            }
+        }
         
         // Create user in Firebase Auth
         const userRecord = await admin.auth().createUser({
@@ -115,12 +137,16 @@ exports.addUser = async (req, res) => {
             plan: 'free', // Default plan
             createdAt: admin.firestore.Timestamp.now(), // Changed to Firestore Timestamp
             isEmailVerified: false,
-            verificationToken
+            verificationToken,
+            termsAccepted: true,
+            privacyAccepted: true,
+            legalAcceptedAt: legalAcceptedTimestamp
         };
 
         const responseData = {
             ...userData,
-            createdAt: formatDate(userData.createdAt) // Format for display
+            createdAt: formatDate(userData.createdAt), // Format for display
+            legalAcceptedAt: formatDate(legalAcceptedTimestamp)
         };
 
         // Store user data in Firestore
@@ -692,12 +718,13 @@ exports.uploadUserImages = async (req, res) => {
         console.log('Retrieved user data:', userData.name, userData.surname, userData.email);
         
         // Extract additional fields from the request
-        const { phone, occupation, company } = req.body;
-        console.log('Profile completion data:', { phone, occupation, company });
+        const { phone, alternatePhone, occupation, company } = req.body;
+        console.log('Profile completion data:', { phone, alternatePhone, occupation, company });
         
         // Update user with additional profile information
         await userRef.update({
             phone: phone ?? '',
+            alternatePhone: alternatePhone ?? '',
             occupation: occupation ?? '',
             company: company ?? ''
         });
@@ -710,6 +737,7 @@ exports.uploadUserImages = async (req, res) => {
                 surname: userData.surname ?? '',
                 email: userData.email ?? '',
                 phone: phone ?? '',
+                alternatePhone: alternatePhone ?? '',
                 occupation: occupation ?? '',
                 company: company ?? '',
                 profileImage: req.firebaseStorageUrls?.profileImage ?? null,

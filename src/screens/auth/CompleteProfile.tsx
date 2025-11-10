@@ -5,7 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
-import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
+import { ENDPOINTS, buildUrl } from '../../utils/api';
 import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -81,7 +81,6 @@ const COUNTRIES = [
 export default function CompleteProfile() {
   const navigation = useNavigation<CompleteProfileNavigationProp>();
   const route = useRoute<CompleteProfileRouteProp>();
-  const toast = useToast();
   const [userId, setUserId] = useState<string | null>(route.params?.userId || null);
   const [idError, setIdError] = useState<string | null>(null);
   
@@ -91,13 +90,21 @@ export default function CompleteProfile() {
   const [isSkipping, setIsSkipping] = useState(false);
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+27'); // Default to South Africa
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES.find(c => c.code === '+27') || COUNTRIES[0]); // Default to South Africa
+  const [selectedCountry, setSelectedCountry] =
+    useState(COUNTRIES.find(c => c.code === '+27') || COUNTRIES[0]); // Default to South Africa
   const [showCountryModal, setShowCountryModal] = useState(false);
+  const [countrySelectorTarget, setCountrySelectorTarget] = useState<'primary' | 'alternate'>('primary');
   const [countrySearch, setCountrySearch] = useState('');
+  const [alternatePhone, setAlternatePhone] = useState('');
+  const [alternateCountryCode, setAlternateCountryCode] = useState('+27');
+  const [alternateSelectedCountry, setAlternateSelectedCountry] =
+    useState(COUNTRIES.find(c => c.code === '+27') || COUNTRIES[0]);
+  const [isAlternateExpanded, setIsAlternateExpanded] = useState(false);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [errors, setErrors] = useState({
     phone: '',
+    alternatePhone: '',
     occupation: '',
     company: ''
   });
@@ -113,33 +120,39 @@ export default function CompleteProfile() {
   };
 
   // Real-time phone validation
-  const handlePhoneChange = (text: string) => {
+  const handlePhoneChange = (text: string, field: 'primary' | 'alternate') => {
     // Only allow digits, spaces, hyphens, and parentheses
     const cleanedText = text.replace(/[^\d\s\-\(\)]/g, '');
-    setPhone(cleanedText);
     
-    // Clear error when user starts typing
+    if (field === 'primary') {
+      setPhone(cleanedText);
     if (errors.phone) {
       setErrors(prev => ({ ...prev, phone: '' }));
+      }
+    } else {
+      setAlternatePhone(cleanedText);
+      if (errors.alternatePhone) {
+        setErrors(prev => ({ ...prev, alternatePhone: '' }));
+      }
     }
     
     // Real-time validation feedback
     if (cleanedText.length > 0 && !validatePhone(cleanedText)) {
       const cleanPhone = cleanedText.replace(/\D/g, '');
-      if (cleanPhone.length < 7) {
-        setErrors(prev => ({ ...prev, phone: 'Phone number must be at least 7 digits' }));
-      } else if (cleanPhone.length > 15) {
-        setErrors(prev => ({ ...prev, phone: 'Phone number must be no more than 15 digits' }));
+      const errorMessage =
+        cleanPhone.length < 7
+          ? 'Phone number must be at least 7 digits'
+          : cleanPhone.length > 15
+            ? 'Phone number must be no more than 15 digits'
+            : 'Please enter a valid phone number (7-15 digits)';
+
+      if (field === 'primary') {
+        setErrors(prev => ({ ...prev, phone: errorMessage }));
       } else {
-        setErrors(prev => ({ ...prev, phone: 'Please enter a valid phone number (7-15 digits)' }));
+        setErrors(prev => ({ ...prev, alternatePhone: errorMessage }));
       }
     }
   };
-
-  // Show account created toast when component mounts
-  useEffect(() => {
-    toast.success('Account Created!', 'Welcome! Please complete your profile to get started.');
-  }, []);
 
   // Ensure we have a userId, first from route params, then from AsyncStorage
   useEffect(() => {
@@ -316,6 +329,7 @@ export default function CompleteProfile() {
     let isValid = true;
     const newErrors = {
       phone: '',
+    alternatePhone: '',
       occupation: '',
       company: ''
     };
@@ -331,6 +345,18 @@ export default function CompleteProfile() {
         newErrors.phone = 'Phone number must be no more than 15 digits';
       } else {
         newErrors.phone = 'Please enter a valid phone number (7-15 digits)';
+      }
+      isValid = false;
+    }
+
+  if (alternatePhone.trim() && !validatePhone(alternatePhone)) {
+    const cleanPhone = alternatePhone.replace(/\D/g, '');
+    if (cleanPhone.length < 7) {
+      newErrors.alternatePhone = 'Alternate number must be at least 7 digits';
+    } else if (cleanPhone.length > 15) {
+      newErrors.alternatePhone = 'Alternate number must be no more than 15 digits';
+    } else {
+      newErrors.alternatePhone = 'Please enter a valid alternate number (7-15 digits)';
       }
       isValid = false;
     }
@@ -429,6 +455,7 @@ export default function CompleteProfile() {
 
       // Add other user data
       formData.append('phone', `${countryCode}${phone}`);
+      formData.append('alternatePhone', alternatePhone ? `${alternateCountryCode}${alternatePhone}` : '');
       formData.append('occupation', occupation);
       formData.append('company', company);
 
@@ -519,6 +546,7 @@ export default function CompleteProfile() {
         userId: userId,
         email: email || '', // Include email as well
         phone: phone ? `${countryCode}${phone}` : '',
+        alternatePhone: alternatePhone ? `${alternateCountryCode}${alternatePhone}` : '',
         occupation: occupation || '',
         company: company || '',
         uid: userId // Add uid as an alternative
@@ -638,7 +666,10 @@ export default function CompleteProfile() {
           <View style={styles.phoneContainer}>
             <TouchableOpacity 
               style={[styles.countryCodeButton, errors.phone ? styles.inputError : null]}
-              onPress={() => setShowCountryModal(true)}
+              onPress={() => {
+                setCountrySelectorTarget('primary');
+                setShowCountryModal(true);
+              }}
             >
               <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
               <Text style={styles.countryCodeText}>{selectedCountry.code}</Text>
@@ -648,13 +679,70 @@ export default function CompleteProfile() {
               style={[styles.phoneInput, errors.phone ? styles.inputError : null]}
               placeholder="Phone number"
               value={phone}
-              onChangeText={handlePhoneChange}
+              onChangeText={text => handlePhoneChange(text, 'primary')}
               keyboardType="phone-pad"
               placeholderTextColor="#999"
               maxLength={15}
             />
           </View>
           {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
+
+          <TouchableOpacity
+            style={styles.alternateToggle}
+            onPress={() =>
+              setIsAlternateExpanded(prev => {
+                const next = !prev;
+                if (!next) {
+                  setErrors(current => ({ ...current, alternatePhone: '' }));
+                }
+                return next;
+              })
+            }
+          >
+            <View style={styles.alternateToggleContent}>
+              <MaterialIcons
+                name={isAlternateExpanded ? 'expand-less' : 'expand-more'}
+                size={24}
+                color={COLORS.primary}
+              />
+              <Text style={styles.alternateToggleText}>
+                {isAlternateExpanded ? 'Hide alternate number' : 'Add alternate number'}
+              </Text>
+            </View>
+            {alternatePhone ? (
+              <Text style={styles.alternateSummary}>
+                {`${alternateCountryCode}${alternatePhone}`}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
+
+          {isAlternateExpanded ? (
+            <>
+              <View style={styles.phoneContainer}>
+                <TouchableOpacity
+                  style={[styles.countryCodeButton, errors.alternatePhone ? styles.inputError : null]}
+                  onPress={() => {
+                    setCountrySelectorTarget('alternate');
+                    setShowCountryModal(true);
+                  }}
+                >
+                  <Text style={styles.countryFlag}>{alternateSelectedCountry.flag}</Text>
+                  <Text style={styles.countryCodeText}>{alternateSelectedCountry.code}</Text>
+                  <MaterialIcons name="keyboard-arrow-down" size={20} color="#666" />
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.phoneInput, errors.alternatePhone ? styles.inputError : null]}
+                  placeholder="Alternate phone number"
+                  value={alternatePhone}
+                  onChangeText={text => handlePhoneChange(text, 'alternate')}
+                  keyboardType="phone-pad"
+                  placeholderTextColor="#999"
+                  maxLength={15}
+                />
+              </View>
+              {errors.alternatePhone ? <Text style={styles.errorText}>{errors.alternatePhone}</Text> : null}
+            </>
+          ) : null}
 
           <TextInput
             style={[styles.input, errors.occupation ? styles.inputError : null]}
@@ -758,6 +846,7 @@ export default function CompleteProfile() {
         onRequestClose={() => {
           setShowCountryModal(false);
           setCountrySearch('');
+          setCountrySelectorTarget('primary');
         }}
       >
         <KeyboardAvoidingView 
@@ -772,6 +861,7 @@ export default function CompleteProfile() {
                 onPress={() => {
                   setShowCountryModal(false);
                   setCountrySearch('');
+                setCountrySelectorTarget('primary');
                 }}
                 style={styles.closeButton}
               >
@@ -797,15 +887,26 @@ export default function CompleteProfile() {
                 country.code.includes(countrySearch)
               )}
               keyExtractor={(item, index) => `${item.code}-${index}`}
-              renderItem={({ item }) => (
+              renderItem={({ item }) => {
+                const isSelected =
+                  countrySelectorTarget === 'primary'
+                    ? selectedCountry.code === item.code && selectedCountry.name === item.name
+                    : alternateSelectedCountry.code === item.code && alternateSelectedCountry.name === item.name;
+
+                return (
                 <TouchableOpacity
                   style={[
                     styles.countryItem,
-                    selectedCountry.code === item.code && selectedCountry.name === item.name && styles.selectedCountryItem
+                      isSelected && styles.selectedCountryItem
                   ]}
                   onPress={() => {
+                      if (countrySelectorTarget === 'primary') {
                     setSelectedCountry(item);
                     setCountryCode(item.code);
+                      } else {
+                        setAlternateSelectedCountry(item);
+                        setAlternateCountryCode(item.code);
+                      }
                     setShowCountryModal(false);
                     setCountrySearch('');
                   }}
@@ -815,11 +916,12 @@ export default function CompleteProfile() {
                     <Text style={styles.countryItemName}>{item.name}</Text>
                     <Text style={styles.countryItemCode}>{item.code}</Text>
                   </View>
-                  {selectedCountry.code === item.code && selectedCountry.name === item.name && (
+                    {isSelected && (
                     <MaterialIcons name="check" size={20} color={COLORS.primary} />
                   )}
                 </TouchableOpacity>
-              )}
+                );
+              }}
               style={styles.countryList}
             />
           </View>
@@ -917,6 +1019,31 @@ const styles = StyleSheet.create({
     marginTop: -10,
     marginBottom: 10,
     marginLeft: 15,
+  },
+  alternateToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginTop: 5,
+    marginBottom: 10,
+  },
+  alternateToggleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  alternateToggleText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  alternateSummary: {
+    fontSize: 14,
+    color: '#666',
   },
   imageSection: {
     backgroundColor: '#f5f5f5',
