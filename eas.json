@@ -24,11 +24,23 @@
     },
     "production": {
       "autoIncrement": true,
+      "cache": {
+        "disabled": false,
+        "cacheDefaultPaths": true,
+        "paths": ["node_modules", ".expo", "ios/Podfile.lock"]
+      },
+      "env": {
+        "NODE_ENV": "production"
+      },
       "android": {
         "buildType": "apk"
       },
       "ios": {
-        "distribution": "store"
+        "distribution": "store",
+        "cache": {
+          "disabled": false
+        },
+        "buildConfiguration": "Release"
       }
     }
   },

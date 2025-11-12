@@ -12,7 +12,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { BarChart, PieChart, LineChart } from 'react-native-chart-kit';
+// Chart components temporarily disabled due to compatibility issues
 
 import { COLORS } from '../../constants/colors';
 import EventHeader from '../../components/EventHeader';
@@ -282,7 +282,7 @@ export default function EventAnalyticsScreen() {
         {analytics.registrationTrend.length > 0 && (
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Registration Trend</Text>
-            <LineChart
+            {/* <LineChart
               data={{
                 labels: analytics.registrationTrend.map(item => item.date.split(' ')[0]),
                 datasets: [{
@@ -295,14 +295,14 @@ export default function EventAnalyticsScreen() {
               chartConfig={chartConfig}
               bezier
               style={styles.chart}
-            />
+            /> */}
           </View>
         )}
 
         {/* Attendance Overview */}
         <View style={styles.chartContainer}>
           <Text style={styles.chartTitle}>Attendance Overview</Text>
-          <PieChart
+          {/* <PieChart
             data={[
               {
                 name: 'Checked In',
@@ -327,27 +327,29 @@ export default function EventAnalyticsScreen() {
             paddingLeft="0"
             center={[-10, 0]}
             style={styles.chart}
-          />
+          /> */}
+          <View style={styles.chartPlaceholder}>
+            <Text style={styles.chartPlaceholderText}>
+              Attendance Chart
+            </Text>
+            <Text style={styles.chartPlaceholderSubtext}>
+              {analytics.checkedInCount} / {analytics.totalRegistrations} checked in
+            </Text>
+          </View>
         </View>
 
         {/* Registrations by Day */}
         {analytics.registrationsByDay.length > 0 && (
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Registrations by Day</Text>
-            <BarChart
-              data={{
-                labels: analytics.registrationsByDay.map(item => item.day),
-                datasets: [{
-                  data: analytics.registrationsByDay.map(item => item.count)
-                }]
-              }}
-              width={screenWidth - 40}
-              height={200}
-              chartConfig={chartConfig}
-              yAxisLabel=""
-              yAxisSuffix=""
-              style={styles.chart}
-            />
+            <View style={styles.chartPlaceholder}>
+              <Text style={styles.chartPlaceholderText}>
+                Chart temporarily unavailable
+              </Text>
+              <Text style={styles.chartPlaceholderSubtext}>
+                {analytics.registrationsByDay.length} days of data available
+              </Text>
+            </View>
           </View>
         )}
 
@@ -440,6 +442,24 @@ const styles = StyleSheet.create({
   },
   chart: {
     borderRadius: 12,
+  },
+  chartPlaceholder: {
+    height: 200,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  chartPlaceholderText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.gray,
+    marginBottom: 8,
+  },
+  chartPlaceholderSubtext: {
+    fontSize: 14,
+    color: COLORS.gray,
   },
   actionsContainer: {
     flexDirection: 'row',

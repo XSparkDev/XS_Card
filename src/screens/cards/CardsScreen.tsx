@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions, Share } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
@@ -11,6 +11,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import { useColorScheme } from '../../context/ColorSchemeContext';
 import { getImageUrl } from '../../utils/imageUtils';
+import { isProfileIncompleteError } from '../../utils/profileErrorHandler';
+import ProfileCompletionModal from '../../components/ProfileCompletionModal';
 
 // Update interfaces to match new data structure
 interface UserData {
@@ -49,7 +51,7 @@ interface CardData {
 interface ShareOption {
   id: string;
   name: string;
-  icon: 'whatsapp' | 'send' | 'email';
+  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
   color: string;
   action: () => void;
 }
@@ -105,6 +107,7 @@ export default function CardsScreen() {
   // Add these new state variables at the beginning of the CardsScreen component
   const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'email' | 'phone' | null>(null);
+  const [showProfileCompletionModal, setShowProfileCompletionModal] = useState(false);
   const [modalData, setModalData] = useState<string>('');
 
   // Update the cards state definition
@@ -136,38 +139,6 @@ export default function CardsScreen() {
       };
 
       loadCards();
-    }, [])
-  );
-
-  useFocusEffect(
-    React.useCallback(() => {
-      setIsLoading(true);
-      
-      // Add a direct API check when screen gets focus to verify server data
-      const verifyServerData = async () => {
-        try {
-          const userId = await getUserId();
-          if (userId) {
-            const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
-            const cardsData = await response.json();
-            console.log('FOCUS CHECK - Cards API response:', JSON.stringify(cardsData, null, 2));
-            
-            // Check if logoZoomLevel exists in the data
-            if (cardsData && cardsData.length > 0) {
-              cardsData.forEach((card: any, index: number) => {
-                console.log(`Card ${index} zoom level:`, card.logoZoomLevel);
-              });
-            }
-          }
-        } catch (error) {
-          console.error('Error in verification check:', error);
-        }
-      };
-      
-      verifyServerData();
-      loadUserData().finally(() => {
-        setIsLoading(false);
-      });
     }, [])
   );
 
@@ -205,11 +176,32 @@ export default function CardsScreen() {
         // Log the first card's data to check if scans and logoZoomLevel are included
         console.log('Card data received:', JSON.stringify(cardsArray[0], null, 2));
         
+        // Debug profile image and company logo specifically
+        cardsArray.forEach((card: any, index: number) => {
+          console.log(`Card ${index} - Profile Image:`, card.profileImage);
+          console.log(`Card ${index} - Company Logo:`, card.companyLogo);
+          console.log(`Card ${index} - Profile Image URL processed:`, getImageUrl(card.profileImage));
+          console.log(`Card ${index} - Company Logo URL processed:`, getImageUrl(card.companyLogo));
+        });
+        
         setUserData({
           id: userId,
           cards: cardsArray,
           analytics: analytics // Store analytics for future use
         });
+
+        // Cache cards data in AsyncStorage with timestamp
+        try {
+          const cacheData = {
+            data: cardsArray,
+            analytics: analytics,
+            timestamp: Date.now()
+          };
+          await AsyncStorage.setItem('cachedCards', JSON.stringify(cacheData));
+          console.log('✅ Cached cards data for Dashboard reuse');
+        } catch (cacheError) {
+          console.error('Error caching cards:', cacheError);
+        }
 
         // Set card color from the first card (index 0)
         if (cardsArray[0].colorScheme) {
@@ -221,8 +213,47 @@ export default function CardsScreen() {
       fetchQRCode(userId);
     } catch (error) {
       console.error('Error loading data:', error);
+      
+      // Check if this is a profile incomplete error
+      if (isProfileIncompleteError(error)) {
+        console.log('Detected profile incomplete error during data loading, showing completion modal');
+        setShowProfileCompletionModal(true);
+        return;
+      }
     }
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setIsLoading(true);
+      
+      // Add a direct API check when screen gets focus to verify server data
+      const verifyServerData = async () => {
+        try {
+          const userId = await getUserId();
+          if (userId) {
+            const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+            const cardsData = await response.json();
+            console.log('FOCUS CHECK - Cards API response:', JSON.stringify(cardsData, null, 2));
+            
+            // Check if logoZoomLevel exists in the data
+            if (cardsData && cardsData.length > 0) {
+              cardsData.forEach((card: any, index: number) => {
+                console.log(`Card ${index} zoom level:`, card.logoZoomLevel);
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error in verification check:', error);
+        }
+      };
+      
+      verifyServerData();
+      loadUserData().finally(() => {
+        setIsLoading(false);
+      });
+    }, [])
+  );
 
   // Add this effect to update card color when page changes
   useEffect(() => {
@@ -258,6 +289,15 @@ export default function CardsScreen() {
       reader.readAsDataURL(blob);
     } catch (error) {
       console.error('Error fetching QR code:', error);
+      
+      // Check if this is a profile incomplete error
+      if (isProfileIncompleteError(error)) {
+        console.log('Detected profile incomplete error, showing completion modal');
+        setShowProfileCompletionModal(true);
+        return;
+      }
+      
+      // Show technical errors for other issues
       Alert.alert('Error', 'Failed to generate QR code');
     }
   };
@@ -344,6 +384,52 @@ export default function CardsScreen() {
         Linking.openURL(emailUrl).catch(() => {
           Alert.alert('Error', 'Could not open email client');
         });
+      }
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      icon: 'linkedin',
+      color: '#0077B5',
+      action: async () => {
+        if (!userData?.id) {
+          Alert.alert('Error', 'User data not available');
+          return;
+        }
+        
+        const saveContactUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+        const message = `Check out my digital business card!`;
+        
+        const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(saveContactUrl)}&summary=${encodeURIComponent(message)}`;
+        
+        Linking.openURL(linkedinUrl).catch(() => {
+          Alert.alert('Error', 'Could not open LinkedIn');
+        });
+      }
+    },
+    {
+      id: 'more',
+      name: 'More',
+      icon: 'more-horiz',
+      color: '#6B7280',
+      action: async () => {
+        if (!userData?.id) {
+          Alert.alert('Error', 'User data not available');
+          return;
+        }
+        
+        const saveContactUrl = `${API_BASE_URL}/saveContact.html?userId=${userData.id}`;
+        const message = `Check out my digital business card!`;
+        
+        try {
+          await Share.share({
+            message: `${message}\n\n${saveContactUrl}`,
+            url: saveContactUrl,
+            title: 'My Digital Business Card'
+          });
+        } catch (error) {
+          Alert.alert('Error', 'Could not open share options');
+        }
       }
     }
   ];
@@ -487,10 +573,71 @@ export default function CardsScreen() {
     setIsOptionsModalVisible(true);
   };
 
+  const handleSocialPress = (platform: string, value: string) => {
+    try {
+      let url = '';
+      
+      switch (platform) {
+        case 'whatsapp':
+          // WhatsApp expects phone number without + or spaces
+          const cleanPhone = value.replace(/[^\d]/g, '');
+          url = `https://wa.me/${cleanPhone}`;
+          break;
+        case 'x':
+          // X (Twitter) - remove @ if present
+          const twitterHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://x.com/${twitterHandle}`;
+          break;
+        case 'facebook':
+          // Facebook - remove @ if present
+          const facebookHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://facebook.com/${facebookHandle}`;
+          break;
+        case 'linkedin':
+          // LinkedIn - remove @ if present
+          const linkedinHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://linkedin.com/in/${linkedinHandle}`;
+          break;
+        case 'website':
+          // Website - add https:// if not present
+          url = value.startsWith('http') ? value : `https://${value}`;
+          break;
+        case 'tiktok':
+          // TikTok - remove @ if present
+          const tiktokHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://tiktok.com/@${tiktokHandle}`;
+          break;
+        case 'instagram':
+          // Instagram - remove @ if present
+          const instagramHandle = value.startsWith('@') ? value.substring(1) : value;
+          url = `https://instagram.com/${instagramHandle}`;
+          break;
+        default:
+          console.warn('Unknown social platform:', platform);
+          return;
+      }
+      
+      // Open the URL
+      Linking.openURL(url).catch((error) => {
+        console.error('Failed to open social link:', error);
+        Alert.alert('Error', `Could not open ${platform}. Please check if the app is installed.`);
+      });
+      
+    } catch (error) {
+      console.error('Error handling social press:', error);
+      Alert.alert('Error', 'Failed to open social media link');
+    }
+  };
+
   const handleEditCard = () => {
-    navigation.navigate('EditCard', { 
-      cardIndex: currentPage // Ensure currentPage is passed
-    });
+    // Pass the actual card data instead of just the index
+    const currentCardData = userData?.cards?.[currentPage];
+    if (currentCardData) {
+      navigation.navigate('EditCard', { 
+        cardIndex: currentPage,
+        cardData: currentCardData // Pass the full card data
+      } as any);
+    }
   };
 
   // Update the dynamic styles for the share button
@@ -615,7 +762,7 @@ export default function CardsScreen() {
         rightIcon={
           <TouchableOpacity onPress={handleEditCard}>
             <Text style={styles.headerIconContainer}>
-              <MaterialIcons name="edit" size={24} color={COLORS.black} />
+              <MaterialIcons name="edit" size={24} color={COLORS.white} />
             </Text>
           </TouchableOpacity>
         }
@@ -666,6 +813,11 @@ export default function CardsScreen() {
                       fadeDuration={300} // Smooth fade-in animation when loading
                       onError={(error) => {
                         console.warn('Failed to load company logo:', error.nativeEvent.error);
+                        console.log('Company logo URL that failed:', card.companyLogo);
+                        console.log('Processed logo URL:', getImageUrl(card.companyLogo));
+                      }}
+                      onLoad={() => {
+                        console.log('Company logo loaded successfully:', card.companyLogo);
                       }}
                   />
                   </View>
@@ -679,6 +831,11 @@ export default function CardsScreen() {
                         }
                         onError={(error) => {
                           console.warn('Failed to load profile image:', error.nativeEvent.error);
+                          console.log('Profile image URL that failed:', card.profileImage);
+                          console.log('Processed URL:', getImageUrl(card.profileImage));
+                        }}
+                        onLoad={() => {
+                          console.log('Profile image loaded successfully:', card.profileImage);
                         }}
                       />
                     </Animated.View>
@@ -687,13 +844,13 @@ export default function CardsScreen() {
 
                 {/* Basic Info */}
                 <Text style={[styles.name, styles.leftAligned]}>
-                  {`${card.name} ${card.surname}`}
+                  {`${card.name || ''} ${card.surname || ''}`}
                 </Text>
                 <Text style={[styles.position, styles.leftAligned]}>
-                  {card.occupation}
+                  {card.occupation || 'No occupation'}
                 </Text>
                 <Text style={[styles.company, styles.leftAligned]}>
-                  {card.company}
+                  {card.company || 'No company'}
                 </Text>
 
                 {/* Contact Info */}
@@ -702,7 +859,7 @@ export default function CardsScreen() {
                   onPress={() => handleEmailPress(card.email)}
                 >
                   <MaterialCommunityIcons name="email-outline" size={30} color={card.colorScheme} />
-                  <Text style={styles.contactText}>{card.email}</Text>
+                  <Text style={styles.contactText}>{card.email || 'No email address'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -710,7 +867,7 @@ export default function CardsScreen() {
                   onPress={() => handlePhonePress(card.phone)}
                 >
                   <MaterialCommunityIcons name="phone-outline" size={30} color={card.colorScheme} />
-                  <Text style={styles.contactText}>{card.phone}</Text>
+                  <Text style={styles.contactText}>{card.phone || 'No phone number'}</Text>
                 </TouchableOpacity>
 
                 {/* Social Links */}
@@ -721,16 +878,14 @@ export default function CardsScreen() {
                       <TouchableOpacity 
                         key={platform}
                         style={[styles.contactSection, styles.leftAligned]}
-                        onPress={() => {
-                          // ...existing social link handling code...
-                        }}
+                        onPress={() => handleSocialPress(platform, textValue)}
                       >
                         <MaterialCommunityIcons 
                           name={socialIcons[platform]} 
                           size={30} 
                           color={card.colorScheme} 
                         />
-                        <Text style={styles.contactText}>{textValue}</Text>
+                        <Text style={styles.contactText}>{textValue || ''}</Text>
                       </TouchableOpacity>
                     );
                   }
@@ -814,11 +969,14 @@ export default function CardsScreen() {
                 >
                   <View style={[styles.iconCircle, { backgroundColor: option.color }]}>
                     {option.id === 'whatsapp' ? (
-                      <MaterialCommunityIcons name="whatsapp" size={24} color={COLORS.white} />
+                      <MaterialCommunityIcons name="whatsapp" size={22} color={COLORS.white} />
+                    ) : option.id === 'linkedin' ? (
+                      <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
                     ) : (
-                      <MaterialIcons name={option.icon as 'send' | 'email'} size={24} color={COLORS.white} />
+                      <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
                     )}
                   </View>
+                  <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -883,6 +1041,21 @@ export default function CardsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Profile Completion Modal */}
+      <ProfileCompletionModal
+        visible={showProfileCompletionModal}
+        onClose={() => setShowProfileCompletionModal(false)}
+        onCompleteProfile={() => {
+          setShowProfileCompletionModal(false);
+          // Navigate to Auth stack first, then to CompleteProfile
+          // CardsScreen is in MainApp, CompleteProfile is in Auth stack
+          navigation.getParent()?.getParent()?.navigate('Auth', {
+            screen: 'CompleteProfile',
+            params: { userId: userData?.id }
+          });
+        }}
+      />
     </View>
   );
 }
@@ -1009,11 +1182,16 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: COLORS.white,
-    padding: 20,
-    borderRadius: 20,
-    width: '80%',
-    maxWidth: 300,
+    padding: 30,
+    borderRadius: 24,
+    width: '90%',
+    maxWidth: 400,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 60,
+    elevation: 20,
   },
   closeButton: {
     position: 'absolute',
@@ -1027,17 +1205,27 @@ const styles = StyleSheet.create({
   },
   shareOptions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-evenly',
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: 5,
   },
   shareOption: {
-    padding: 10,
+    alignItems: 'center',
+    padding: 4,
+    flex: 1,
+    maxWidth: 60,
+  },
+  shareOptionText: {
+    fontSize: 10,
+    color: COLORS.black,
+    marginTop: 4,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     justifyContent: 'center',
     alignItems: 'center',
   },

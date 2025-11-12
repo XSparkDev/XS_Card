@@ -9,13 +9,35 @@ dist/
 web-build/
 expo-env.d.ts
 
+# Build artifacts and cache
+*.log
+*.tgz
+build/
+.cache/
+
+# Large backup files
+*_old.jpg
+*_old.png
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
 # Native
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
+
+# Android Release Keystore Info (contains sensitive passwords)
+**/keystore-info.txt
+android/app/release-key.keystore
 
 # Metro
 .metro-health-check*
@@ -31,6 +53,13 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.local
+.env.development
+.env.production
 
 # typescript
 *.tsbuildinfo
+a n d r o i d - c o r r u p t e d / 
+ 
+ 

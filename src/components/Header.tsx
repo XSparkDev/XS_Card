@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from '../context/ColorSchemeContext';
-import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, testTokenExpiration, manuallyExpireToken } from '../utils/api';
+import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
 // Update this type to match your actual navigation type
@@ -15,6 +15,7 @@ type RootStackParamList = {
   AddCards: undefined;
   EditCard: undefined;
   SignIn: undefined;
+  Auth: undefined;
   UnlockPremium: undefined;
   Cards: undefined;
   Events: undefined;
@@ -40,57 +41,38 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const { logout } = useAuth(); // Use our centralized auth context
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
-  useEffect(() => {
-    const syncUserPlan = async () => {
-      try {
-        // First, get cached plan from AsyncStorage
-        const userData = await AsyncStorage.getItem('userData');
-        if (userData) {
-          const { plan } = JSON.parse(userData);
-          setUserPlan(plan);
-          console.log('Header: Loaded cached plan:', plan);
-        }
+  const syncUserPlan = async () => {
+    try {
+      // First, get cached plan from AsyncStorage
+      const userData = await AsyncStorage.getItem('userData');
+      if (userData) {
+        const { plan } = JSON.parse(userData);
+        setUserPlan(plan);
+        console.log('Header: Loaded cached plan:', plan);
+      }
 
         // Then, sync with backend to ensure accuracy
+        // CENTRALIZED RBAC: Only check users.plan field from GET_USER endpoint
         try {
-          const response = await authenticatedFetchWithRefresh(ENDPOINTS.SUBSCRIPTION_STATUS, {
+          // Get current user ID
+          const userId = await getUserId();
+          if (!userId) {
+            console.log('Header: No user ID found, using cached plan');
+            return;
+          }
+          
+          // Get current user's data (not all users)
+          const userResponse = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_USER}/${userId}`, {
             method: 'GET',
           });
           
-          if (response.ok) {
-            const data = await response.json();
-            console.log('Header: Subscription status check:', data);
+          if (userResponse.ok) {
+            const userResponseData = await userResponse.json();
+            console.log('Header: User data check:', userResponseData);
             
-            let actualPlan = 'free'; // Default
-            
-            // Check if user has active subscription
-            if (data.status && data.data?.isActive) {
-              actualPlan = 'premium';
-              console.log('Header: User has active subscription status - setting to premium');
-            }
-            
-            // 🔥 ADDITIONAL CHECK: Also check the user's plan field directly from GET_USER endpoint
-            try {
-              const userResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_USER, {
-                method: 'GET',
-              });
-              
-              if (userResponse.ok) {
-                const userResponseData = await userResponse.json();
-                console.log('Header: User data check:', userResponseData);
-                
-                // Check if user data indicates premium plan
-                const userPlan = userResponseData.user?.plan || userResponseData.plan;
-                if (userPlan === 'premium' || userPlan === 'enterprise') {
-                  actualPlan = userPlan;
-                  console.log(`Header: User data shows plan: ${userPlan} - overriding subscription check`);
-                }
-              }
-            } catch (userError) {
-              console.log('Header: Could not fetch user data for plan check:', userError instanceof Error ? userError.message : 'Unknown error');
-            }
-            
-            console.log('Header: Final determined plan:', actualPlan);
+            // Get plan from users collection (single source of truth)
+            const actualPlan = userResponseData.plan || 'free';
+            console.log(`Header: User plan from database: ${actualPlan}`);
             
             // Update UI immediately
             setUserPlan(actualPlan);
@@ -110,19 +92,30 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
               }
             }
           } else {
-            console.log('Header: Could not check subscription status, using cached plan');
+            console.log('Header: Could not check user data, using cached plan');
           }
         } catch (syncError) {
           console.log('Header: Sync failed, using cached plan:', syncError instanceof Error ? syncError.message : 'Unknown error');
           // Continue with cached plan if sync fails
         }
-      } catch (error) {
-        console.error('Header: Error in plan synchronization:', error);
-      }
-    };
+    } catch (error) {
+      console.error('Header: Error in plan synchronization:', error);
+    }
+  };
 
+  // Initial load
+  useEffect(() => {
     syncUserPlan();
   }, []);
+
+  // 🔥 CRITICAL FIX: Refresh plan when screen comes into focus
+  // This ensures RBAC updates when database changes
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('Header: Screen focused - refreshing user plan...');
+      syncUserPlan();
+    }, [])
+  );
 
   const handleAddPress = () => {
     navigation.navigate('AddCards');
@@ -150,10 +143,10 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
       
       console.log('Header: Logout completed, navigating to SignIn');
       
-      // Navigate to SignIn
+      // Navigate to Auth
       navigation.reset({
         index: 0,
-        routes: [{ name: 'SignIn' }],
+        routes: [{ name: 'Auth' }],
       });
       
     } catch (error) {
@@ -169,7 +162,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             onPress: () => {
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'SignIn' }],
+                routes: [{ name: 'Auth' }],
               });
             }
           }
@@ -204,7 +197,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
           onPress={() => setIsMenuVisible(true)}
         >
           <Text style={styles.iconContainer}>
-            <MaterialIcons name="menu" size={24} color={COLORS.black} />
+            <MaterialIcons name="menu" size={24} color={COLORS.white} />
           </Text>
         </TouchableOpacity>
 
@@ -216,7 +209,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
           {showAddButton && userPlan !== 'free' && userPlan !== 'enterprise' && (
             <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
               <Text style={styles.iconContainer}>
-                <MaterialIcons name="add" size={24} color={COLORS.black} />
+                <MaterialIcons name="add" size={24} color={COLORS.white} />
               </Text>
             </TouchableOpacity>
           )}
@@ -278,31 +271,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Settings</Text>
             </TouchableOpacity>
 
-            {/* DEVELOPMENT ONLY: Test Token Expiration */}
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={async () => {
-                console.log('[Test] Testing token expiration...');
-                await testTokenExpiration();
-                setIsMenuVisible(false);
-              }}
-            >
-              <MaterialIcons name="bug-report" size={24} color="#FF6B35" />
-              <Text style={[styles.menuText, { color: '#FF6B35' }]}>Test Token Expiry</Text>
-            </TouchableOpacity>
 
-            {/* DEVELOPMENT ONLY: Manually Expire Token */}
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={async () => {
-                console.log('[Test] Manually expiring token...');
-                await manuallyExpireToken();
-                setIsMenuVisible(false);
-              }}
-            >
-              <MaterialIcons name="delete" size={24} color="#FF4444" />
-              <Text style={[styles.menuText, { color: '#FF4444' }]}>Manual Token Expiry</Text>
-            </TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.menuItem}
@@ -324,12 +293,12 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: 55,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 55,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.secondary,
     zIndex: 1,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
@@ -338,12 +307,12 @@ const styles = StyleSheet.create({
     paddingTop: 52,
     position: 'absolute',
     left: '55%',
-    transform: [{ translateX: '-50%' }],
+    transform: [{ translateX: -50 }],
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.black,
+    color: COLORS.white,
   },
   icon: {
     width: 24,

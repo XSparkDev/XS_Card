@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { 
   getKeepLoggedInPreference, 
   clearAuthData, 
@@ -14,6 +15,7 @@ import { signOut as firebaseSignOut } from 'firebase/auth';
 export class AuthManager {
   private static tokenRefreshTimer: NodeJS.Timeout | null = null;
   private static isTokenRefreshActive = false;
+  private static isExportingContact = false; // Flag to track contact export operations
 
   /**
    * Handle app going to background - ENHANCED FOR FIREBASE INTEGRATION
@@ -21,7 +23,13 @@ export class AuthManager {
    */
   static async handleAppBackground(): Promise<void> {
     try {
-      console.log('AuthManager: Handling app background');
+      console.log('AuthManager: Handling app background - Platform:', Platform.OS);
+      
+      // Check if we're in the middle of a contact export operation
+      if (this.isExportingContact) {
+        console.log('AuthManager: Contact export in progress, skipping auto-logout');
+        return;
+      }
       
       const keepLoggedIn = await getKeepLoggedInPreference();
       console.log('Keep logged in preference:', keepLoggedIn);
@@ -31,6 +39,16 @@ export class AuthManager {
         await this.performAutoLogout();
       } else {
         console.log('Keep logged in is enabled, maintaining session');
+        
+        // iOS-specific debugging
+        if (Platform.OS === 'ios') {
+          console.log('iOS: Checking current auth state before background');
+          const authData = await getStoredAuthData();
+          console.log('iOS: Current auth data:', authData ? 'exists' : 'null');
+          const firebaseUser = auth.currentUser;
+          console.log('iOS: Firebase user:', firebaseUser ? firebaseUser.uid : 'null');
+        }
+        
         // Token refresh is now handled by AuthContext Firebase integration
         // We don't need manual timers here anymore
         console.log('AuthManager: Session maintained by AuthContext Firebase integration');
@@ -46,7 +64,11 @@ export class AuthManager {
    */
   static async handleAppForeground(): Promise<void> {
     try {
-      console.log('AuthManager: Handling app foreground');
+      console.log('AuthManager: Handling app foreground - Platform:', Platform.OS);
+      
+      // Reset export flag when app comes back to foreground
+      this.isExportingContact = false;
+      console.log('AuthManager: Reset contact export flag on foreground');
       
       const keepLoggedIn = await getKeepLoggedInPreference();
       console.log('Keep logged in preference:', keepLoggedIn);
@@ -54,19 +76,32 @@ export class AuthManager {
       if (keepLoggedIn) {
         console.log('Keep logged in is enabled');
         
-        // Check if Firebase user is still authenticated
-        const firebaseUser = auth.currentUser;
-        if (firebaseUser) {
-          console.log('Firebase user is still authenticated:', firebaseUser.uid);
-          // AuthContext Firebase listener will handle token refresh automatically
-          // Just ensure token refresh service is active
+        // iOS-specific debugging
+        if (Platform.OS === 'ios') {
+          console.log('iOS: Checking auth state after foreground');
+          const authData = await getStoredAuthData();
+          console.log('iOS: Stored auth data after foreground:', authData ? 'exists' : 'null');
+          if (authData) {
+            console.log('iOS: Stored token exists:', authData.userToken ? 'yes' : 'no');
+            console.log('iOS: Stored keepLoggedIn:', authData.keepLoggedIn);
+          }
+        }
+        
+        // ✅ FIX: Don't require Firebase user when keepLoggedIn is true
+        // Firebase may lose its in-memory session after app termination,
+        // but we have the token in AsyncStorage which persists
+        const storedAuthData = await getStoredAuthData();
+        
+        if (storedAuthData && storedAuthData.userToken) {
+          console.log('Stored auth data found, maintaining session');
+          // AuthContext will restore the session from AsyncStorage
           console.log('AuthManager: Ensuring token refresh service is active');
           scheduleTokenRefresh();
           
           // Update last activity time
           await updateLastLoginTime();
         } else {
-          console.log('No Firebase user found, performing auto logout');
+          console.log('No stored auth data found, performing auto logout');
           await this.performAutoLogout();
         }
       } else {
@@ -244,5 +279,20 @@ export class AuthManager {
         firebaseUser: false,
       };
     }
+  }
+
+  /**
+   * Set the contact export flag to prevent auto-logout during export
+   */
+  static setContactExporting(exporting: boolean): void {
+    this.isExportingContact = exporting;
+    console.log('AuthManager: Contact export flag set to:', exporting);
+  }
+
+  /**
+   * Check if contact export is in progress
+   */
+  static isContactExportInProgress(): boolean {
+    return this.isExportingContact;
   }
 } 

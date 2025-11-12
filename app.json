@@ -1,28 +1,31 @@
 {
   "expo": {
-    "name": "XSCard App",
+    "name": "XS Card",
     "slug": "xscard",
-    "version": "1.0.0",
+    "version": "207",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
+    "description": "XS Card - Your digital business card solution. Create, share, and manage professional digital business cards with premium features. Terms of Use: https://xscard.co.za/terms",
     "splash": {
       "image": "./assets/icons/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
     "assetBundlePatterns": [
-      "**/*"
+      "assets/**/*",
+      "src/**/*"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.p.zzles.xscard",
-      "buildNumber": "1.0.2",
+      "buildNumber": "25",
       "icon": "./assets/icons/icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
-      }
+      },
+      "scheme": "XSCard"
     },
     "android": {
       "adaptiveIcon": {
@@ -48,14 +51,13 @@
       }
     },
     "owner": "p.zzles",
-    "id": "a84f7923-57e3-41c8-a3dc-3c07fb9013dc",
     "plugins": [
       "expo-font",
       [
         "expo-image-picker",
         {
-                  "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
-        "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
+          "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
+          "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
         }
       ]
     ]

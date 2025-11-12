@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Storage keys for authentication data
 export const AUTH_STORAGE_KEYS = {
@@ -25,6 +26,7 @@ export interface AuthData {
 export const getKeepLoggedInPreference = async (): Promise<boolean> => {
   try {
     const preference = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.KEEP_LOGGED_IN);
+    console.log('getKeepLoggedInPreference - Raw value:', preference);
     return preference === 'true';
   } catch (error) {
     console.warn('Error getting keep logged in preference:', error);
@@ -38,7 +40,12 @@ export const getKeepLoggedInPreference = async (): Promise<boolean> => {
  */
 export const setKeepLoggedInPreference = async (value: boolean): Promise<void> => {
   try {
+    console.log('setKeepLoggedInPreference - Setting value:', value);
     await AsyncStorage.setItem(AUTH_STORAGE_KEYS.KEEP_LOGGED_IN, value.toString());
+    
+    // Verify it was stored correctly
+    const verification = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.KEEP_LOGGED_IN);
+    console.log('setKeepLoggedInPreference - Verification read:', verification);
   } catch (error) {
     console.error('Error setting keep logged in preference:', error);
     throw new Error('Failed to save login preference');
@@ -122,6 +129,11 @@ export const storeAuthData = async (authData: Partial<AuthData>): Promise<void> 
     }
 
     await Promise.all(promises);
+    
+    // iOS-specific: Add a small delay to ensure storage is complete
+    if (Platform.OS === 'ios') {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   } catch (error) {
     console.error('Error storing auth data:', error);
     throw new Error('Failed to store authentication data');

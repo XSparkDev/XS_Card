@@ -1,0 +1,48 @@
+name: Pre-deployment checks
+
+on:
+  push:
+    branches: [main, production]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      API_BASE: ${{ secrets.API_BASE }}
+      TEST_USER_ID: ${{ secrets.TEST_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install deps (root)
+        run: npm ci
+      - name: Endpoint test - AddContact must pass
+        run: node backend/test-addcontact-route.js
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "CI Failed: ${{ github.workflow }} @ ${{ github.ref_name }}"
+          to: ${{ secrets.NOTIFY_EMAILS }}
+          from: "CI Bot <no-reply@xscard.co.za>"
+          content_type: text/plain
+          body: |
+            Workflow: ${{ github.workflow }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # Optional future Slack step (placeholder)
+      # - name: Slack Failure Notification
+      #   if: failure()
+      #   uses: slackapi/slack-github-action@v1
+      #   with:
+      #     payload: '{"text":"CI Failed on ${{ github.ref_name }}"}'
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+

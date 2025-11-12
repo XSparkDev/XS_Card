@@ -1,21 +1,33 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
 
 // Firebase configuration for XSCard App
 // This should match your Firebase project (same as backend)
 const firebaseConfig = {
-    apiKey: "AIzaSyAHxd3TGf8v9DVUevw6p5F47EBV7ihYTuk", // From your FIREBASE_WEB_API_KEY
-    authDomain: "xscard-addd4.firebaseapp.com", // Your project + .firebaseapp.com  
-    projectId: "xscard-addd4", // From your FIREBASE_PROJECT_ID
-    storageBucket: "xscard-addd4.firebasestorage.app", // From your FIREBASE_STORAGE_BUCKET
-    messagingSenderId: "628567737496", // Get this from Firebase Console
-    appId: "NEED_FROM_CONSOLE" // Get this from Firebase Console
+    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyA1cmFJD61yxZ36hEOXF48r145ZdWA3Pjo",
+    authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "xscard-addd4.firebaseapp.com",
+    projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "xscard-addd4",
+    storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "xscard-addd4.firebasestorage.app",
+    messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "628567737496",
+    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:628567737496:web:627d89a8a52ab35d4a7ced"
   };
 
-// Initialize Firebase
-export const app = initializeApp(firebaseConfig);
+// Initialize Firebase with error handling
+let app: FirebaseApp;
+let auth: Auth;
 
-// Initialize Firebase Auth
-export const auth = getAuth(app);
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  console.log('Firebase client initialized for project:', firebaseConfig.projectId);
+  
+  // Note: Firebase will show a warning about memory persistence
+  // However, we handle session persistence via AsyncStorage in AuthContext and authStorage
+  // The token and user data are stored in AsyncStorage, which persists across app restarts
+} catch (error: any) {
+  console.error('Firebase initialization failed:', error);
+  console.error('Firebase config:', firebaseConfig);
+  throw error;
+}
 
-console.log('Firebase client initialized for project:', firebaseConfig.projectId); 
+export { app, auth }; 

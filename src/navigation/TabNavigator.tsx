@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { COLORS } from '../constants/colors';
 import CardsScreen from '../screens/cards/CardsScreen';
 import ContactsScreen from '../screens/contacts/ContactScreen';
@@ -24,10 +25,61 @@ import QRScannerScreen from '../screens/events/QRScannerScreen';
 import CheckInDashboard from '../screens/events/CheckInDashboard';
 import EventAnalyticsScreen from '../screens/events/EventAnalyticsScreen';
 import OrganiserRegistrationScreen from '../screens/events/OrganiserRegistrationScreen';
+import PaymentPendingScreen from '../screens/events/PaymentPendingScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DashboardNavigator from './DashboardNavigator';
+import SubscriptionManagementScreen from '../screens/SubscriptionManagementScreen';
+import PrivacySecurityScreen from '../screens/PrivacySecurityScreen'; // NEW IMPORT
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createStackNavigator<RootStackParamList>();
+
+// Error Boundary Component
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('TabNavigator Error Boundary caught an error:', error);
+    console.error('Error Info:', errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <View style={errorStyles.container}>
+          <Text style={errorStyles.title}>Something went wrong</Text>
+          <Text style={errorStyles.error}>{this.state.error?.message}</Text>
+          <TouchableOpacity 
+            style={errorStyles.button}
+            onPress={() => this.setState({ hasError: false, error: undefined })}
+          >
+            <Text style={errorStyles.buttonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function TabNavigator() {
   const { colorScheme } = useColorScheme();
@@ -63,22 +115,32 @@ function TabNavigator() {
     >
       <Tab.Screen
         name="Cards"
-        component={CardsScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="credit-card" size={24} color={color} />
           ),
         }}
-      />
+      >
+        {() => (
+          <ErrorBoundary>
+            <CardsScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
       <Tab.Screen
         name="Contacts"
-        component={ContactsScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="people" size={24} color={color} />
           ),
         }}
-      />
+      >
+        {() => (
+          <ErrorBoundary>
+            <ContactsScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
@@ -94,19 +156,54 @@ export default function AppNavigator() {
       <Stack.Screen name="AddCards" component={AddCards} />
       <Stack.Screen name="EditCard" component={EditCard} />
       <Stack.Screen name="UnlockPremium" component={UnlockPremium} />
+      <Stack.Screen name="SubscriptionManagement" component={SubscriptionManagementScreen} />
+      <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="Events" component={EventsScreen} />
       <Stack.Screen name="EventDetails" component={EventDetailsScreen} />
       <Stack.Screen name="EventPreferences" component={EventPreferencesScreen} />
       <Stack.Screen name="CreateEvent" component={CreateEventScreen} />
       <Stack.Screen name="EditEvent" component={EditEventScreen} />
       <Stack.Screen name="MyEvents" component={MyEventsScreen} />
-      <Stack.Screen name="PaymentPending" component={require('../screens/events/PaymentPendingScreen').default} />
+      <Stack.Screen name="PaymentPending" component={PaymentPendingScreen} />
       <Stack.Screen name="EventTicket" component={EventTicketScreen} />
       <Stack.Screen name="QRScanner" component={QRScannerScreen} />
       <Stack.Screen name="CheckInDashboard" component={CheckInDashboard} />
       <Stack.Screen name="EventAnalytics" component={EventAnalyticsScreen} />
       <Stack.Screen name="OrganiserRegistration" component={OrganiserRegistrationScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="AdminDashboard" component={DashboardNavigator} />
     </Stack.Navigator>
   );
 }
+
+const errorStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: COLORS.white,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: COLORS.black,
+  },
+  error: {
+    fontSize: 14,
+    color: 'red',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: COLORS.secondary,
+    padding: 10,
+    borderRadius: 5,
+  },
+  buttonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+});

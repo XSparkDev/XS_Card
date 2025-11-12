@@ -644,7 +644,7 @@ export default function EventDetailsScreen() {
         rightIcon={
           isOrganizer ? (
             <TouchableOpacity onPress={() => navigation.navigate('EditEvent', { eventId: event.id, event: event })}>
-              <MaterialIcons name="edit" size={24} color={COLORS.black} />
+              <MaterialIcons name="edit" size={24} color={COLORS.white} />
             </TouchableOpacity>
           ) : undefined
         }
@@ -970,7 +970,7 @@ export default function EventDetailsScreen() {
             setShowBulkRegistration(false);
             toast.success(
               'Bulk Registration Complete!',
-              `Successfully registered ${event.quantity || 2} people for ${event.title}`
+              `Successfully registered ${(event as any).quantity || 2} people for ${event.title}`
             );
             // Refresh event details to show updated registration status
             loadEventDetails();

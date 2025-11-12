@@ -7,8 +7,9 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CommonActions } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -16,6 +17,11 @@ import { COLORS } from '../../constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, ENDPOINTS, getUserId, performServerLogout, authenticatedFetchWithRefresh } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+// RevenueCat imports - iOS payment integration
+import { shouldUseRevenueCat, getPlatformConfig } from '../../utils/paymentPlatform';
+import revenueCatService, { SubscriptionPackage, SubscriptionStatus } from '../../services/revenueCatService';
+import { getRevenueCatApiKey } from '../../config/revenueCatConfig';
+import { PRICING, DEFAULT_CURRENCY, getUserCurrency, getPricing } from '../../config/pricing';
 
 type UnlockPremiumStackParamList = {
   UnlockPremium: undefined;
@@ -23,23 +29,34 @@ type UnlockPremiumStackParamList = {
 };
 
 const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStackParamList, 'UnlockPremium'>) => {
+  const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState('annually');
   const [userPlan, setUserPlan] = useState<string>('free');
   const [isProcessing, setIsProcessing] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [currency, setCurrency] = useState<'ZAR' | 'USD'>('ZAR');
+  const [currency, setCurrency] = useState<'ZAR' | 'USD'>(DEFAULT_CURRENCY as 'ZAR' | 'USD');
+  const [subscriptionData, setSubscriptionData] = useState<any>(null);
+  const [loadingSubscriptionData, setLoadingSubscriptionData] = useState(false);
   const { logout } = useAuth(); // Use our centralized auth context
+  
+  // RevenueCat state - iOS payment integration
+  const [revenueCatPackages, setRevenueCatPackages] = useState<SubscriptionPackage[]>([]);
+  const [revenueCatStatus, setRevenueCatStatus] = useState<SubscriptionStatus | null>(null);
+  const [loadingRevenueCat, setLoadingRevenueCat] = useState(false);
 
-  // Define pricing for both currencies
+  // Get current pricing based on selected currency
+  const currentPricing = getPricing(currency);
+  
+  // Format pricing for display - maintain the expected structure
   const pricing = {
-    ZAR: {
-      annually: { total: 1800, monthly: 150, save: 120 },
-      monthly: { total: 159.99 }
-    },
-    USD: {
-      annually: { total: 99, monthly: 8.25, save: 7 },
-      monthly: { total: 8.99 }
+    [currency]: {
+      annually: { 
+        total: currentPricing.annual, 
+        monthly: currentPricing.annual / 12, 
+        save: Math.round((currentPricing.monthly * 12) - currentPricing.annual) 
+      },
+      monthly: { total: currentPricing.monthly }
     }
   };
 
@@ -50,6 +67,11 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   };
 
   useEffect(() => {
+    // Auto-detect user's preferred currency
+    const detectedCurrency = getUserCurrency();
+    setCurrency(detectedCurrency as 'ZAR' | 'USD');
+    console.log(`Auto-detected currency: ${detectedCurrency}`);
+
     const getUserData = async () => {
       try {
         const userData = await AsyncStorage.getItem('userData');
@@ -65,52 +87,205 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
 
     getUserData();
     checkSubscriptionStatus();
+    
+    // RevenueCat initialization - iOS only
+    const initializeRevenueCat = async () => {
+      if (!shouldUseRevenueCat()) {
+        console.log('Not iOS platform, skipping RevenueCat initialization');
+        return;
+      }
+
+      try {
+        setLoadingRevenueCat(true);
+        
+        // Get user ID for RevenueCat
+        const userId = await getUserId();
+        if (!userId) {
+          console.log('No user ID available for RevenueCat initialization');
+          return;
+        }
+
+        // Configure RevenueCat with platform-specific API key
+        const apiKey = getRevenueCatApiKey();
+        
+        // DEBUG: Show API key in console
+        console.log('RevenueCat: API Key Debug - Platform:', Platform.OS);
+        console.log('RevenueCat: API Key Debug - Key:', apiKey.substring(0, 20) + '...');
+        
+        const configured = await revenueCatService.configure({
+          apiKey: apiKey,
+          userId: userId
+        });
+
+        if (configured) {
+          // Load available packages
+          const packages = await revenueCatService.getOfferings();
+          setRevenueCatPackages(packages);
+          
+          // DEBUG: Show RevenueCat packages in console
+          console.log('RevenueCat: Debug Info - Found', packages.length, 'packages');
+          console.log('RevenueCat: Debug Info - Packages:', packages.map(p => ({
+            id: p.identifier,
+            product: p.product.identifier,
+            title: p.product.title,
+            price: p.product.priceString
+          })));
+          
+          // Check current subscription status
+          const status = await revenueCatService.getSubscriptionStatus();
+          setRevenueCatStatus(status);
+        }
+      } catch (error) {
+        console.error('RevenueCat initialization error:', error);
+      } finally {
+        setLoadingRevenueCat(false);
+      }
+    };
+
+    initializeRevenueCat();
   }, []);
 
   const checkSubscriptionStatus = async () => {
+    setLoadingSubscriptionData(true);
     try {
-      const response = await authenticatedFetchWithRefresh(ENDPOINTS.SUBSCRIPTION_STATUS, {
+      // CENTRALIZED RBAC: Only check users.plan field from GET_USER endpoint
+      const userId = await getUserId();
+      if (!userId) {
+        console.log('UnlockPremium: No user ID found');
+        return;
+      }
+      
+      const response = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_USER}/${userId}`, {
         method: 'GET',
       });
       
       if (response.ok) {
         const data = await response.json();
-        if (data.status && data.data?.isActive) {
-          setUserPlan('premium');
-          
-          // Update local storage with current subscription status
-          const userData = await AsyncStorage.getItem('userData');
-          if (userData) {
-            const parsedUserData = JSON.parse(userData);
-            parsedUserData.plan = 'premium';
-            await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
-          }
+        
+        // Get plan from users collection (single source of truth)
+        const userPlanFromDB = data.plan || 'free';
+        console.log('UnlockPremium: User plan from database:', userPlanFromDB);
+        
+        setUserPlan(userPlanFromDB);
+        
+        // Update local storage with current plan
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const parsedUserData = JSON.parse(userData);
+          parsedUserData.plan = userPlanFromDB;
+          await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
         }
       }
     } catch (error) {
       console.error('Error checking subscription status:', error);
+    } finally {
+      setLoadingSubscriptionData(false);
     }
   };
 
-  // Currency Toggle Component
+  // iOS RevenueCat payment handler
+  const handleIOSPayment = async () => {
+    try {
+      setIsProcessing(true);
+
+      if (!revenueCatService.isReady()) {
+        Alert.alert('Error', 'Payment system not ready. Please try again.');
+        return;
+      }
+
+      // Find the appropriate package based on selected plan
+      const targetPackage = revenueCatPackages.find(pkg => 
+        selectedPlan === 'annually' ? 
+          pkg.identifier.includes('annual') || pkg.packageType === 'ANNUAL' :
+          pkg.identifier.includes('monthly') || pkg.packageType === 'MONTHLY'
+      );
+
+      if (!targetPackage) {
+        Alert.alert('Error', 'Subscription plan not available. Please try again.');
+        return;
+      }
+
+      // Purchase the package
+      const result = await revenueCatService.purchasePackage(targetPackage.identifier);
+      
+      if (result.success) {
+        console.log('✅ Purchase successful, syncing with backend...');
+        
+        // CRITICAL: Sync with backend to update Firestore database
+        // This is necessary because webhooks don't fire for simulator purchases
+        try {
+          const syncResponse = await authenticatedFetchWithRefresh(ENDPOINTS.REVENUECAT_SYNC, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (syncResponse.ok) {
+            const syncData = await syncResponse.json();
+            console.log('✅ Backend sync successful:', syncData);
+          } else {
+            console.warn('⚠️ Backend sync failed, but purchase was successful');
+          }
+        } catch (syncError) {
+          console.error('❌ Backend sync error:', syncError);
+          // Don't fail the purchase flow - user already paid
+        }
+        
+        // Update subscription status
+        const status = await revenueCatService.getSubscriptionStatus();
+        setRevenueCatStatus(status);
+        
+        // Update user plan locally
+        setUserPlan('premium');
+        
+        // Update local storage
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const parsedUserData = JSON.parse(userData);
+          parsedUserData.plan = 'premium';
+          await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
+        }
+
+        Alert.alert(
+          'Payment Successful!',
+          'Your premium subscription is now active. Enjoy all premium features!',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                // Navigate back or refresh the screen
+                navigation.goBack();
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Payment Failed', result.error || 'Could not complete purchase. Please try again.');
+      }
+    } catch (error) {
+      console.error('iOS payment error:', error);
+      Alert.alert('Error', 'Failed to process payment. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Platform-aware payment handler - determines which payment method to use
+  const handlePayment = async () => {
+    if (shouldUseRevenueCat()) {
+      await handleIOSPayment();
+    } else {
+      await handlePaymentInitiation();
+    }
+  };
+
+
+  // Currency Toggle Component - USD first (bigger market)
   const CurrencyToggle = () => (
     <View style={styles.currencyToggleContainer}>
       <Text style={styles.currencyToggleLabel}>Currency:</Text>
       <View style={styles.toggleContainer}>
-        <TouchableOpacity
-          style={[
-            styles.toggleOption,
-            currency === 'ZAR' && styles.toggleOptionActive
-          ]}
-          onPress={() => setCurrency('ZAR')}
-        >
-          <Text style={[
-            styles.toggleText,
-            currency === 'ZAR' && styles.toggleTextActive
-          ]}>
-            ZAR (R)
-          </Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={[
             styles.toggleOption,
@@ -123,6 +298,20 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             currency === 'USD' && styles.toggleTextActive
           ]}>
             USD ($)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.toggleOption,
+            currency === 'ZAR' && styles.toggleOptionActive
+          ]}
+          onPress={() => setCurrency('ZAR')}
+        >
+          <Text style={[
+            styles.toggleText,
+            currency === 'ZAR' && styles.toggleTextActive
+          ]}>
+            ZAR (R)
           </Text>
         </TouchableOpacity>
       </View>
@@ -178,67 +367,15 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     }
   };
 
-  const handleCancelSubscription = async () => {
-    Alert.alert(
-      'Cancel Subscription',
-      'Are you sure you want to cancel your premium subscription? You will lose access to premium features at the end of your billing period.',
-      [
-        {
-          text: 'No, Keep Premium',
-          style: 'cancel',
-        },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              const response = await authenticatedFetchWithRefresh(ENDPOINTS.CANCEL_SUBSCRIPTION, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                }
-              });
-              
-              if (response.ok) {
-                const result = await response.json();
-                console.log('Cancellation result:', result);
-                
-                if (result.status) {
-                  Alert.alert(
-                    'Subscription Cancelled', 
-                    'Your subscription has been cancelled successfully. You will now be logged out.',
-                    [
-                      {
-                        text: 'OK',
-                        onPress: () => logoutUser()
-                      }
-                    ]
-                  );
-                } else {
-                  Alert.alert('Error', result.message || 'Failed to cancel subscription.');
-                }
-              } else {
-                const errorResult = await response.json().catch(() => ({}));
-                Alert.alert('Error', errorResult.message || 'Failed to cancel subscription. Please try again.');
-              }
-            } catch (error) {
-              console.error('Error cancelling subscription:', error);
-              Alert.alert('Error', 'An error occurred while cancelling your subscription. Please try again or contact support.');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
+  const handleManageSubscription = () => {
+    // Navigate directly to subscription management screen
+    navigation.navigate('SubscriptionManagement' as never);
   };
 
   const handlePaymentInitiation = async () => {
     try {
       setIsProcessing(true);
-      const currentPricing = pricing[currency];
-      const amount = selectedPlan === 'annually' ? currentPricing.annually.total : currentPricing.monthly.total;
+      const amount = selectedPlan === 'annually' ? pricing[currency].annually.total : pricing[currency].monthly.total;
 
       const response = await authenticatedFetchWithRefresh(ENDPOINTS.INITIALIZE_PAYMENT, {
         method: 'POST',
@@ -283,35 +420,142 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     }
   };
 
-  const renderPremiumUserUI = () => (
-    <View style={styles.premiumContainer}>
-      <MaterialIcons name="verified" size={80} color={COLORS.primary} />
-      <Text style={styles.premiumTitle}>Premium Subscription Active</Text>
-      <Text style={styles.premiumSubtitle}>
-        You have access to all premium features
-      </Text>
-      <TouchableOpacity
-        style={[styles.cancelButton, isLoading && styles.disabledButton]}
-        onPress={handleCancelSubscription}
-        disabled={isLoading}
-      >
-        <Text style={styles.cancelButtonText}>
-          {isLoading ? 'Processing...' : 'Cancel Subscription'}
+  const renderPremiumUserUI = () => {
+    const getNextBillingDate = () => {
+      if (!subscriptionData) return null;
+      
+      // Try different possible fields for next billing date
+      // Priority: Paystack live data > stored nextBillingDate > subscriptionEnd > trialEndDate > firstBillingDate
+      const nextBilling = subscriptionData.paystackData?.nextPaymentDate ||
+                         subscriptionData.nextBillingDate || 
+                         subscriptionData.subscriptionEnd || 
+                         subscriptionData.trialEndDate ||
+                         subscriptionData.firstBillingDate;
+      
+      if (nextBilling) {
+        const date = new Date(nextBilling);
+        return date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      }
+      
+      return null;
+    };
+
+    const getBillingInfo = () => {
+      if (!subscriptionData) return null;
+      
+      const nextBillingDate = getNextBillingDate();
+      const interval = subscriptionData.interval || subscriptionData.paystackData?.interval || 'monthly';
+      const amount = subscriptionData.amount || subscriptionData.paystackData?.amount;
+      
+      return {
+        nextBillingDate,
+        interval,
+        amount,
+        isLiveData: !!subscriptionData.paystackData
+      };
+    };
+
+    const billingInfo = getBillingInfo();
+
+    return (
+      <View style={styles.premiumContainer}>
+        <MaterialIcons name="verified" size={80} color={COLORS.success} />
+        <Text style={styles.premiumTitle}>Premium Subscription Active</Text>
+        <Text style={styles.premiumSubtitle}>
+          You have access to all premium features
         </Text>
-      </TouchableOpacity>
-    </View>
+        
+        {loadingSubscriptionData ? (
+          <View style={styles.billingInfoContainer}>
+            <MaterialIcons name="schedule" size={20} color={COLORS.primary} />
+            <View style={styles.billingInfoTextContainer}>
+              <Text style={styles.billingInfoText}>
+                Loading billing information...
+              </Text>
+            </View>
+          </View>
+        ) : billingInfo?.nextBillingDate ? (
+          <View style={styles.billingInfoContainer}>
+            <MaterialIcons name="schedule" size={20} color={COLORS.primary} />
+            <View style={styles.billingInfoTextContainer}>
+              <Text style={styles.billingInfoText}>
+                Next billing: {billingInfo.nextBillingDate}
+              </Text>
+               {billingInfo.interval && billingInfo.amount && (
+                 <Text style={styles.billingInfoSubtext}>
+                   {billingInfo.interval === 'annually' ? 'Annual' : 'Monthly'} • R{(billingInfo.amount / 100).toFixed(2)}
+                 </Text>
+               )}
+            </View>
+          </View>
+        ) : subscriptionData ? (
+          <View style={styles.billingInfoContainer}>
+            <MaterialIcons name="info" size={20} color={COLORS.primary} />
+            <View style={styles.billingInfoTextContainer}>
+              <Text style={styles.billingInfoText}>
+                Premium subscription active
+              </Text>
+              <Text style={styles.billingInfoSubtext}>
+                Billing details will be available soon
+              </Text>
+            </View>
+          </View>
+        ) : null}
+        
+        <TouchableOpacity
+          style={[styles.manageButton, isLoading && styles.disabledButton]}
+          onPress={handleManageSubscription}
+          disabled={isLoading}
+        >
+          <Text style={styles.manageButtonText}>
+            Manage Subscription
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const symbol = currencySymbols[currency];
+
+  // Helper function to get trial text from package
+  const getTrialText = (pkg: SubscriptionPackage | undefined): string => {
+    if (!pkg?.product.introPrice) return '';
+    
+    const intro = pkg.product.introPrice;
+    if (intro.price === 0) {
+      // Free trial
+      const duration = `${intro.periodNumberOfUnits} ${intro.periodUnit.toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''}`;
+      return `${duration} free trial`;
+    }
+    // Discounted trial
+    return `${intro.priceString} for ${intro.periodNumberOfUnits} ${intro.periodUnit.toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''}`;
+  };
+
+  // Get packages for display
+  const annualPackage = revenueCatPackages.find(pkg => 
+    pkg.identifier.includes('annual') || pkg.packageType === 'ANNUAL'
+  );
+  const monthlyPackage = revenueCatPackages.find(pkg => 
+    pkg.identifier.includes('monthly') || pkg.packageType === 'MONTHLY'
   );
 
-  const currentPricing = pricing[currency];
-  const symbol = currencySymbols[currency];
+  // Determine if we're using RevenueCat pricing
+  const useRevenueCat = shouldUseRevenueCat() && revenueCatPackages.length > 0;
+  
+  // Show loading state while RevenueCat initializes
+  const isLoadingPricing = shouldUseRevenueCat() && loadingRevenueCat;
 
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity 
-        style={styles.closeButton} 
+        style={[styles.closeButton, { top: Math.max(insets.top, 25) }]} 
         onPress={() => navigation.goBack()}
       >
-        <Text style={styles.closeButtonText}>✕</Text>
+        <MaterialIcons name="arrow-back" size={24} color={COLORS.text} />
       </TouchableOpacity>
 
       {userPlan === 'premium' ? (
@@ -322,53 +566,172 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             Be a better networker, upgrade to XS Card premium
           </Text>
 
-          <TouchableOpacity 
-            style={[
-              styles.trialButton, 
-              { marginVertical: 20 },
-              isProcessing && styles.disabledButton
-            ]}
-            onPress={handlePaymentInitiation}
-            disabled={isProcessing}
-          >
-            <Text style={styles.trialButtonText}>
-              {isProcessing ? 'Processing...' : 'Start your 7-day free trial'}
-            </Text>
-          </TouchableOpacity>
+          {isLoadingPricing ? (
+            <View style={[styles.trialButton, { marginVertical: 20, justifyContent: 'center' }]}>
+              <Text style={styles.trialButtonText}>Loading pricing...</Text>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={[
+                styles.trialButton, 
+                { marginVertical: 20 },
+                isProcessing && styles.disabledButton
+              ]}
+              onPress={handlePayment}
+              disabled={isProcessing}
+            >
+              <Text style={styles.trialButtonText}>
+                {isProcessing ? 'Processing...' : (() => {
+                  const currentPackage = selectedPlan === 'annually' ? annualPackage : monthlyPackage;
+                  const trialText = currentPackage?.product.introPrice 
+                    ? `Start your ${getTrialText(currentPackage)}`
+                    : 'Subscribe Now';
+                  return trialText;
+                })()}
+              </Text>
+            </TouchableOpacity>
+          )}
 
-          {/* Currency Toggle */}
+          {/* Subscription Information - Required by Apple */}
+          <View style={styles.subscriptionInfoContainer}>
+            <Text style={styles.subscriptionInfoTitle}>XS Card Premium Subscription</Text>
+            <Text style={styles.subscriptionInfoText}>
+              • {selectedPlan === 'annually' ? 'Annual' : 'Monthly'} subscription{'\n'}
+              • Price: {currencySymbols[currency]}{selectedPlan === 'annually' ? pricing[currency].annually.total : pricing[currency].monthly.total}{'\n'}
+              • Auto-renewable subscription{'\n'}
+              • Cancel anytime in your device settings
+            </Text>
+            
+            <View style={styles.legalLinksContainer}>
+              <TouchableOpacity 
+                style={styles.legalLink}
+                onPress={() => Linking.openURL('https://xscard.co.za/terms')}
+              >
+                <Text style={styles.legalLinkText}>Terms of Use</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalSeparator}> • </Text>
+              <TouchableOpacity 
+                style={styles.legalLink}
+                onPress={() => Linking.openURL('https://xscard.co.za/privacy')}
+              >
+                <Text style={styles.legalLinkText}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Currency Toggle - Show for all platforms */}
           <CurrencyToggle />
 
           {/* Pricing Options */}
           <View style={styles.pricingContainer}>
-            <TouchableOpacity 
-              style={[
-                styles.planOption,
-                selectedPlan === 'annually' && styles.selectedPlan
-              ]}
-              onPress={() => setSelectedPlan('annually')}
-            >
-              <View style={styles.saveBadge}>
-                <Text style={styles.saveText}>Save {symbol}{currentPricing.annually.save}</Text>
+            {isLoadingPricing ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Loading subscription options...</Text>
               </View>
-              <Text style={styles.planType}>Annually</Text>
-              <Text style={styles.price}>{symbol}{currentPricing.annually.total.toFixed(2)}</Text>
-              <Text style={styles.monthlyPrice}>{symbol}{currentPricing.annually.monthly.toFixed(2)}/month</Text>
-            </TouchableOpacity>
+            ) : (
+              <>
+                {/* Annual Plan */}
+                {useRevenueCat && annualPackage && (
+                  <TouchableOpacity 
+                    style={[
+                      styles.planOption,
+                      selectedPlan === 'annually' && styles.selectedPlan
+                    ]}
+                    onPress={() => setSelectedPlan('annually')}
+                  >
+                    {monthlyPackage && (
+                      <View style={styles.saveBadge}>
+                        <Text style={styles.saveText}>
+                          Save {currency === 'ZAR' ? 'R' : '$'}{currency === 'ZAR' ? 
+                            '119.99' : 
+                            (monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.planType}>Annually</Text>
+                    <Text style={styles.price}>
+                      {currency === 'ZAR' ? 
+                        'R1,799.99' : 
+                        annualPackage.product.priceString}
+                    </Text>
+                    <Text style={styles.monthlyPrice}>
+                      {currency === 'ZAR' ? 
+                        'R149.99/month' : 
+                        `${(annualPackage.product.price / 12).toFixed(2)} ${annualPackage.product.currencyCode}/month`}
+                    </Text>
+                    {annualPackage.product.introPrice && (
+                      <Text style={styles.trialBadge}>{getTrialText(annualPackage)}</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
 
-            <TouchableOpacity 
-              style={[
-                styles.planOption,
-                selectedPlan === 'monthly' && styles.selectedPlan
-              ]}
-              onPress={() => setSelectedPlan('monthly')}
-            >
-              <Text style={styles.planType}>Monthly</Text>
-              <Text style={styles.price}>{symbol}{currentPricing.monthly.total.toFixed(2)}</Text>
-            </TouchableOpacity>
+                {/* Monthly Plan */}
+                {useRevenueCat && monthlyPackage && (
+                  <TouchableOpacity 
+                    style={[
+                      styles.planOption,
+                      selectedPlan === 'monthly' && styles.selectedPlan
+                    ]}
+                    onPress={() => setSelectedPlan('monthly')}
+                  >
+                    <Text style={styles.planType}>Monthly</Text>
+                    <Text style={styles.price}>
+                      {currency === 'ZAR' ? 
+                        'R159.99' : 
+                        monthlyPackage.product.priceString}
+                    </Text>
+                    {monthlyPackage.product.introPrice && (
+                      <Text style={styles.trialBadge}>{getTrialText(monthlyPackage)}</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {/* FALLBACK PRICING - COMMENTED OUT FOR NOW, PRESERVED FOR FUTURE USE */}
+                {/* 
+                {!useRevenueCat && (
+                  <>
+                    <TouchableOpacity 
+                      style={[
+                        styles.planOption,
+                        selectedPlan === 'annually' && styles.selectedPlan
+                      ]}
+                      onPress={() => setSelectedPlan('annually')}
+                    >
+                      <View style={styles.saveBadge}>
+                        <Text style={styles.saveText}>Save {symbol}{pricing[currency].annually.save}</Text>
+                      </View>
+                      <Text style={styles.planType}>Annually</Text>
+                      <Text style={styles.price}>{symbol}{pricing[currency].annually.total.toFixed(2)}</Text>
+                      <Text style={styles.monthlyPrice}>{symbol}{pricing[currency].annually.monthly.toFixed(2)}/month</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[
+                        styles.planOption,
+                        selectedPlan === 'monthly' && styles.selectedPlan
+                      ]}
+                      onPress={() => setSelectedPlan('monthly')}
+                    >
+                      <Text style={styles.planType}>Monthly</Text>
+                      <Text style={styles.price}>{symbol}{pricing[currency].monthly.total.toFixed(2)}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                */}
+              </>
+            )}
           </View>
 
-          <Text style={styles.cancelText}>7-day free trial. Cancel anytime</Text>
+          {/* Trial text - Dynamic based on selected plan */}
+          {!isLoadingPricing && useRevenueCat && (
+            <Text style={styles.cancelText}>
+              {selectedPlan === 'annually' && annualPackage?.product.introPrice
+                ? `${getTrialText(annualPackage)}. Cancel anytime`
+                : selectedPlan === 'monthly' && monthlyPackage?.product.introPrice
+                ? `${getTrialText(monthlyPackage)}. Cancel anytime`
+                : 'Cancel anytime'}
+            </Text>
+          )}
 
           {/* Feature Comparison */}
           <View style={styles.comparisonContainer}>
@@ -490,13 +853,14 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
               styles.bottomTrialButton,
               isProcessing && styles.disabledButton
             ]}
-            onPress={handlePaymentInitiation}
+            onPress={handlePayment}
             disabled={isProcessing}
           >
             <Text style={styles.bottomTrialButtonText}>
               {isProcessing ? 'Processing...' : 'Start 7-day free trial'}
             </Text>
           </TouchableOpacity>
+          
         </ScrollView>
       )}
     </SafeAreaView>
@@ -510,15 +874,11 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   closeButton: {
-    padding: 15,
+    padding: 8,
     position: 'absolute',
     top: 25,
     left: 10,
     zIndex: 1,
-  },
-  closeButtonText: {
-    fontSize: 24,
-    color: '#000',
   },
   content: {
     padding: 20,
@@ -583,6 +943,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 5,
+  },
+  trialBadge: {
+    fontSize: 13,
+    color: '#FF6B6B',
+    fontWeight: '600',
+    marginTop: 8,
   },
   cancelText: {
     textAlign: 'center',
@@ -713,17 +1079,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 30,
   },
-  cancelButton: {
-    backgroundColor: '#FF4444',
+  manageButton: {
+    backgroundColor: COLORS.primary,
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 25,
-    marginTop: 20,
+    marginTop: 10,
   },
-  cancelButtonText: {
+  manageButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   disabledButton: {
     opacity: 0.6,
@@ -781,6 +1148,94 @@ const styles = StyleSheet.create({
   },
   toggleTextActive: {
     color: 'white',
+  },
+  billingInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginTop: 15,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
+  billingInfoTextContainer: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  billingInfoText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  billingInfoSubtext: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  restoreButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 10,
+    marginHorizontal: 20,
+  },
+  restoreButtonText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  subscriptionInfoContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginVertical: 15,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  subscriptionInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subscriptionInfoText: {
+    fontSize: 14,
+    color: COLORS.gray,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  legalLinksContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  legalLink: {
+    paddingVertical: 4,
+  },
+  legalLinkText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
+  },
+  legalSeparator: {
+    fontSize: 14,
+    color: COLORS.gray,
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
   },
 });
 

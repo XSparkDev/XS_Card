@@ -232,7 +232,7 @@ const BulkRegistrationModal: React.FC<BulkRegistrationModalProps> = ({
               </Text>
             </View>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>Close</Text>
+              <Text style={styles.closeButton}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -552,9 +552,6 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 16,
     fontWeight: '600',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
   },
   loadingOverlay: {
     position: 'absolute',

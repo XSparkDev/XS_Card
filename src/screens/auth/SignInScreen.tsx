@@ -5,13 +5,14 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { MaterialIcons } from '@expo/vector-icons';
-import { API_BASE_URL, ENDPOINTS, buildUrl } from '../../utils/api';
+import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // ErrorPopup import removed - no popups on signin page
-import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime } from '../../utils/authStorage';
+import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData, getStoredAuthData } from '../../utils/authStorage';
 // Error handler imports removed - no popups on signin page
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
+import EmailVerificationModal from '../../components/EmailVerificationModal';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -23,6 +24,7 @@ const ADMIN_CREDENTIALS = {
 
 export default function SignInScreen() {
   const navigation = useNavigation<SignInScreenNavigationProp>();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,6 +34,8 @@ export default function SignInScreen() {
     email: '',
     password: '',
   });
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
   // Error popup removed - no popups on signin page
 
 
@@ -61,6 +65,25 @@ export default function SignInScreen() {
     setKeepLoggedIn(!keepLoggedIn);
   };
 
+  // Optimized password visibility toggle to prevent shaking
+  const handleTogglePasswordVisibility = () => {
+    setShowPassword(prev => !prev);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setShowVerificationModal(false);
+      setUnverifiedEmail('');
+      // Clear any stored auth data
+      await clearAuthData();
+    } catch (error) {
+      console.error('Sign out error:', error);
+      toast.error('Error', 'Failed to sign out. Please try again.');
+    }
+  };
+
+
   // const validateEmail = (email: string) => {
   //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   //   return emailRegex.test(email);
@@ -74,8 +97,14 @@ export default function SignInScreen() {
 
     let isValid = true;
 
-    if (!email.trim()) {
+    // Trim email for validation
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
       newErrors.email = 'Email is required';
+      isValid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      newErrors.email = 'Please enter a valid email address';
       isValid = false;
     }
 
@@ -100,13 +129,24 @@ export default function SignInScreen() {
     try {
       console.log('SignIn: Starting Firebase authentication...');
       
-      // Use Firebase client SDK for authentication
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // 🔥 FIX: Trim email before Firebase authentication
+      const trimmedEmail = email.trim();
+      const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
       const firebaseUser = userCredential.user;
       
       console.log('SignIn: Firebase authentication successful:', firebaseUser.uid);
       
-      // Get Firebase ID token
+      // 🔥 CRITICAL: Check email verification
+      if (!firebaseUser.emailVerified) {
+        console.log('SignIn: Email not verified, showing verification modal');
+        setUnverifiedEmail(firebaseUser.email || email);
+        setShowVerificationModal(true);
+        return;
+      }
+      
+      console.log('SignIn: Email verified, proceeding with sign in');
+      
+      // Get Firebase ID token for backend calls
       const firebaseToken = await firebaseUser.getIdToken();
       console.log('SignIn: Firebase token obtained');
       
@@ -139,6 +179,7 @@ export default function SignInScreen() {
         };
 
         // Use our Phase 1 storage system to store all auth data
+        console.log('SignIn: About to store auth data with keepLoggedIn:', keepLoggedIn);
         await storeAuthData({
           userToken: token,
           userData: userData,
@@ -151,9 +192,16 @@ export default function SignInScreen() {
         await updateLastLoginTime();
 
         console.log('SignIn: Data stored successfully, keepLoggedIn:', keepLoggedIn);
+        
+        // iOS-specific verifications
+        if (Platform.OS === 'ios') {
+          const verification = await getStoredAuthData();
+          console.log('iOS SignIn: Verification - stored keepLoggedIn:', verification?.keepLoggedIn);
+        }
         console.log('SignIn: Firebase auth state listener will now handle automatic token refresh');
         
-        navigation.replace('MainApp');
+        // Navigate to root navigator's MainApp screen
+        navigation.getParent()?.navigate('MainApp');
       } else {
         // Handle backend data retrieval failures
         console.warn('SignIn: Backend user data retrieval failed, using Firebase user data');
@@ -182,7 +230,8 @@ export default function SignInScreen() {
 
         console.log('SignIn: Data stored successfully with fallback data, keepLoggedIn:', keepLoggedIn);
         
-        navigation.replace('MainApp');
+        // Navigate to root navigator's MainApp screen
+        navigation.getParent()?.navigate('MainApp');
       }
     } catch (error: any) {
       console.error('SignIn: Authentication error:', error);
@@ -191,37 +240,50 @@ export default function SignInScreen() {
       if (error.code) {
         console.error('SignIn: Authentication error:', error.code, error.message);
         
-        // Set field-specific errors instead of popup
+        // Set field-specific errors and show toast notifications
         switch (error.code) {
           case 'auth/user-not-found':
             setErrors(prev => ({ ...prev, email: 'No account found with this email' }));
+            toast.error('Sign In Failed', 'No account found with this email address');
             break;
           case 'auth/wrong-password':
             setErrors(prev => ({ ...prev, password: 'Invalid password' }));
+            toast.error('Sign In Failed', 'Incorrect password. Please try again');
+            break;
+          case 'auth/invalid-credential':
+            setErrors(prev => ({ ...prev, email: 'Invalid credentials' }));
+            toast.error('Sign In Failed', 'Invalid email or password. Please check your credentials and try again');
             break;
           case 'auth/invalid-email':
             setErrors(prev => ({ ...prev, email: 'Invalid email format' }));
+            toast.error('Invalid Email', 'Please enter a valid email address');
             break;
           case 'auth/user-disabled':
             setErrors(prev => ({ ...prev, email: 'Account disabled' }));
+            toast.error('Account Disabled', 'This account has been disabled. Please contact support');
             break;
           case 'auth/too-many-requests':
             setErrors(prev => ({ ...prev, password: 'Too many attempts. Try later' }));
+            toast.error('Too Many Attempts', 'Please wait a few minutes before trying again');
             break;
           case 'auth/network-request-failed':
             setErrors(prev => ({ ...prev, email: 'Network error' }));
+            toast.error('Network Error', 'Please check your internet connection and try again');
             break;
           default:
             console.error('SignIn: Unknown authentication error:', error);
+            toast.error('Sign In Failed', 'An unexpected error occurred. Please try again');
         }
       } else if (error instanceof TypeError && error.message.includes('fetch')) {
-        // Handle network errors silently
+        // Handle network errors with toast
         console.error('SignIn: Network error:', error);
         setErrors(prev => ({ ...prev, email: 'Network error' }));
+        toast.error('Network Error', 'Unable to connect to server. Please check your internet connection');
       } else {
-        // Handle other errors silently
+        // Handle other errors with toast
         console.error('SignIn: Other error:', error);
         setErrors(prev => ({ ...prev, email: 'Authentication failed' }));
+        toast.error('Sign In Failed', 'An unexpected error occurred. Please try again');
       }
     } finally {
       setIsLoading(false);
@@ -245,12 +307,9 @@ export default function SignInScreen() {
 
       <TextInput
         style={[styles.input, errors.email ? styles.inputError : null]}
-        placeholder="Mail"
+        placeholder="Email"
         value={email}
-        onChangeText={(text) => {
-          setEmail(text);
-          setErrors(prev => ({ ...prev, email: '' }));
-        }}
+        onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
         placeholderTextColor="#999"
@@ -262,16 +321,13 @@ export default function SignInScreen() {
           style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
           placeholder="Password"
           value={password}
-          onChangeText={(text) => {
-            setPassword(text);
-            setErrors(prev => ({ ...prev, password: '' }));
-          }}
+          onChangeText={setPassword}
           secureTextEntry={!showPassword}
           placeholderTextColor="#999"
         />
         <TouchableOpacity 
           style={styles.eyeIcon}
-          onPress={() => setShowPassword(!showPassword)}
+          onPress={handleTogglePasswordVisibility}
         >
           <MaterialIcons 
             name={showPassword ? "visibility" : "visibility-off"} 
@@ -351,6 +407,13 @@ export default function SignInScreen() {
       </View>
         </ScrollView>
       </TouchableWithoutFeedback>
+      
+      <EmailVerificationModal
+        visible={showVerificationModal}
+        onClose={() => setShowVerificationModal(false)}
+        userEmail={unverifiedEmail}
+        onSignOut={handleSignOut}
+      />
     </KeyboardAvoidingView>
   );
 }

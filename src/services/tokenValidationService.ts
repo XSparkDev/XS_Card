@@ -29,20 +29,20 @@ export class TokenValidationService {
           }
         }
         
-              if (!firebaseUser) {
-        console.log('TokenValidationService: No Firebase user found after waiting');
-        
-        // 🔥 CRITICAL FIX: Try backend validation as fallback when no Firebase user
-        console.log('TokenValidationService: Attempting backend validation as fallback');
-        try {
-          const isValid = await validateAuthToken();
-          console.log('TokenValidationService: Backend validation result:', isValid);
-          return isValid;
-        } catch (backendError) {
-          console.error('TokenValidationService: Backend validation failed:', backendError);
-          return false;
+        if (!firebaseUser) {
+          console.log('TokenValidationService: No Firebase user found after waiting');
+          
+          // 🔥 CRITICAL FIX: Try backend validation as fallback when no Firebase user
+          console.log('TokenValidationService: Attempting backend validation as fallback');
+          try {
+            const isValid = await validateAuthToken();
+            console.log('TokenValidationService: Backend validation result:', isValid);
+            return isValid;
+          } catch (backendError) {
+            console.error('TokenValidationService: Backend validation failed:', backendError);
+            return false;
+          }
         }
-      }
       }
       
       // Check if we have stored token

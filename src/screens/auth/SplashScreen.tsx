@@ -44,7 +44,8 @@ export default function SplashScreen() {
                 setAuthCheckStatus('Welcome back!');
                 setTimeout(() => {
                   console.log('SplashScreen: Navigating to MainApp');
-                  navigation.replace('MainApp');
+                  // Navigate to root navigator's MainApp screen
+                  navigation.getParent()?.navigate('MainApp');
                 }, 500);
               } else {
                 // If validation fails and we haven't retried too many times, wait and retry
