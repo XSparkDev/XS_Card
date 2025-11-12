@@ -13,6 +13,9 @@ import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAut
 import { signInWithEmailAndPassword, signOut, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
+// NEW: OAuth imports (POOP)
+import * as Linking from 'expo-linking';
+import { signInWithGoogle, handleGoogleCallback } from '../../services/oauth/googleProvider';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -29,6 +32,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false); // NEW: Google OAuth loading state (POOP)
   const [keepLoggedIn, setKeepLoggedIn] = useState(true); // Default to true for better UX
   const [errors, setErrors] = useState({
     email: '',
@@ -89,6 +93,141 @@ export default function SignInScreen() {
     }
   };
 
+  // NEW: Google OAuth handler (POOP)
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    
+    try {
+      console.log('[SignIn] Starting Google OAuth...');
+      
+      // This will open the browser and return immediately
+      // The actual sign-in completes via deep link callback
+      await signInWithGoogle();
+      
+      // Note: signInWithGoogle throws 'pending_callback' error
+      // Deep link listener will handle the actual sign-in
+    } catch (error: any) {
+      setIsGoogleLoading(false);
+      
+      // If it's a pending_callback error, that's expected
+      if (error.code === 'pending_callback') {
+        console.log('[SignIn] Waiting for OAuth callback...');
+        return; // Deep link listener will handle completion
+      }
+      
+      // Handle user cancellation
+      if (error.code === 'user_cancelled') {
+        console.log('[SignIn] User cancelled Google sign-in');
+        toast.info('Cancelled', 'Google sign-in was cancelled');
+        return;
+      }
+      
+      // Handle other errors
+      console.error('[SignIn] Google OAuth error:', error);
+      toast.error('Sign In Failed', error.message || 'Failed to sign in with Google');
+    }
+  };
+
+  // NEW: Deep link listener for OAuth callback (POOP)
+  useEffect(() => {
+    const handleDeepLink = async (event: { url: string }) => {
+      const url = event.url;
+      console.log('[SignIn] Deep link received:', url);
+      
+      // Check if it's an OAuth callback
+      if (url.includes('oauth-callback')) {
+        try {
+          console.log('[SignIn] Processing OAuth callback...');
+          
+          // Handle OAuth callback - this completes the sign-in
+          const oauthResult = await handleGoogleCallback(url);
+          
+          console.log('[SignIn] OAuth successful, fetching user data...');
+          
+          // REUSE CEMENT - Same flow as email/password
+          const firebaseToken = oauthResult.token;
+          const firebaseUser = oauthResult.user;
+          
+          // Fetch user data from backend (REUSES CEMENT - same as email/password)
+          const response = await fetch(buildUrl(`/Users/${firebaseUser.uid}`), {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${firebaseToken}`,
+            },
+          });
+          
+          if (response.ok) {
+            const userData = await response.json();
+            
+            // REUSE CEMENT - storeAuthData (same as email/password)
+            await storeAuthData({
+              userToken: `Bearer ${firebaseToken}`,
+              userData: userData,
+              userRole: userData.role || 'user',
+              keepLoggedIn,
+              lastLoginTime: Date.now(),
+            });
+            
+            await updateLastLoginTime();
+            
+            console.log('[SignIn] OAuth sign-in complete, navigating to MainApp');
+            
+            // REUSE CEMENT - Same navigation as email/password
+            navigation.getParent()?.navigate('MainApp');
+            
+            toast.success('Welcome!', `Signed in as ${userData.email}`);
+          } else {
+            // Backend user fetch failed - use Firebase user data
+            console.warn('[SignIn] Backend user fetch failed, using Firebase data');
+            
+            const userData = {
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || '',
+              email: firebaseUser.email || '',
+              plan: 'free'
+            };
+            
+            await storeAuthData({
+              userToken: `Bearer ${firebaseToken}`,
+              userData: userData,
+              userRole: 'user',
+              keepLoggedIn,
+              lastLoginTime: Date.now(),
+            });
+            
+            await updateLastLoginTime();
+            
+            navigation.getParent()?.navigate('MainApp');
+            
+            toast.success('Welcome!', `Signed in as ${userData.email}`);
+          }
+          
+          setIsGoogleLoading(false);
+        } catch (error: any) {
+          console.error('[SignIn] OAuth callback error:', error);
+          setIsGoogleLoading(false);
+          toast.error('Sign In Failed', error.message || 'Failed to complete Google sign-in');
+        }
+      }
+    };
+    
+    // Listen for deep links
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+    
+    // Cleanup
+    return () => {
+      subscription.remove();
+    };
+  }, [keepLoggedIn, navigation, toast]);
 
   // const validateEmail = (email: string) => {
   //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -473,7 +612,24 @@ export default function SignInScreen() {
         </Text>
       </TouchableOpacity>
 
+      {/* NEW: OAuth divider (POOP) */}
+      <View style={styles.oauthDivider}>
+        <View style={styles.oauthDividerLine} />
+        <Text style={styles.oauthDividerText}>OR</Text>
+        <View style={styles.oauthDividerLine} />
+      </View>
 
+      {/* NEW: Google Sign-In Button (POOP - connected to handler) */}
+      <TouchableOpacity 
+        style={[styles.googleButton, isGoogleLoading && styles.disabledButton]}
+        onPress={handleGoogleSignIn}
+        disabled={isGoogleLoading || isLoading}
+      >
+        <MaterialIcons name="login" size={20} color="#4285F4" style={styles.googleIcon} />
+        <Text style={styles.googleButtonText}>
+          {isGoogleLoading ? 'Signing in with Google...' : 'Continue with Google'}
+        </Text>
+      </TouchableOpacity>
 
       <View style={styles.signUpContainer}>
         <Text style={styles.signUpText}>Don't have an account? </Text>
@@ -735,5 +891,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  // NEW: OAuth styles (POOP)
+  oauthDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  oauthDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  oauthDividerText: {
+    marginHorizontal: 15,
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  googleButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    padding: 15,
+    alignItems: 'center',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  googleIcon: {
+    marginRight: 10,
+  },
+  googleButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

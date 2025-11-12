@@ -68,10 +68,59 @@ exports.getUserById = async (req, res) => {
         const userRef = db.collection('users').doc(id);
         const userDoc = await userRef.get();
         
+        // NEW: Auto-provisioning for OAuth users (POOP - Phase 5)
         if (!userDoc.exists) {
+            // Check if this is an OAuth user (req.user comes from auth middleware)
+            const firebaseUser = req.user;
+            
+            if (firebaseUser && firebaseUser.uid === id) {
+                // Get provider data from Firebase user
+                const providerData = firebaseUser.firebase?.sign_in_provider || 
+                                    firebaseUser.firebase?.identities?.['google.com'] ? 'google.com' :
+                                    firebaseUser.firebase?.identities?.['linkedin.com'] ? 'linkedin.com' :
+                                    firebaseUser.firebase?.identities?.['microsoft.com'] ? 'microsoft.com' :
+                                    null;
+                
+                // Auto-provision OAuth users (google.com, linkedin.com, microsoft.com)
+                const oauthProviders = ['google.com', 'linkedin.com', 'microsoft.com'];
+                
+                if (providerData && oauthProviders.includes(providerData)) {
+                    console.log(`[Auto-Provision] Creating ${providerData} user:`, firebaseUser.email);
+                    
+                    // Create user document for OAuth user
+                    const newUserData = {
+                        uid: firebaseUser.uid,
+                        email: firebaseUser.email || '',
+                        name: firebaseUser.name || firebaseUser.email?.split('@')[0] || 'User',
+                        surname: '',
+                        authProvider: providerData, // Store provider: google.com, linkedin.com, or microsoft.com
+                        role: 'user',
+                        plan: 'free',
+                        status: 'active',
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        emailVerified: firebaseUser.email_verified || true, // OAuth emails are pre-verified
+                    };
+                    
+                    await userRef.set(newUserData);
+                    
+                    console.log(`[Auto-Provision] ${providerData} user created successfully`);
+                    
+                    // Return newly created user
+                    return res.status(200).send({
+                        id: firebaseUser.uid,
+                        ...newUserData,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    });
+                }
+            }
+            
+            // Not an OAuth user or auto-provisioning failed
             return res.status(404).send({ message: 'User is not found'});
         }
 
+        // CEMENT: Existing user found, return as before
         const userData = {
             id: userDoc.id,
             ...userDoc.data()

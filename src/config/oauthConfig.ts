@@ -1,0 +1,69 @@
+/**
+ * OAuth Configuration
+ * 
+ * This file contains OAuth provider configurations.
+ * Currently implements Google OAuth, with placeholders for future providers (LinkedIn, Microsoft).
+ * 
+ * Groundwork for future providers:
+ * - Config structure supports multiple providers
+ * - Types defined in src/services/oauth/types.ts
+ * - Backend auto-provisioning supports all provider types
+ */
+
+// Google OAuth Web Client ID from Firebase Console
+// Get from: Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+
+if (!GOOGLE_WEB_CLIENT_ID) {
+  console.warn('⚠️  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Google OAuth will not work.');
+}
+
+export interface OAuthProviderConfig {
+  webClientId: string | undefined;
+}
+
+export interface OAuthConfig {
+  google: OAuthProviderConfig;
+  linkedin: OAuthProviderConfig; // Future: LinkedIn OAuth
+  microsoft: OAuthProviderConfig; // Future: Microsoft OAuth
+}
+
+/**
+ * OAuth configuration for all providers
+ * 
+ * Structure supports:
+ * - google.com (implemented)
+ * - linkedin.com (future)
+ * - microsoft.com (future)
+ */
+export const oauthConfig: OAuthConfig = {
+  google: {
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+  },
+  linkedin: {
+    webClientId: undefined, // TODO: Add LinkedIn Web Client ID when implementing
+  },
+  microsoft: {
+    webClientId: undefined, // TODO: Add Microsoft Web Client ID when implementing
+  },
+};
+
+/**
+ * Get OAuth config for a specific provider
+ * @param provider - Provider type ('google' | 'linkedin' | 'microsoft')
+ * @returns Provider config or undefined if not configured
+ */
+export const getOAuthConfig = (provider: keyof OAuthConfig): OAuthProviderConfig | undefined => {
+  return oauthConfig[provider];
+};
+
+/**
+ * Check if a provider is configured
+ * @param provider - Provider type
+ * @returns true if provider has webClientId configured
+ */
+export const isProviderConfigured = (provider: keyof OAuthConfig): boolean => {
+  const config = oauthConfig[provider];
+  return !!config?.webClientId;
+};
+
