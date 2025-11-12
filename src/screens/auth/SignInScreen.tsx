@@ -13,7 +13,6 @@ import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAut
 import { signInWithEmailAndPassword, signOut, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
-import { signInWithGoogle, signOutFromGoogle } from '../../utils/oauthProviders';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -43,7 +42,6 @@ export default function SignInScreen() {
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [showRetryModal, setShowRetryModal] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   // Error popup removed - no popups on signin page
 
 
@@ -358,95 +356,6 @@ export default function SignInScreen() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setIsGoogleLoading(true);
-    
-    try {
-      console.log('SignIn: Starting Google OAuth flow...');
-      
-      // Call our OAuth helper
-      const result = await signInWithGoogle();
-      
-      if (!result.success || !result.firebaseUser) {
-        console.error('SignIn: Google OAuth failed:', result.error);
-        toast.error('Google Sign-In Failed', result.error || 'Unable to sign in with Google');
-        return;
-      }
-      
-      const firebaseUser = result.firebaseUser;
-      console.log('SignIn: Google OAuth successful, Firebase UID:', firebaseUser.uid);
-      
-      // Get Firebase ID token (same as email/password flow)
-      const firebaseToken = await firebaseUser.getIdToken();
-      console.log('SignIn: Firebase token obtained from Google OAuth');
-      
-      // Try to get user data from backend
-      const response = await fetch(buildUrl(`${ENDPOINTS.GET_USER}/${firebaseUser.uid}`), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${firebaseToken}`,
-        },
-      });
-
-      let userData;
-      
-      if (response.ok) {
-        const backendUserData = await response.json();
-        console.log('SignIn: User data retrieved from backend (Google OAuth)');
-        
-        userData = {
-          ...backendUserData,
-          id: backendUserData?.id || firebaseUser.uid,
-          uid: backendUserData?.id || firebaseUser.uid,
-          name: backendUserData?.name || firebaseUser.displayName || '',
-          email: backendUserData?.email || firebaseUser.email || '',
-          plan: backendUserData?.plan || 'free',
-        };
-      } else {
-        // Backend doesn't have user data - this is a new Google user
-        // Backend will auto-create user doc on first protected endpoint access
-        console.log('SignIn: New Google user, using Firebase data');
-        
-        userData = {
-          id: firebaseUser.uid,
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || '',
-          email: firebaseUser.email || '',
-          plan: 'free',
-        };
-      }
-
-      const token = `Bearer ${firebaseToken}`;
-      
-      // Store auth data (same flow as email/password)
-      await storeAuthData({
-        userToken: token,
-        userData: userData,
-        userRole: userData.plan === 'admin' ? 'admin' : 'user',
-        keepLoggedIn,
-        lastLoginTime: Date.now(),
-      });
-
-      await updateLastLoginTime();
-
-      console.log('SignIn: Google OAuth data stored successfully');
-      
-      // Navigate to main app
-      navigation.getParent()?.navigate('MainApp');
-      
-      if (failedAttempts !== 0) {
-        setFailedAttempts(0);
-      }
-      
-    } catch (error: any) {
-      console.error('SignIn: Google OAuth error:', error);
-      toast.error('Sign In Failed', error.message || 'An unexpected error occurred with Google sign-in');
-    } finally {
-      setIsGoogleLoading(false);
-    }
-  };
-
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -564,24 +473,7 @@ export default function SignInScreen() {
         </Text>
       </TouchableOpacity>
 
-      {/* OR Divider */}
-      <View style={styles.dividerContainer}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>OR</Text>
-        <View style={styles.dividerLine} />
-      </View>
 
-      {/* Google Sign-In Button */}
-      <TouchableOpacity 
-        style={[styles.googleButton, isGoogleLoading && styles.disabledButton]}
-        onPress={handleGoogleSignIn}
-        disabled={isGoogleLoading || isLoading}
-      >
-        <MaterialIcons name="login" size={20} color="#4285F4" style={styles.googleIcon} />
-        <Text style={styles.googleButtonText}>
-          {isGoogleLoading ? 'Signing in with Google...' : 'Continue with Google'}
-        </Text>
-      </TouchableOpacity>
 
       <View style={styles.signUpContainer}>
         <Text style={styles.signUpText}>Don't have an account? </Text>
@@ -843,41 +735,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textDecorationLine: 'underline',
-  },
-  // Google Sign-In Styles
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E0E0E0',
-  },
-  dividerText: {
-    marginHorizontal: 15,
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  googleButton: {
-    backgroundColor: COLORS.white,
-    borderRadius: 25,
-    padding: 15,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  googleIcon: {
-    marginRight: 10,
-  },
-  googleButtonText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
