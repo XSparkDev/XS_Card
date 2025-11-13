@@ -15,6 +15,7 @@ import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
 // NEW: OAuth imports (POOP)
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { signInWithGoogle, handleGoogleCallback } from '../../services/oauth/googleProvider';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
@@ -142,6 +143,9 @@ export default function SignInScreen() {
           // Handle OAuth callback - this completes the sign-in
           const oauthResult = await handleGoogleCallback(url);
           
+          // Dismiss the browser window (it doesn't auto-close with custom URL schemes)
+          WebBrowser.dismissBrowser();
+          
           console.log('[SignIn] OAuth successful, fetching user data...');
           
           // REUSE CEMENT - Same flow as email/password
@@ -206,6 +210,13 @@ export default function SignInScreen() {
           
           setIsGoogleLoading(false);
         } catch (error: any) {
+          // Silently ignore stale callbacks - they're from previous OAuth attempts
+          if (error.code === 'stale_callback') {
+            console.log('[SignIn] Ignoring stale OAuth callback from previous attempt');
+            setIsGoogleLoading(false);
+            return; // Don't show error toast
+          }
+          
           console.error('[SignIn] OAuth callback error:', error);
           setIsGoogleLoading(false);
           toast.error('Sign In Failed', error.message || 'Failed to complete Google sign-in');

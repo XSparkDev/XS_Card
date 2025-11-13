@@ -637,3 +637,99 @@ interface OAuthProvider {
 - ✅ Backend auto-provisions new users
 - ✅ Token refresh works for OAuth users
 - ✅ No crashes or native dependency errors
+
+---
+
+## 🔒 CEMENT STATUS (Current Stable Implementation)
+
+**Date:** 2025-11-13 (Final)
+
+### What's Working (DO NOT MODIFY)
+
+#### Phase 0-5: Completed and Stable ✅
+All phases implemented and tested:
+- ✅ **Phase 0:** Baseline assessment
+- ✅ **Phase 1:** OAuth configuration
+- ✅ **Phase 2:** Provider interfaces
+- ✅ **Phase 3:** UI integration
+- ✅ **Phase 4:** Backend-mediated OAuth flow
+- ✅ **Phase 5:** Auto-provisioning
+
+### Known Issues Fixed
+
+#### Issue 1: State Validation Failure
+**Problem:** `invalid_state` error when app returns from Google OAuth
+**Root Cause:** App going to background cleared AsyncStorage (including OAuth state)
+**Fix:** Added in-memory state storage as fallback in `src/services/oauth/googleProvider.ts` (lines 29-86)
+
+#### Issue 2: Browser Window Stays Open
+**Problem:** After successful OAuth, browser window doesn't close automatically
+**Root Cause:** Custom URL scheme (`com.p.zzles.xscard://`) doesn't trigger auto-dismissal
+**Fix:** Added `WebBrowser.dismissBrowser()` call in `SignInScreen.tsx` deep link handler (line 143)
+
+#### Issue 3: False Cancellation Detection
+**Problem:** Browser closing after successful redirect was treated as user cancellation
+**Root Cause:** `WebBrowser.openBrowserAsync` returns `dismiss` when browser closes, even after successful redirect
+**Fix:** Added state check in `googleProvider.ts` (lines 126-144) - if state is cleared (callback processed), treat as success; if state exists, treat as cancellation
+
+### Current Implementation Files (CEMENT)
+
+#### Frontend (DO NOT MODIFY)
+1. `src/config/oauthConfig.ts` - OAuth configuration
+2. `src/services/oauth/types.ts` - TypeScript interfaces
+3. `src/services/oauth/googleProvider.ts` - Google OAuth implementation with state management
+4. `src/screens/auth/SignInScreen.tsx` - UI integration with browser dismissal
+5. `src/types/env.d.ts` - Environment variable types
+
+#### Backend (DO NOT MODIFY)
+1. `backend/controllers/oauthController.js` - OAuth flow handlers
+2. `backend/routes/oauthRoutes.js` - OAuth routes
+3. `backend/server.js` - Routes mounted (OAuth routes at top)
+4. `backend/controllers/userController.js` - Auto-provisioning logic
+
+#### Configuration (DO NOT MODIFY)
+1. `app.json` - URL scheme: `com.p.zzles.xscard`
+2. `.env` - `EXPO_PUBLIC_API_BASE_URL` and `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
+3. `backend/.env` - `GOOGLE_WEB_CLIENT_ID` and `GOOGLE_WEB_CLIENT_SECRET`
+
+### Key Implementation Details (For Future Reference)
+
+#### OAuth Flow
+1. User clicks "Sign in with Google" button
+2. App opens browser to backend `/oauth/google/start?state=xyz`
+3. Backend redirects to Google OAuth consent screen
+4. User authorizes, Google redirects to backend `/oauth/google/callback?code=abc&state=xyz`
+5. Backend exchanges code for Google tokens, decodes Google ID token
+6. Backend gets/creates Firebase user by email
+7. Backend creates Firebase custom token
+8. Backend redirects to app: `com.p.zzles.xscard://oauth-callback?token=firebase-token&state=xyz`
+9. App receives deep link, **dismisses browser**, validates state (memory + storage)
+10. App signs in with Firebase custom token
+11. App fetches user data from backend (auto-provisions if new OAuth user)
+12. App stores auth data and navigates to MainApp
+
+#### State Management Strategy
+- State stored in **both** memory and AsyncStorage
+- Memory state survives background/logout during OAuth flow
+- Expires after 10 minutes
+- Validated on callback to prevent CSRF
+
+#### Browser Dismissal
+- Custom URL schemes don't auto-close browser
+- Must explicitly call `WebBrowser.dismissBrowser()` after receiving callback
+- Called immediately after deep link received, before processing OAuth result
+
+### Minor Issue (Acceptable Workaround)
+
+#### 500ms Delay in Cancellation Detection
+**Location:** `src/services/oauth/googleProvider.ts` line 128
+**Issue:** Small delay needed to allow deep link handler to process before checking if state was cleared
+**Current Status:** Acceptable workaround - doesn't affect user experience
+**Impact:** Minimal - only affects cancellation detection timing, not successful flows
+
+### Next Steps (POOP)
+When ready to add LinkedIn or Microsoft OAuth:
+1. Do NOT modify existing Google OAuth code (it's CEMENT)
+2. Create new provider classes implementing `IOAuthProvider`
+3. Add new backend routes following same pattern
+4. Test thoroughly before marking as CEMENT

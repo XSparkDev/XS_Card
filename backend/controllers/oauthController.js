@@ -163,18 +163,54 @@ exports.handleGoogleCallback = async (req, res) => {
       throw new Error('No ID token received from Google');
     }
 
-    console.log('[OAuth] Tokens received, verifying ID token...');
+    console.log('[OAuth] Tokens received, decoding Google ID token...');
 
-    // Verify Google ID token and get user info
-    const googleUser = await admin.auth().verifyIdToken(id_token);
+    // Decode Google ID token (it's a JWT, not a Firebase token)
+    const jwt = require('jsonwebtoken');
+    const decodedToken = jwt.decode(id_token);
     
-    console.log('[OAuth] Google user verified:', googleUser.email);
+    if (!decodedToken || !decodedToken.email) {
+      throw new Error('Invalid Google ID token - missing email');
+    }
 
-    // Create Firebase custom token
-    const firebaseToken = await admin.auth().createCustomToken(googleUser.uid, {
+    const googleEmail = decodedToken.email;
+    const googleName = decodedToken.name || googleEmail.split('@')[0];
+    const googleSub = decodedToken.sub; // Google user ID
+
+    console.log('[OAuth] Google user decoded:', googleEmail);
+
+    // Get or create Firebase user by email
+    let firebaseUser;
+    try {
+      // Try to get existing user by email
+      firebaseUser = await admin.auth().getUserByEmail(googleEmail);
+      console.log('[OAuth] Existing Firebase user found:', firebaseUser.uid);
+    } catch (error) {
+      // User doesn't exist, create new one
+      if (error.code === 'auth/user-not-found') {
+        console.log('[OAuth] Creating new Firebase user for:', googleEmail);
+        firebaseUser = await admin.auth().createUser({
+          email: googleEmail,
+          displayName: googleName,
+          emailVerified: true, // Google emails are pre-verified
+          providerData: [{
+            uid: googleSub,
+            email: googleEmail,
+            displayName: googleName,
+            providerId: 'google.com'
+          }]
+        });
+        console.log('[OAuth] New Firebase user created:', firebaseUser.uid);
+      } else {
+        throw error;
+      }
+    }
+
+    // Create Firebase custom token for this user
+    const firebaseToken = await admin.auth().createCustomToken(firebaseUser.uid, {
       provider: 'google.com',
-      email: googleUser.email,
-      name: googleUser.name || googleUser.email
+      email: firebaseUser.email,
+      name: firebaseUser.displayName || firebaseUser.email
     });
 
     console.log('[OAuth] Firebase custom token created');
