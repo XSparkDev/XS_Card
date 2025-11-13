@@ -18,6 +18,14 @@ if (!GOOGLE_WEB_CLIENT_ID) {
   console.warn('⚠️  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Google OAuth will not work.');
 }
 
+// LinkedIn OAuth Client ID from LinkedIn Developer Portal
+// Get from: LinkedIn Developer Portal → Your App → Auth tab → Application credentials
+const LINKEDIN_CLIENT_ID = process.env.EXPO_PUBLIC_LINKEDIN_CLIENT_ID;
+
+if (!LINKEDIN_CLIENT_ID) {
+  console.warn('⚠️  EXPO_PUBLIC_LINKEDIN_CLIENT_ID is not set. LinkedIn OAuth will not work.');
+}
+
 export interface OAuthProviderConfig {
   webClientId: string | undefined;
 }
@@ -41,7 +49,7 @@ export const oauthConfig: OAuthConfig = {
     webClientId: GOOGLE_WEB_CLIENT_ID,
   },
   linkedin: {
-    webClientId: undefined, // TODO: Add LinkedIn Web Client ID when implementing
+    webClientId: LINKEDIN_CLIENT_ID,
   },
   microsoft: {
     webClientId: undefined, // TODO: Add Microsoft Web Client ID when implementing

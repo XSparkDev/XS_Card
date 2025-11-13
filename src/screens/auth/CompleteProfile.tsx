@@ -84,6 +84,10 @@ export default function CompleteProfile() {
   const [userId, setUserId] = useState<string | null>(route.params?.userId || null);
   const [idError, setIdError] = useState<string | null>(null);
   
+  // User data from signup/login
+  const [userName, setUserName] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
+  
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -155,23 +159,56 @@ export default function CompleteProfile() {
   };
 
   // Ensure we have a userId, first from route params, then from AsyncStorage
+  // Also load user data (name, email) from AsyncStorage
   useEffect(() => {
-    const getUserId = async () => {
+    const getUserIdAndUserData = async () => {
       try {
         // If userId already exists (from route.params), no need to get from storage
         if (userId) {
           console.log('Using userId from route params:', userId);
-          return;
+        } else {
+          // Try to get userId from AsyncStorage
+          const storedUserId = await AsyncStorage.getItem('tempUserId');
+          if (storedUserId) {
+            console.log('Retrieved userId from AsyncStorage:', storedUserId);
+            setUserId(storedUserId);
+          } else {
+            console.error('No userId found in route params or AsyncStorage');
+            setIdError('User ID not found. Please try signing up again.');
+            return;
+          }
         }
 
-        // Try to get userId from AsyncStorage
-        const storedUserId = await AsyncStorage.getItem('tempUserId');
-        if (storedUserId) {
-          console.log('Retrieved userId from AsyncStorage:', storedUserId);
-          setUserId(storedUserId);
-        } else {
-          console.error('No userId found in route params or AsyncStorage');
-          setIdError('User ID not found. Please try signing up again.');
+        // Load user data from AsyncStorage (userData from login/signup)
+        // This contains name, email, etc. from the signup/login process
+        try {
+          const userDataString = await AsyncStorage.getItem('userData');
+          if (userDataString) {
+            const userData = JSON.parse(userDataString);
+            console.log('Loaded user data from AsyncStorage:', userData);
+            
+            // Set user name and email for display
+            if (userData.name) {
+              setUserName(userData.name);
+            }
+            if (userData.email) {
+              setUserEmail(userData.email);
+              // Also store in tempUserEmail if not already there (for backend call)
+              const existingTempEmail = await AsyncStorage.getItem('tempUserEmail');
+              if (!existingTempEmail && userData.email) {
+                await AsyncStorage.setItem('tempUserEmail', userData.email);
+              }
+            }
+          } else {
+            // Try to get email from tempUserEmail as fallback
+            const tempEmail = await AsyncStorage.getItem('tempUserEmail');
+            if (tempEmail) {
+              setUserEmail(tempEmail);
+            }
+          }
+        } catch (userDataError) {
+          console.error('Error loading user data:', userDataError);
+          // Not critical - continue without user data display
         }
       } catch (error) {
         console.error('Error retrieving userId:', error);
@@ -179,7 +216,7 @@ export default function CompleteProfile() {
       }
     };
 
-    getUserId();
+    getUserIdAndUserData();
   }, [userId]);
 
   useEffect(() => {
@@ -658,6 +695,16 @@ export default function CompleteProfile() {
           </View>
           
           <Text style={styles.title}>Complete Your Profile</Text>
+          {userName || userEmail ? (
+            <View style={styles.userInfoContainer}>
+              {userName ? (
+                <Text style={styles.userName}>Welcome back, {userName}!</Text>
+              ) : null}
+              {userEmail ? (
+                <Text style={styles.userEmail}>{userEmail}</Text>
+              ) : null}
+            </View>
+          ) : null}
           <Text style={styles.subtitle}>
             Add your details to create your digital business card.
           </Text>
@@ -989,6 +1036,26 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 30,
     textAlign: 'center',
+  },
+  userInfoContainer: {
+    backgroundColor: '#F0F7FF',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    marginTop: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E8F0',
+  },
+  userName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginBottom: 5,
+  },
+  userEmail: {
+    fontSize: 16,
+    color: '#666',
   },
   devInfo: {
     backgroundColor: '#f0f0f0',

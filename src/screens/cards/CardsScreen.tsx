@@ -190,6 +190,24 @@ export default function CardsScreen() {
 
       // Uses authenticated request to fetch cards
       const cardResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+      
+      // Check if response is OK before parsing
+      if (!cardResponse.ok) {
+        const errorData = await cardResponse.json().catch(() => ({ message: 'Unknown error' }));
+        console.log('Cards API returned error:', cardResponse.status, errorData);
+        
+        // Handle 404 - No cards found
+        if (cardResponse.status === 404 || errorData.message === 'No cards found for this user') {
+          console.log('No cards found for user, showing profile completion modal');
+          setShowProfileCompletionModal(true);
+          setUserData({ id: userId, cards: [] }); // Set empty cards to prevent further errors
+          return;
+        }
+        
+        // For other errors, throw to be caught by catch block
+        throw new Error(errorData.message || 'Failed to fetch cards');
+      }
+
       const responseData = await cardResponse.json();
 
       // Handle new response structure
@@ -205,8 +223,20 @@ export default function CardsScreen() {
         // Fallback for old structure: [card1, card2, ...]
         cardsArray = responseData;
         console.log('Using fallback for old API response structure');
+      } else if (responseData.message) {
+        // Handle message-only responses (e.g., "No cards found for this user")
+        console.log('API returned message:', responseData.message);
+        if (responseData.message === 'No cards found for this user' || responseData.message.toLowerCase().includes('no cards')) {
+          console.log('No cards found for user, showing profile completion modal');
+          setShowProfileCompletionModal(true);
+          setUserData({ id: userId, cards: [] }); // Set empty cards to prevent further errors
+          return;
+        }
+        throw new Error(responseData.message);
       } else {
         console.error('Unexpected API response structure:', responseData);
+        setShowProfileCompletionModal(true);
+        setUserData({ id: userId, cards: [] }); // Set empty cards to prevent further errors
         return;
       }
 
@@ -249,7 +279,7 @@ export default function CardsScreen() {
           updateColorScheme(cardsArray[0].colorScheme);
         }
 
-        // Generate QR codes based on device type
+        // Generate QR codes based on device type - only if we have cards
         if (isTablet()) {
           // On tablet: Pre-load QR codes for all cards
           console.log(`Loading QR codes for ${cardsArray.length} cards on tablet`);
@@ -258,11 +288,18 @@ export default function CardsScreen() {
           });
         } else {
           // On mobile: Load QR code for current card (existing behavior)
-          fetchQRCode(userId, currentPage);
+          if (cardsArray.length > currentPage) {
+            fetchQRCode(userId, currentPage);
+          }
         }
         
         // Load alt numbers for all cards
         await loadAltNumbers(cardsArray.length);
+      } else {
+        // No cards found in response
+        console.log('No cards in response array, showing profile completion modal');
+        setShowProfileCompletionModal(true);
+        setUserData({ id: userId, cards: [] }); // Set empty cards to prevent further errors
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -286,12 +323,23 @@ export default function CardsScreen() {
           const userId = await getUserId();
           if (userId) {
             const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+            
+            // Check response status before parsing
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+              console.log('FOCUS CHECK - Cards API returned error:', response.status, errorData);
+              return;
+            }
+            
             const cardsData = await response.json();
             console.log('FOCUS CHECK - Cards API response:', JSON.stringify(cardsData, null, 2));
             
+            // Handle response structure
+            const cardsArray = cardsData.cards || (Array.isArray(cardsData) ? cardsData : []);
+            
             // Check if logoZoomLevel exists in the data
-            if (cardsData && cardsData.length > 0) {
-              cardsData.forEach((card: any, index: number) => {
+            if (cardsArray && cardsArray.length > 0) {
+              cardsArray.forEach((card: any, index: number) => {
                 console.log(`Card ${index} zoom level:`, card.logoZoomLevel);
               });
             }
@@ -310,6 +358,13 @@ export default function CardsScreen() {
           const userId = await getUserId();
           if (userId) {
             const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
+            
+            // Check response status before parsing
+            if (!response.ok) {
+              console.log('Error reloading alt numbers - response not OK:', response.status);
+              return;
+            }
+            
             const responseData = await response.json();
             const cardsArray = responseData.cards || (Array.isArray(responseData) ? responseData : []);
             if (cardsArray && cardsArray.length > 0) {
@@ -1538,14 +1593,47 @@ export default function CardsScreen() {
       <ProfileCompletionModal
         visible={showProfileCompletionModal}
         onClose={() => setShowProfileCompletionModal(false)}
-        onCompleteProfile={() => {
+        onCompleteProfile={async () => {
           setShowProfileCompletionModal(false);
-          // Navigate to Auth stack first, then to CompleteProfile
-          // CardsScreen is in MainApp, CompleteProfile is in Auth stack
-          navigation.getParent()?.getParent()?.navigate('Auth', {
-            screen: 'CompleteProfile',
-            params: { userId: userData?.id }
-          });
+          try {
+            // Get user data from AsyncStorage (logged-in user data)
+            const userId = await getUserId();
+            if (!userId) {
+              Alert.alert('Error', 'User ID not found. Please try signing in again.');
+              return;
+            }
+
+            // Get user data from AsyncStorage
+            const userDataString = await AsyncStorage.getItem('userData');
+            if (userDataString) {
+              const storedUserData = JSON.parse(userDataString);
+              
+              // Store userId and email in temp storage for CompleteProfile to use
+              // This mimics what SignUpScreen does when navigating to CompleteProfile
+              await AsyncStorage.setItem('tempUserId', userId);
+              if (storedUserData.email) {
+                await AsyncStorage.setItem('tempUserEmail', storedUserData.email);
+              }
+              
+              console.log('Stored user data for CompleteProfile:', {
+                userId,
+                email: storedUserData.email
+              });
+            } else {
+              // If no userData in storage, still store userId
+              await AsyncStorage.setItem('tempUserId', userId);
+            }
+
+            // Navigate to Auth stack first, then to CompleteProfile
+            // CardsScreen is in MainApp, CompleteProfile is in Auth stack
+            navigation.getParent()?.getParent()?.navigate('Auth', {
+              screen: 'CompleteProfile',
+              params: { userId: userId }
+            });
+          } catch (error) {
+            console.error('Error navigating to CompleteProfile:', error);
+            Alert.alert('Error', 'Failed to navigate to profile completion. Please try again.');
+          }
         }}
       />
     </View>

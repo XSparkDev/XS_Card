@@ -17,6 +17,8 @@ import EmailVerificationModal from '../../components/EmailVerificationModal';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { signInWithGoogle, handleGoogleCallback } from '../../services/oauth/googleProvider';
+// Phase 3: LinkedIn OAuth imports (POOP)
+import { signInWithLinkedIn, handleLinkedInCallback } from '../../services/oauth/linkedinProvider';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -34,6 +36,7 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false); // NEW: Google OAuth loading state (POOP)
+  const [isLinkedInLoading, setIsLinkedInLoading] = useState(false); // Phase 3: LinkedIn OAuth loading state (POOP)
   const [keepLoggedIn, setKeepLoggedIn] = useState(true); // Default to true for better UX
   const [errors, setErrors] = useState({
     email: '',
@@ -129,6 +132,41 @@ export default function SignInScreen() {
     }
   };
 
+  // Phase 3: LinkedIn OAuth handler (POOP)
+  const handleLinkedInSignIn = async () => {
+    setIsLinkedInLoading(true);
+    
+    try {
+      console.log('[SignIn] Starting LinkedIn OAuth...');
+      
+      // This will open the browser and return immediately
+      // The actual sign-in completes via deep link callback
+      await signInWithLinkedIn();
+      
+      // Note: signInWithLinkedIn throws 'pending_callback' error
+      // Deep link listener will handle the actual sign-in
+    } catch (error: any) {
+      setIsLinkedInLoading(false);
+      
+      // If it's a pending_callback error, that's expected
+      if (error.code === 'pending_callback') {
+        console.log('[SignIn] Waiting for OAuth callback...');
+        return; // Deep link listener will handle completion
+      }
+      
+      // Handle user cancellation
+      if (error.code === 'user_cancelled') {
+        console.log('[SignIn] User cancelled LinkedIn sign-in');
+        toast.info('Cancelled', 'LinkedIn sign-in was cancelled');
+        return;
+      }
+      
+      // Handle other errors
+      console.error('[SignIn] LinkedIn OAuth error:', error);
+      toast.error('Sign In Failed', error.message || 'Failed to sign in with LinkedIn');
+    }
+  };
+
   // NEW: Deep link listener for OAuth callback (POOP)
   useEffect(() => {
     const handleDeepLink = async (event: { url: string }) => {
@@ -140,8 +178,16 @@ export default function SignInScreen() {
         try {
           console.log('[SignIn] Processing OAuth callback...');
           
-          // Handle OAuth callback - this completes the sign-in
-          const oauthResult = await handleGoogleCallback(url);
+          // Phase 3: Detect provider from URL and handle accordingly (POOP)
+          let oauthResult;
+          if (url.includes('provider=linkedin')) {
+            console.log('[SignIn] Processing LinkedIn callback');
+            oauthResult = await handleLinkedInCallback(url);
+          } else {
+            // Default to Google for backward compatibility
+            console.log('[SignIn] Processing Google callback');
+            oauthResult = await handleGoogleCallback(url);
+          }
           
           // Dismiss the browser window (it doesn't auto-close with custom URL schemes)
           WebBrowser.dismissBrowser();
@@ -208,18 +254,22 @@ export default function SignInScreen() {
             toast.success('Welcome!', `Signed in as ${userData.email}`);
           }
           
+          // Phase 3: Clear loading state for the appropriate provider (POOP)
           setIsGoogleLoading(false);
+          setIsLinkedInLoading(false);
         } catch (error: any) {
           // Silently ignore stale callbacks - they're from previous OAuth attempts
           if (error.code === 'stale_callback') {
             console.log('[SignIn] Ignoring stale OAuth callback from previous attempt');
             setIsGoogleLoading(false);
+            setIsLinkedInLoading(false);
             return; // Don't show error toast
           }
           
           console.error('[SignIn] OAuth callback error:', error);
           setIsGoogleLoading(false);
-          toast.error('Sign In Failed', error.message || 'Failed to complete Google sign-in');
+          setIsLinkedInLoading(false);
+          toast.error('Sign In Failed', error.message || 'Failed to complete OAuth sign-in');
         }
       }
     };
@@ -634,11 +684,23 @@ export default function SignInScreen() {
       <TouchableOpacity 
         style={[styles.googleButton, isGoogleLoading && styles.disabledButton]}
         onPress={handleGoogleSignIn}
-        disabled={isGoogleLoading || isLoading}
+        disabled={isGoogleLoading || isLoading || isLinkedInLoading}
       >
         <MaterialIcons name="login" size={20} color="#4285F4" style={styles.googleIcon} />
         <Text style={styles.googleButtonText}>
           {isGoogleLoading ? 'Signing in with Google...' : 'Continue with Google'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Phase 3: LinkedIn Sign-In Button (POOP) */}
+      <TouchableOpacity 
+        style={[styles.linkedinButton, isLinkedInLoading && styles.disabledButton]}
+        onPress={handleLinkedInSignIn}
+        disabled={isLinkedInLoading || isLoading || isGoogleLoading}
+      >
+        <MaterialIcons name="business" size={20} color="#0A66C2" style={styles.linkedinIcon} />
+        <Text style={styles.linkedinButtonText}>
+          {isLinkedInLoading ? 'Signing in with LinkedIn...' : 'Continue with LinkedIn'}
         </Text>
       </TouchableOpacity>
 
@@ -936,6 +998,26 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Phase 3: LinkedIn button styles (POOP)
+  linkedinButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    padding: 15,
+    alignItems: 'center',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#0A66C2',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  linkedinIcon: {
+    marginRight: 10,
+  },
+  linkedinButtonText: {
+    color: '#0A66C2',
     fontSize: 16,
     fontWeight: '600',
   },

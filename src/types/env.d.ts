@@ -10,6 +10,7 @@ declare global {
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?: string;
       EXPO_PUBLIC_FIREBASE_APP_ID?: string;
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string;
+      EXPO_PUBLIC_LINKEDIN_CLIENT_ID?: string;
       EXPO_PUBLIC_API_BASE_URL?: string;
     }
   }
