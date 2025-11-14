@@ -17,9 +17,9 @@ router.get('/google/callback', oauthController.handleGoogleCallback);
 router.get('/linkedin/start', oauthController.startLinkedInOAuth);
 router.get('/linkedin/callback', oauthController.handleLinkedInCallback);
 
-// TODO: Add Microsoft OAuth routes here when implementing
-// router.get('/microsoft/start', oauthController.startMicrosoftOAuth);
-// router.get('/microsoft/callback', oauthController.handleMicrosoftCallback);
+// Phase 4: Microsoft OAuth routes (POOP)
+router.get('/microsoft/start', oauthController.startMicrosoftOAuth);
+router.get('/microsoft/callback', oauthController.handleMicrosoftCallback);
 
 module.exports = router;
 

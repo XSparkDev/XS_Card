@@ -313,14 +313,67 @@ export default function ContactsScreen() {
   // Selected items
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedContactForOptions, setSelectedContactForOptions] = useState<Contact | null>(null);
-  const [selectedContactIndex, setSelectedContactIndex] = useState<number>(-1);
   const [pendingShareContact, setPendingShareContact] = useState<Contact | null>(null);
-  
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
   // Toast
   const toast = useToast();
   
   // Swipeable refs
-  const swipeableRefs = useRef<Map<number, Swipeable | null>>(new Map());
+  const swipeableRefs = useRef<Map<string, Swipeable | null>>(new Map());
+
+  const getContactKey = useCallback((contact: Contact) => {
+    return [
+      contact.name || '',
+      contact.surname || '',
+      contact.phone || '',
+      contact.email || '',
+      typeof contact.createdAt === 'string'
+        ? contact.createdAt
+        : JSON.stringify(contact.createdAt || {})
+    ].join('|');
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedContactKeys(new Set());
+  }, []);
+
+  const exitSelectionMode = useCallback(() => {
+    setIsSelectionMode(false);
+    clearSelection();
+  }, [clearSelection]);
+
+  const toggleSelectionMode = useCallback(() => {
+    setIsSelectionMode((prev) => {
+      if (prev) {
+        clearSelection();
+        return false;
+      }
+      return true;
+    });
+  }, [clearSelection]);
+
+  const toggleContactSelection = useCallback((contact: Contact) => {
+    const key = getContactKey(contact);
+    setSelectedContactKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, [getContactKey]);
+
+  const handleLongPressSelect = useCallback((contact: Contact) => {
+    if (isSelectionMode) return;
+    const key = getContactKey(contact);
+    setIsSelectionMode(true);
+    setSelectedContactKeys(new Set([key]));
+  }, [getContactKey, isSelectionMode]);
 
   // Debug share modal state changes
   useEffect(() => {
@@ -448,8 +501,9 @@ export default function ContactsScreen() {
   }, []);
 
   // Delete contact
-  const handleDeleteContact = useCallback(async (index: number) => {
-    const swipeableToDelete = swipeableRefs.current.get(index);
+  const handleDeleteContact = useCallback(async (contact: Contact) => {
+    const contactKey = getContactKey(contact);
+    const swipeableToDelete = swipeableRefs.current.get(contactKey);
     swipeableToDelete?.close();
 
     setTimeout(() => {
@@ -466,8 +520,15 @@ export default function ContactsScreen() {
                 const userId = await getUserId();
                 if (!userId) throw new Error('User ID not found');
 
+                const displayIndex = contacts.findIndex((c) => c === contact);
+                if (displayIndex === -1) {
+                  throw new Error('Contact not found locally');
+                }
+
+                const backendIndex = contacts.length - 1 - displayIndex;
+
                 const response = await authenticatedFetchWithRefresh(
-                  `${ENDPOINTS.DELETE_CONTACT}/${userId}/contact/${index}`,
+                  `${ENDPOINTS.DELETE_CONTACT}/${userId}/contact/${backendIndex}`,
                   { 
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' }
@@ -481,13 +542,16 @@ export default function ContactsScreen() {
 
                 // Update local state
                 const updatedContacts = [...contacts];
-                updatedContacts.splice(index, 1);
+                updatedContacts.splice(displayIndex, 1);
                 setContacts(updatedContacts);
                 
                 // Update remaining contacts count
-                if (typeof remainingContacts === 'number') {
-                  setRemainingContacts(remainingContacts + 1);
-                }
+                setRemainingContacts((prev) => {
+                  if (typeof prev === 'number') {
+                    return Math.min(FREE_PLAN_CONTACT_LIMIT, prev + 1);
+                  }
+                  return prev;
+                });
                 
                 toast.success('Contact Deleted', 'Contact deleted successfully');
               } catch (error) {
@@ -499,18 +563,99 @@ export default function ContactsScreen() {
         ]
       );
     }, 300);
-  }, [contacts, remainingContacts]);
+  }, [contacts, remainingContacts, getContactKey]);
+
+  const performBulkDelete = useCallback(async (keys: string[]) => {
+    if (!keys.length) return;
+    setIsBulkDeleting(true);
+
+    try {
+      const userId = await getUserId();
+      if (!userId) throw new Error('User ID not found');
+
+      const selectedKeysSet = new Set(keys);
+      const displayIndexes = keys
+        .map((key) => contacts.findIndex((c) => getContactKey(c) === key))
+        .filter((index) => index !== -1);
+
+      if (!displayIndexes.length) {
+        throw new Error('Selected contacts not found');
+      }
+
+      const backendIndexes = displayIndexes.map((index) => contacts.length - 1 - index);
+      const uniqueBackendIndexes = Array.from(new Set(backendIndexes));
+
+      const response = await authenticatedFetchWithRefresh(
+        `${ENDPOINTS.DELETE_CONTACT}/${userId}/bulk`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ indexes: uniqueBackendIndexes })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || 'Failed to delete contacts');
+      }
+
+      const updatedContacts = contacts.filter(
+        (contact) => !selectedKeysSet.has(getContactKey(contact))
+      );
+      setContacts(updatedContacts);
+
+      setRemainingContacts((prev) => {
+        if (typeof prev === 'number') {
+          return Math.min(FREE_PLAN_CONTACT_LIMIT, prev + keys.length);
+        }
+        return prev;
+      });
+
+      exitSelectionMode();
+      toast.success(
+        'Contacts Deleted',
+        `${keys.length} contact${keys.length === 1 ? '' : 's'} removed successfully`
+      );
+    } catch (error) {
+      console.error('Error deleting contacts:', error);
+      toast.error('Delete Failed', error instanceof Error ? error.message : 'Failed to delete contacts');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  }, [contacts, exitSelectionMode, getContactKey, toast]);
+
+  const handleBulkDeleteConfirmation = useCallback(() => {
+    if (isBulkDeleting) return;
+    const keys = Array.from(selectedContactKeys);
+    if (!keys.length) return;
+
+    Alert.alert(
+      'Delete Contacts',
+      `Are you sure you want to delete ${keys.length} contact${keys.length === 1 ? '' : 's'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => performBulkDelete(keys)
+        }
+      ]
+    );
+  }, [isBulkDeleting, performBulkDelete, selectedContactKeys]);
 
 
   // Contact press handler
-  const handleContactPress = useCallback((contact: Contact, index: number) => {
-    console.log('📱 Contact pressed:', `${contact.name} ${contact.surname}`, 'index:', index);
+  const handleContactPress = useCallback((contact: Contact) => {
+    if (isSelectionMode) {
+      toggleContactSelection(contact);
+      return;
+    }
+    console.log('📱 Contact pressed:', `${contact.name} ${contact.surname}`);
     console.log('📱 Setting contact options modal visible');
     setSelectedContactForOptions(contact);
-    setSelectedContactIndex(index);
     setIsContactOptionsVisible(true);
     console.log('📱 Contact options modal should now be visible');
-  }, []);
+  }, [isSelectionMode, toggleContactSelection]);
 
   // Refresh handler
   const onRefresh = useCallback(() => {
@@ -806,11 +951,11 @@ export default function ContactsScreen() {
 
   // ============= SWIPEABLE COMPONENTS =============
   
-  const RenderRightActions = useCallback((progress: any, dragX: any, index: number) => {
+  const RenderRightActions = useCallback((progress: any, dragX: any, contact: Contact) => {
     return (
       <TouchableOpacity 
         style={styles.deleteAction}
-        onPress={() => handleDeleteContact(index)}
+        onPress={() => handleDeleteContact(contact)}
       >
         <MaterialIcons name="delete" size={24} color={COLORS.white} />
       </TouchableOpacity>
@@ -835,6 +980,12 @@ export default function ContactsScreen() {
     swipeableRefs.current = new Map();
     return closeAllSwipeables;
   }, [contacts, closeAllSwipeables]);
+
+  useEffect(() => {
+    if (isSelectionMode) {
+      closeAllSwipeables();
+    }
+  }, [isSelectionMode, closeAllSwipeables]);
 
   // Load contacts on focus
   useFocusEffect(
@@ -902,7 +1053,8 @@ export default function ContactsScreen() {
         {/* Main Contacts Container */}
         <View style={[
           styles.contactsContainer, 
-          remainingContacts === 'unlimited' && styles.premiumContactsContainer
+          remainingContacts === 'unlimited' && styles.premiumContactsContainer,
+          isSelectionMode && styles.selectionModeActiveContainer
         ]}>
           {/* Search Bar */}
           <View style={styles.searchContainer}>
@@ -915,6 +1067,35 @@ export default function ContactsScreen() {
               onChangeText={setSearchQuery}
             />
           </View>
+
+          {contacts.length > 0 && (
+            <View style={styles.selectionToggleRow}>
+              <TouchableOpacity
+                onPress={toggleSelectionMode}
+                style={[
+                  styles.selectionToggleButton,
+                  isSelectionMode && styles.selectionToggleButtonActive
+                ]}
+              >
+                <MaterialIcons
+                  name={isSelectionMode ? 'close' : 'check-circle-outline'}
+                  size={20}
+                  color={isSelectionMode ? COLORS.white : COLORS.primary}
+                />
+                <Text
+                  style={[
+                    styles.selectionToggleText,
+                    isSelectionMode && styles.selectionToggleTextActive
+                  ]}
+                >
+                  {isSelectionMode ? 'Cancel Selection' : 'Select Contacts'}
+                </Text>
+              </TouchableOpacity>
+              {isSelectionMode && (
+                <Text style={styles.selectionHintText}>Tap contacts to select</Text>
+              )}
+            </View>
+          )}
 
           {/* Loading State */}
           {isLoading ? (
@@ -962,57 +1143,74 @@ export default function ContactsScreen() {
               }}
               scrollEventThrottle={200}
             >
-              {filteredContacts.map((contact, index) => (
-                <Swipeable
-                  key={`${contact.name}-${contact.surname}-${index}`}
-                  ref={(el) => swipeableRefs.current.set(index, el)}
-                  renderRightActions={(progress, dragX) => 
-                    RenderRightActions(progress, dragX, index)
-                  }
-                  renderLeftActions={(progress, dragX) => 
-                    RenderLeftActions(progress, dragX, contact)
-                  }
-                >
-                  <TouchableOpacity 
-                    style={styles.contactCard}
-                    onPress={() => handleContactPress(contact, index)}
-                    activeOpacity={0.7}
+              {filteredContacts.map((contact) => {
+                const contactKey = getContactKey(contact);
+                const isSelected = selectedContactKeys.has(contactKey);
+                return (
+                  <Swipeable
+                    key={contactKey}
+                    ref={(el) => swipeableRefs.current.set(contactKey, el)}
+                    enabled={!isSelectionMode}
+                    renderRightActions={(progress, dragX) => 
+                      RenderRightActions(progress, dragX, contact)
+                    }
+                    renderLeftActions={(progress, dragX) => 
+                      RenderLeftActions(progress, dragX, contact)
+                    }
                   >
-                    <View style={styles.contactLeft}>
-                      <LazyContactImage 
-                        contact={contact}
-                        style={styles.contactImage}
-                      />
-                      <View style={styles.contactInfo}>
-                        <Text style={styles.contactName}>
-                          {contact.name} {contact.surname}
-                        </Text>
-                        <View style={styles.contactSubInfo}>
-                          <Text style={styles.contactPhone}>
-                            {formatPhoneWithCountryCode(contact.phone)}
+                    <TouchableOpacity 
+                      style={[styles.contactCard, isSelected && styles.contactCardSelected]}
+                      onPress={() => handleContactPress(contact)}
+                      onLongPress={() => handleLongPressSelect(contact)}
+                      activeOpacity={0.7}
+                      delayLongPress={250}
+                    >
+                      <View style={styles.contactLeft}>
+                        {isSelectionMode && (
+                          <View style={[
+                            styles.selectionIndicator,
+                            isSelected && styles.selectionIndicatorSelected
+                          ]}>
+                            {isSelected && (
+                              <MaterialIcons name="check" size={16} color={COLORS.white} />
+                            )}
+                          </View>
+                        )}
+                        <LazyContactImage 
+                          contact={contact}
+                          style={styles.contactImage}
+                        />
+                        <View style={styles.contactInfo}>
+                          <Text style={styles.contactName}>
+                            {contact.name} {contact.surname}
                           </Text>
-                          {contact.email && (
-                            <Text style={styles.contactEmail}>
-                              {contact.email}
+                          <View style={styles.contactSubInfo}>
+                            <Text style={styles.contactPhone}>
+                              {formatPhoneWithCountryCode(contact.phone)}
                             </Text>
-                          )}
-                          {contact.company && (
-                            <Text style={styles.contactCompany}>
-                              {contact.company}
+                            {contact.email && (
+                              <Text style={styles.contactEmail}>
+                                {contact.email}
+                              </Text>
+                            )}
+                            {contact.company && (
+                              <Text style={styles.contactCompany}>
+                                {contact.company}
+                              </Text>
+                            )}
+                            <Text style={styles.contactHowWeMet}>
+                              Met at: {contact.howWeMet}
                             </Text>
-                          )}
-                          <Text style={styles.contactHowWeMet}>
-                            Met at: {contact.howWeMet}
-                          </Text>
-                          <Text style={styles.contactDate}>
-                            {formatTimestamp(contact.createdAt)}
-                          </Text>
+                            <Text style={styles.contactDate}>
+                              {formatTimestamp(contact.createdAt)}
+                            </Text>
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  </TouchableOpacity>
-                </Swipeable>
-              ))}
+                    </TouchableOpacity>
+                  </Swipeable>
+                );
+              })}
             </ScrollView>
           )}
         </View>
@@ -1073,7 +1271,6 @@ export default function ContactsScreen() {
             console.log('📱 Contact options modal close requested');
             setIsContactOptionsVisible(false);
             setSelectedContactForOptions(null);
-            setSelectedContactIndex(-1);
           }}
         >
           <View style={styles.modalOverlay}>
@@ -1083,7 +1280,6 @@ export default function ContactsScreen() {
                 onPress={() => {
                   setIsContactOptionsVisible(false);
                   setSelectedContactForOptions(null);
-                  setSelectedContactIndex(-1);
                 }}
               >
                 <MaterialIcons name="close" size={24} color={COLORS.black} />
@@ -1144,7 +1340,6 @@ export default function ContactsScreen() {
                         handleExportContact(selectedContactForOptions);
                         setIsContactOptionsVisible(false);
                         setSelectedContactForOptions(null);
-                        setSelectedContactIndex(-1);
                       }}
                     >
                       <MaterialIcons name="person-add" size={24} color={COLORS.white} />
@@ -1171,7 +1366,6 @@ export default function ContactsScreen() {
                           console.log('🔥 Closing contact options modal...');
                           setIsContactOptionsVisible(false);
                           setSelectedContactForOptions(null);
-                          setSelectedContactIndex(-1);
                           console.log('🔥 Contact options modal closed, waiting for useEffect to trigger share');
                         }}
                       >
@@ -1184,8 +1378,9 @@ export default function ContactsScreen() {
                       onPress={() => {
                         setIsContactOptionsVisible(false);
                         setSelectedContactForOptions(null);
-                        setSelectedContactIndex(-1);
-                        handleDeleteContact(selectedContactIndex);
+                        if (selectedContactForOptions) {
+                          handleDeleteContact(selectedContactForOptions);
+                        }
                       }}
                     >
                       <MaterialIcons name="delete" size={24} color={COLORS.white} />
@@ -1230,6 +1425,30 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
+        {isSelectionMode && (
+          <View style={styles.selectionModeBar}>
+            <Text style={styles.selectionCountText}>
+              {selectedContactKeys.size} selected
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.selectionDeleteButton,
+                (!selectedContactKeys.size || isBulkDeleting) && styles.selectionDeleteButtonDisabled
+              ]}
+              disabled={!selectedContactKeys.size || isBulkDeleting}
+              onPress={handleBulkDeleteConfirmation}
+            >
+              {isBulkDeleting ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <>
+                  <MaterialIcons name="delete" size={20} color={COLORS.white} />
+                  <Text style={styles.selectionDeleteButtonText}>Delete</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </GestureHandlerRootView>
   );
@@ -1300,6 +1519,9 @@ const styles = StyleSheet.create({
   premiumContactsContainer: {
     paddingTop: 120,
   },
+  selectionModeActiveContainer: {
+    paddingBottom: 90,
+  },
   searchContainer: {
     padding: 15,
     flexDirection: 'row',
@@ -1316,6 +1538,38 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: COLORS.black,
+  },
+  selectionToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 15,
+    marginBottom: 10,
+  },
+  selectionToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+  },
+  selectionToggleButtonActive: {
+    backgroundColor: COLORS.primary,
+  },
+  selectionToggleText: {
+    marginLeft: 8,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  selectionToggleTextActive: {
+    color: COLORS.white,
+  },
+  selectionHintText: {
+    fontSize: 12,
+    color: COLORS.gray,
   },
   loadingContainer: {
     flex: 1,
@@ -1370,9 +1624,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.gray + '20',
   },
+  contactCardSelected: {
+    borderColor: COLORS.primary,
+  },
   contactLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  selectionIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+  },
+  selectionIndicatorSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   contactImage: {
     width: 50,
@@ -1449,6 +1721,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 80,
     height: '100%',
+  },
+  selectionModeBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#1B2B5B',
+  },
+  selectionCountText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  selectionDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#FF3B30',
+  },
+  selectionDeleteButtonDisabled: {
+    backgroundColor: '#BDBDBD',
+  },
+  selectionDeleteButtonText: {
+    color: COLORS.white,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   modalOverlay: {
     flex: 1,

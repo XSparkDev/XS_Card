@@ -430,4 +430,60 @@ exports.deleteContactFromList = async (req, res) => {
     }
 };
 
+exports.deleteMultipleContacts = async (req, res) => {
+    const { id } = req.params;
+    const { indexes } = req.body || {};
+
+    if (!Array.isArray(indexes) || indexes.length === 0) {
+        return res.status(400).send({ message: 'No contact indexes provided' });
+    }
+
+    const parsedIndexes = indexes
+        .map((idx) => parseInt(idx, 10))
+        .filter((idx) => !Number.isNaN(idx));
+
+    if (parsedIndexes.length === 0) {
+        return res.status(400).send({ message: 'Invalid contact indexes provided' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts').doc(id);
+        const doc = await contactRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).send({ message: 'Contact list not found' });
+        }
+
+        const data = doc.data();
+        const currentContacts = data.contactList || [];
+
+        const uniqueIndexes = Array.from(new Set(parsedIndexes)).sort((a, b) => b - a);
+
+        const invalidIndex = uniqueIndexes.find((contactIndex) => contactIndex < 0 || contactIndex >= currentContacts.length);
+        if (invalidIndex !== undefined) {
+            return res.status(400).send({ message: `Contact index out of range: ${invalidIndex}` });
+        }
+
+        uniqueIndexes.forEach((contactIndex) => {
+            currentContacts.splice(contactIndex, 1);
+        });
+
+        await contactRef.update({
+            contactList: currentContacts
+        });
+
+        res.status(200).send({
+            message: 'Contacts deleted successfully',
+            deletedCount: uniqueIndexes.length,
+            remainingContacts: currentContacts.length
+        });
+    } catch (error) {
+        console.error('Bulk delete contacts error:', error);
+        res.status(500).send({
+            message: 'Failed to delete contacts',
+            error: error.message
+        });
+    }
+};
+
 // Note: Profile image endpoint moved to server.js

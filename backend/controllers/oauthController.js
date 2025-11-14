@@ -439,7 +439,217 @@ exports.handleLinkedInCallback = async (req, res) => {
   }
 };
 
-// TODO: Add Microsoft OAuth handlers here when implementing
-// exports.startMicrosoftOAuth = async (req, res) => { ... }
-// exports.handleMicrosoftCallback = async (req, res) => { ... }
+/**
+ * GET /oauth/microsoft/start
+ * Initiates Microsoft OAuth flow
+ * Phase 4: POOP - Microsoft OAuth backend handler
+ * 
+ * Query params:
+ * - state: Random state token from app (for CSRF protection)
+ * 
+ * Response:
+ * - Redirects to Microsoft OAuth consent screen
+ */
+exports.startMicrosoftOAuth = async (req, res) => {
+  try {
+    console.log('[OAuth] startMicrosoftOAuth called');
+    console.log('[OAuth] Request method:', req.method);
+    console.log('[OAuth] Request path:', req.path);
+    console.log('[OAuth] Request query:', req.query);
+    
+    const { state } = req.query;
+
+    if (!state) {
+      console.log('[OAuth] Missing state parameter');
+      return res.status(400).json({
+        success: false,
+        message: 'Missing state parameter'
+      });
+    }
+
+    // Store state for validation in callback
+    oauthStates.set(state, {
+      timestamp: Date.now(),
+      provider: 'microsoft.com'
+    });
+
+    console.log('[OAuth] Starting Microsoft OAuth flow, state:', state);
+
+    // Get Microsoft OAuth credentials from environment
+    const microsoftClientId = process.env.MICROSOFT_CLIENT_ID;
+    const microsoftClientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+    const microsoftTenantId = process.env.MICROSOFT_TENANT_ID || 'common'; // 'common' for multi-tenant
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+    const redirectUri = `${baseUrl}/oauth/microsoft/callback`;
+
+    if (!microsoftClientId || !microsoftClientSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Microsoft OAuth not configured on server'
+      });
+    }
+
+    // Build Microsoft OAuth URL
+    const microsoftAuthUrl = new URL(`https://login.microsoftonline.com/${microsoftTenantId}/oauth2/v2.0/authorize`);
+    microsoftAuthUrl.searchParams.set('client_id', microsoftClientId);
+    microsoftAuthUrl.searchParams.set('response_type', 'code');
+    microsoftAuthUrl.searchParams.set('redirect_uri', redirectUri);
+    microsoftAuthUrl.searchParams.set('response_mode', 'query');
+    microsoftAuthUrl.searchParams.set('scope', 'openid profile email User.Read');
+    microsoftAuthUrl.searchParams.set('state', state);
+
+    console.log('[OAuth] Redirecting to Microsoft:', microsoftAuthUrl.toString());
+
+    // Redirect to Microsoft OAuth
+    res.redirect(microsoftAuthUrl.toString());
+  } catch (error) {
+    console.error('[OAuth] Error starting Microsoft OAuth:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to start OAuth flow',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /oauth/microsoft/callback
+ * Handles Microsoft OAuth callback
+ * Phase 4: POOP - Microsoft OAuth backend handler
+ * 
+ * Query params:
+ * - code: Authorization code from Microsoft
+ * - state: State token for CSRF protection
+ * 
+ * Response:
+ * - Redirects to app via custom scheme with Firebase token
+ */
+exports.handleMicrosoftCallback = async (req, res) => {
+  try {
+    const { code, state, error: oauthError } = req.query;
+
+    console.log('[OAuth] Microsoft callback received, state:', state);
+
+    // Handle OAuth errors from Microsoft
+    if (oauthError) {
+      console.error('[OAuth] Microsoft OAuth error:', oauthError);
+      const appRedirect = `com.p.zzles.xscard://oauth-callback?error=${encodeURIComponent(oauthError)}&state=${state}&provider=microsoft`;
+      return res.redirect(appRedirect);
+    }
+
+    // Validate state
+    if (!state || !oauthStates.has(state)) {
+      console.error('[OAuth] Invalid or expired state:', state);
+      const appRedirect = `com.p.zzles.xscard://oauth-callback?error=invalid_state&provider=microsoft`;
+      return res.redirect(appRedirect);
+    }
+
+    // Clean up state
+    oauthStates.delete(state);
+
+    if (!code) {
+      const appRedirect = `com.p.zzles.xscard://oauth-callback?error=no_code&state=${state}&provider=microsoft`;
+      return res.redirect(appRedirect);
+    }
+
+    // Exchange authorization code for tokens
+    const microsoftClientId = process.env.MICROSOFT_CLIENT_ID;
+    const microsoftClientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+    const microsoftTenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+    const redirectUri = `${baseUrl}/oauth/microsoft/callback`;
+
+    console.log('[OAuth] Exchanging code for tokens...');
+
+    const tokenResponse = await axios.post(
+      `https://login.microsoftonline.com/${microsoftTenantId}/oauth2/v2.0/token`,
+      new URLSearchParams({
+        client_id: microsoftClientId,
+        client_secret: microsoftClientSecret,
+        code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code'
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    const { access_token, id_token } = tokenResponse.data;
+
+    if (!access_token) {
+      throw new Error('No access token received from Microsoft');
+    }
+
+    console.log('[OAuth] Tokens received, fetching Microsoft user info...');
+
+    // Get user info from Microsoft Graph
+    const userInfoResponse = await axios.get('https://graph.microsoft.com/oidc/userinfo', {
+      headers: {
+        'Authorization': `Bearer ${access_token}`
+      }
+    });
+
+    const microsoftUser = userInfoResponse.data;
+
+    if (!microsoftUser || !microsoftUser.email) {
+      throw new Error('Invalid Microsoft user data - missing email');
+    }
+
+    const microsoftEmail = microsoftUser.email;
+    const microsoftName = microsoftUser.name || microsoftEmail.split('@')[0];
+    const microsoftSub = microsoftUser.sub; // Microsoft user ID
+
+    console.log('[OAuth] Microsoft user fetched:', microsoftEmail);
+
+    // Get or create Firebase user by email
+    let firebaseUser;
+    try {
+      // Try to get existing user by email
+      firebaseUser = await admin.auth().getUserByEmail(microsoftEmail);
+      console.log('[OAuth] Existing Firebase user found:', firebaseUser.uid);
+    } catch (error) {
+      // User doesn't exist, create new one
+      if (error.code === 'auth/user-not-found') {
+        console.log('[OAuth] Creating new Firebase user for:', microsoftEmail);
+        firebaseUser = await admin.auth().createUser({
+          email: microsoftEmail,
+          displayName: microsoftName,
+          emailVerified: true, // Microsoft emails are pre-verified
+          providerData: [{
+            uid: microsoftSub,
+            email: microsoftEmail,
+            displayName: microsoftName,
+            providerId: 'microsoft.com'
+          }]
+        });
+        console.log('[OAuth] New Firebase user created:', firebaseUser.uid);
+      } else {
+        throw error;
+      }
+    }
+
+    // Create Firebase custom token for this user
+    const firebaseToken = await admin.auth().createCustomToken(firebaseUser.uid, {
+      provider: 'microsoft.com',
+      email: firebaseUser.email,
+      name: firebaseUser.displayName || firebaseUser.email
+    });
+
+    console.log('[OAuth] Firebase custom token created');
+
+    // Redirect to app with Firebase token
+    const appRedirect = `com.p.zzles.xscard://oauth-callback?token=${encodeURIComponent(firebaseToken)}&state=${state}&provider=microsoft`;
+    
+    console.log('[OAuth] Redirecting to app');
+    res.redirect(appRedirect);
+  } catch (error) {
+    console.error('[OAuth] Error in Microsoft callback:', error);
+    const errorMessage = encodeURIComponent(error.message || 'OAuth failed');
+    const appRedirect = `com.p.zzles.xscard://oauth-callback?error=${errorMessage}&provider=microsoft`;
+    res.redirect(appRedirect);
+  }
+};
 

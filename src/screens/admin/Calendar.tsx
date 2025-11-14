@@ -2374,7 +2374,7 @@ const renderEventDate = (dateStr: string) => {
           setIsContactsModalVisible(false);
           setIsTransitioning(false); // Reset transition state when modal is closed
         }}
-        contacts={contacts.filter(contact => contact.email !== userInfo?.email)}
+        contacts={contacts}
         onSelectContacts={handleContactSelect}
       />
 

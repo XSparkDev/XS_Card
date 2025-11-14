@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated, Modal } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated, Modal, ActivityIndicator } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // ErrorPopup import removed - no popups on signin page
@@ -19,6 +19,8 @@ import * as WebBrowser from 'expo-web-browser';
 import { signInWithGoogle, handleGoogleCallback } from '../../services/oauth/googleProvider';
 // Phase 3: LinkedIn OAuth imports (POOP)
 import { signInWithLinkedIn, handleLinkedInCallback } from '../../services/oauth/linkedinProvider';
+// Phase 3: Microsoft OAuth imports (POOP)
+import { signInWithMicrosoft, handleMicrosoftCallback } from '../../services/oauth/microsoftProvider';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -37,6 +39,7 @@ export default function SignInScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false); // NEW: Google OAuth loading state (POOP)
   const [isLinkedInLoading, setIsLinkedInLoading] = useState(false); // Phase 3: LinkedIn OAuth loading state (POOP)
+  const [isMicrosoftLoading, setIsMicrosoftLoading] = useState(false); // Phase 3: Microsoft OAuth loading state (POOP)
   const [keepLoggedIn, setKeepLoggedIn] = useState(true); // Default to true for better UX
   const [errors, setErrors] = useState({
     email: '',
@@ -77,6 +80,41 @@ export default function SignInScreen() {
 
   const handleTogglePress = () => {
     setKeepLoggedIn(!keepLoggedIn);
+  };
+
+  // Phase 3: Microsoft OAuth handler (POOP)
+  const handleMicrosoftSignIn = async () => {
+    setIsMicrosoftLoading(true);
+    
+    try {
+      console.log('[SignIn] Starting Microsoft OAuth...');
+      
+      // This will open the browser and return immediately
+      // The actual sign-in completes via deep link callback
+      await signInWithMicrosoft();
+      
+      // Note: signInWithMicrosoft throws 'pending_callback' error
+      // Deep link listener will handle the actual sign-in
+    } catch (error: any) {
+      setIsMicrosoftLoading(false);
+      
+      // If it's a pending_callback error, that's expected
+      if (error.code === 'pending_callback') {
+        console.log('[SignIn] Waiting for OAuth callback...');
+        return; // Deep link listener will handle completion
+      }
+      
+      // Handle user cancellation
+      if (error.code === 'user_cancelled') {
+        console.log('[SignIn] User cancelled Microsoft sign-in');
+        toast.info('Cancelled', 'Microsoft sign-in was cancelled');
+        return;
+      }
+      
+      // Handle other errors
+      console.error('[SignIn] Microsoft OAuth error:', error);
+      toast.error('Sign In Failed', error.message || 'Failed to sign in with Microsoft');
+    }
   };
 
   // Optimized password visibility toggle to prevent shaking
@@ -183,6 +221,9 @@ export default function SignInScreen() {
           if (url.includes('provider=linkedin')) {
             console.log('[SignIn] Processing LinkedIn callback');
             oauthResult = await handleLinkedInCallback(url);
+          } else if (url.includes('provider=microsoft')) {
+            console.log('[SignIn] Processing Microsoft callback');
+            oauthResult = await handleMicrosoftCallback(url);
           } else {
             // Default to Google for backward compatibility
             console.log('[SignIn] Processing Google callback');
@@ -254,21 +295,24 @@ export default function SignInScreen() {
             toast.success('Welcome!', `Signed in as ${userData.email}`);
           }
           
-          // Phase 3: Clear loading state for the appropriate provider (POOP)
+          // Phase 3: Clear loading state for all providers (POOP)
           setIsGoogleLoading(false);
           setIsLinkedInLoading(false);
+          setIsMicrosoftLoading(false);
         } catch (error: any) {
           // Silently ignore stale callbacks - they're from previous OAuth attempts
           if (error.code === 'stale_callback') {
             console.log('[SignIn] Ignoring stale OAuth callback from previous attempt');
             setIsGoogleLoading(false);
             setIsLinkedInLoading(false);
+            setIsMicrosoftLoading(false);
             return; // Don't show error toast
           }
           
           console.error('[SignIn] OAuth callback error:', error);
           setIsGoogleLoading(false);
           setIsLinkedInLoading(false);
+          setIsMicrosoftLoading(false);
           toast.error('Sign In Failed', error.message || 'Failed to complete OAuth sign-in');
         }
       }
@@ -680,29 +724,67 @@ export default function SignInScreen() {
         <View style={styles.oauthDividerLine} />
       </View>
 
-      {/* NEW: Google Sign-In Button (POOP - connected to handler) */}
-      <TouchableOpacity 
-        style={[styles.googleButton, isGoogleLoading && styles.disabledButton]}
-        onPress={handleGoogleSignIn}
-        disabled={isGoogleLoading || isLoading || isLinkedInLoading}
-      >
-        <MaterialIcons name="login" size={20} color="#4285F4" style={styles.googleIcon} />
-        <Text style={styles.googleButtonText}>
-          {isGoogleLoading ? 'Signing in with Google...' : 'Continue with Google'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.oauthButtonRow}>
+        <View style={styles.oauthIconWrapper}>
+          <TouchableOpacity
+            style={[
+              styles.oauthIconButton,
+              styles.googleCircle,
+              (isGoogleLoading || isLinkedInLoading || isLoading) && styles.oauthIconDisabled
+            ]}
+            onPress={handleGoogleSignIn}
+            disabled={isGoogleLoading || isLinkedInLoading || isLoading}
+            accessibilityLabel="Continue with Google"
+          >
+            {isGoogleLoading ? (
+              <ActivityIndicator color="#4285F4" />
+            ) : (
+              <FontAwesome5 name="google" size={24} color="#4285F4" />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.oauthIconLabel}>Google</Text>
+        </View>
 
-      {/* Phase 3: LinkedIn Sign-In Button (POOP) */}
-      <TouchableOpacity 
-        style={[styles.linkedinButton, isLinkedInLoading && styles.disabledButton]}
-        onPress={handleLinkedInSignIn}
-        disabled={isLinkedInLoading || isLoading || isGoogleLoading}
-      >
-        <MaterialIcons name="business" size={20} color="#0A66C2" style={styles.linkedinIcon} />
-        <Text style={styles.linkedinButtonText}>
-          {isLinkedInLoading ? 'Signing in with LinkedIn...' : 'Continue with LinkedIn'}
-        </Text>
-      </TouchableOpacity>
+        <View style={styles.oauthIconWrapper}>
+          <TouchableOpacity
+            style={[
+              styles.oauthIconButton,
+              styles.linkedinCircle,
+              (isLinkedInLoading || isGoogleLoading || isLoading) && styles.oauthIconDisabled
+            ]}
+            onPress={handleLinkedInSignIn}
+            disabled={isLinkedInLoading || isGoogleLoading || isLoading}
+            accessibilityLabel="Continue with LinkedIn"
+          >
+            {isLinkedInLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <FontAwesome5 name="linkedin-in" size={22} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.oauthIconLabel}>LinkedIn</Text>
+        </View>
+
+        <View style={styles.oauthIconWrapper}>
+          <TouchableOpacity
+            style={[
+              styles.oauthIconButton,
+              styles.microsoftCircle,
+              (isMicrosoftLoading || isGoogleLoading || isLinkedInLoading || isLoading) && styles.oauthIconDisabled
+            ]}
+            onPress={handleMicrosoftSignIn}
+            disabled={isMicrosoftLoading || isGoogleLoading || isLinkedInLoading || isLoading}
+            accessibilityLabel="Continue with Microsoft"
+          >
+            {isMicrosoftLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <FontAwesome5 name="microsoft" size={22} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.oauthIconLabel}>Microsoft</Text>
+        </View>
+      </View>
 
       <View style={styles.signUpContainer}>
         <Text style={styles.signUpText}>Don't have an account? </Text>
@@ -982,43 +1064,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 25,
-    padding: 15,
+  oauthButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    marginTop: 10,
+  },
+  oauthIconWrapper: {
     alignItems: 'center',
-    marginBottom: 15,
-    borderWidth: 1,
+    flex: 1,
+  },
+  oauthIconButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  googleCircle: {
+    backgroundColor: '#FFFFFF',
     borderColor: '#E0E0E0',
-    flexDirection: 'row',
-    justifyContent: 'center',
   },
-  googleIcon: {
-    marginRight: 10,
-  },
-  googleButtonText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Phase 3: LinkedIn button styles (POOP)
-  linkedinButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 25,
-    padding: 15,
-    alignItems: 'center',
-    marginBottom: 15,
-    borderWidth: 1,
+  linkedinCircle: {
+    backgroundColor: '#0A66C2',
     borderColor: '#0A66C2',
-    flexDirection: 'row',
-    justifyContent: 'center',
   },
-  linkedinIcon: {
-    marginRight: 10,
+  microsoftCircle: {
+    backgroundColor: '#00A4EF',
+    borderColor: '#00A4EF',
   },
-  linkedinButtonText: {
-    color: '#0A66C2',
-    fontSize: 16,
+  oauthIconLabel: {
+    marginTop: 8,
+    fontSize: 12,
     fontWeight: '600',
+    color: '#555',
+    textAlign: 'center',
+  },
+  oauthIconDisabled: {
+    opacity: 0.6,
   },
 });

@@ -26,6 +26,14 @@ if (!LINKEDIN_CLIENT_ID) {
   console.warn('⚠️  EXPO_PUBLIC_LINKEDIN_CLIENT_ID is not set. LinkedIn OAuth will not work.');
 }
 
+// Microsoft OAuth Client ID from Microsoft Entra ID (Azure Portal)
+// Get from: Azure Portal → App registrations → XS Card → Application (client) ID
+const MICROSOFT_CLIENT_ID = process.env.EXPO_PUBLIC_MICROSOFT_CLIENT_ID;
+
+if (!MICROSOFT_CLIENT_ID) {
+  console.warn('⚠️  EXPO_PUBLIC_MICROSOFT_CLIENT_ID is not set. Microsoft OAuth will not work once implemented.');
+}
+
 export interface OAuthProviderConfig {
   webClientId: string | undefined;
 }
@@ -52,7 +60,7 @@ export const oauthConfig: OAuthConfig = {
     webClientId: LINKEDIN_CLIENT_ID,
   },
   microsoft: {
-    webClientId: undefined, // TODO: Add Microsoft Web Client ID when implementing
+    webClientId: MICROSOFT_CLIENT_ID,
   },
 };
 
