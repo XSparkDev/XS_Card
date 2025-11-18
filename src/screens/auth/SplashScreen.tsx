@@ -5,6 +5,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { validateCurrentToken } from '../../services/tokenValidationService';
+import { COLORS } from '../../constants/colors';
 
 type SplashScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Splash'>;
 
@@ -116,7 +117,7 @@ export default function SplashScreen() {
         style={styles.logo}
         resizeMode="contain"
       />
-      <ActivityIndicator size="large" color="#FFFFFF" style={styles.loader} />
+      <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
       <Text style={styles.statusText}>{authCheckStatus}</Text>
     </View>
   );
@@ -125,7 +126,7 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
     marginTop: 30,
   },
   statusText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontSize: 14,
     marginTop: 20,
     opacity: 0.8,

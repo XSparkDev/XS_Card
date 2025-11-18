@@ -239,6 +239,25 @@ export default function SignInScreen() {
           const firebaseToken = oauthResult.token;
           const firebaseUser = oauthResult.user;
           
+          // Extract OAuth profile data from Firebase ID token claims
+          // Custom claims are set during OAuth callback on the backend
+          const idTokenResult = await auth.currentUser?.getIdTokenResult();
+          const claims = idTokenResult?.claims || {};
+          
+          const oauthProfileData = {
+            givenName: claims.given_name || '',
+            familyName: claims.family_name || '',
+            picture: claims.picture || firebaseUser.photoURL || null,
+          };
+          
+          console.log('[SignIn] OAuth profile data extracted:', oauthProfileData);
+          
+          // Store OAuth prefill data for CompleteProfile screen
+          if (oauthProfileData.givenName || oauthProfileData.familyName || oauthProfileData.picture) {
+            await AsyncStorage.setItem('oauthPrefillData', JSON.stringify(oauthProfileData));
+            console.log('[SignIn] OAuth prefill data stored in AsyncStorage');
+          }
+          
           // Fetch user data from backend (REUSES CEMENT - same as email/password)
           const response = await fetch(buildUrl(`/Users/${firebaseUser.uid}`), {
             method: 'GET',

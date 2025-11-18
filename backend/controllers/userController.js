@@ -87,12 +87,33 @@ exports.getUserById = async (req, res) => {
                 if (providerData && oauthProviders.includes(providerData)) {
                     console.log(`[Auto-Provision] Creating ${providerData} user:`, firebaseUser.email);
                     
+                    // Extract structured name fields from custom claims (set during OAuth callback)
+                    const givenName = firebaseUser.given_name || '';
+                    const familyName = firebaseUser.family_name || '';
+                    
+                    // Use structured names if available, otherwise fall back to display name parsing
+                    let firstName = givenName;
+                    let lastName = familyName;
+                    
+                    if (!firstName && !lastName && firebaseUser.name) {
+                        // Fallback: parse display name if structured names not available
+                        const nameParts = firebaseUser.name.split(' ');
+                        firstName = nameParts[0] || '';
+                        lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+                    }
+                    
+                    if (!firstName) {
+                        firstName = firebaseUser.email?.split('@')[0] || 'User';
+                    }
+                    
+                    console.log(`[Auto-Provision] Structured names - firstName: "${firstName}", lastName: "${lastName}"`);
+                    
                     // Create user document for OAuth user
                     const newUserData = {
                         uid: firebaseUser.uid,
                         email: firebaseUser.email || '',
-                        name: firebaseUser.name || firebaseUser.email?.split('@')[0] || 'User',
-                        surname: '',
+                        name: firstName,
+                        surname: lastName,
                         authProvider: providerData, // Store provider: google.com, linkedin.com, or microsoft.com
                         role: 'user',
                         plan: 'free',

@@ -7,8 +7,8 @@
 #APP_URL=http://localhost:8383
 #APP_URL=https://baseurl.xscard.co.za
 #APP_URL=https://apistaging.xscard.co.za
-#APP_URL=https://242e48878446.ngrok-free.app
-API_BASE_URL=https://242e48878446.ngrok-free.app
+#APP_URL=https://819a88ef045d.ngrok-free.app
+API_BASE_URL=https://819a88ef045d.ngrok-free.app
 NODE_ENV=development
 PORT=8383
 
@@ -35,7 +35,7 @@ GOOGLE_WEB_CLIENT_ID=21153373630-u2fvkuach1visn6vtgo9gi4eaghqfrun.apps.googleuse
 MICROSOFT_CLIENT_ID=df8a6c6f-3e38-44ec-b86f-3c46b371bc5a
 MICROSOFT_CLIENT_SECRET=<redacted>
 # MICROSOFT_TENANT_ID=43011e09-95a1-44bb-933e-431e9275d08e
-MICROSOFT_REDIRECT_URI=https://242e48878446.ngrok-free.app/oauth/microsoft/callback
+MICROSOFT_REDIRECT_URI=https://819a88ef045d.ngrok-free.app/oauth/microsoft/callback
 MICROSOFT_TENANT_ID=common
 MICROSOFT_AUTH_ENDPOINT=https://login.microsoftonline.com/common/oauth2/v2.0/authorize
 MICROSOFT_TOKEN_ENDPOINT=https://login.microsoftonline.com/common/oauth2/v2.0/token

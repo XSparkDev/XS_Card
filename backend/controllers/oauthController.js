@@ -176,8 +176,13 @@ exports.handleGoogleCallback = async (req, res) => {
     const googleEmail = decodedToken.email;
     const googleName = decodedToken.name || googleEmail.split('@')[0];
     const googleSub = decodedToken.sub; // Google user ID
+    // Extract structured name fields and picture
+    const googleGivenName = decodedToken.given_name || '';
+    const googleFamilyName = decodedToken.family_name || '';
+    const googlePicture = decodedToken.picture || null;
 
     console.log('[OAuth] Google user decoded:', googleEmail);
+    console.log('[OAuth] Google profile data - given_name:', googleGivenName, 'family_name:', googleFamilyName, 'picture:', googlePicture ? 'provided' : 'none');
 
     // Get or create Firebase user by email
     let firebaseUser;
@@ -206,14 +211,17 @@ exports.handleGoogleCallback = async (req, res) => {
       }
     }
 
-    // Create Firebase custom token for this user
+    // Create Firebase custom token for this user with profile data
     const firebaseToken = await admin.auth().createCustomToken(firebaseUser.uid, {
       provider: 'google.com',
       email: firebaseUser.email,
-      name: firebaseUser.displayName || firebaseUser.email
+      name: firebaseUser.displayName || firebaseUser.email,
+      given_name: googleGivenName,
+      family_name: googleFamilyName,
+      picture: googlePicture
     });
 
-    console.log('[OAuth] Firebase custom token created');
+    console.log('[OAuth] Firebase custom token created with profile data');
 
     // Redirect to app with Firebase token
     const appRedirect = `com.p.zzles.xscard://oauth-callback?token=${encodeURIComponent(firebaseToken)}&state=${state}&provider=google.com`;
@@ -387,8 +395,13 @@ exports.handleLinkedInCallback = async (req, res) => {
     const linkedinEmail = linkedinUser.email;
     const linkedinName = linkedinUser.name || linkedinEmail.split('@')[0];
     const linkedinSub = linkedinUser.sub; // LinkedIn user ID
+    // Extract structured name fields and picture
+    const linkedinGivenName = linkedinUser.given_name || '';
+    const linkedinFamilyName = linkedinUser.family_name || '';
+    const linkedinPicture = linkedinUser.picture || null;
 
     console.log('[OAuth] LinkedIn user fetched:', linkedinEmail);
+    console.log('[OAuth] LinkedIn profile data - given_name:', linkedinGivenName, 'family_name:', linkedinFamilyName, 'picture:', linkedinPicture ? 'provided' : 'none');
 
     // Get or create Firebase user by email
     let firebaseUser;
@@ -417,14 +430,17 @@ exports.handleLinkedInCallback = async (req, res) => {
       }
     }
 
-    // Create Firebase custom token for this user
+    // Create Firebase custom token for this user with profile data
     const firebaseToken = await admin.auth().createCustomToken(firebaseUser.uid, {
       provider: 'linkedin.com',
       email: firebaseUser.email,
-      name: firebaseUser.displayName || firebaseUser.email
+      name: firebaseUser.displayName || firebaseUser.email,
+      given_name: linkedinGivenName,
+      family_name: linkedinFamilyName,
+      picture: linkedinPicture
     });
 
-    console.log('[OAuth] Firebase custom token created');
+    console.log('[OAuth] Firebase custom token created with profile data');
 
     // Redirect to app with Firebase token
     const appRedirect = `com.p.zzles.xscard://oauth-callback?token=${encodeURIComponent(firebaseToken)}&state=${state}&provider=linkedin`;
@@ -601,8 +617,13 @@ exports.handleMicrosoftCallback = async (req, res) => {
     const microsoftEmail = microsoftUser.email;
     const microsoftName = microsoftUser.name || microsoftEmail.split('@')[0];
     const microsoftSub = microsoftUser.sub; // Microsoft user ID
+    // Extract structured name fields and picture
+    const microsoftGivenName = microsoftUser.given_name || '';
+    const microsoftFamilyName = microsoftUser.family_name || '';
+    const microsoftPicture = microsoftUser.picture || null;
 
     console.log('[OAuth] Microsoft user fetched:', microsoftEmail);
+    console.log('[OAuth] Microsoft profile data - given_name:', microsoftGivenName, 'family_name:', microsoftFamilyName, 'picture:', microsoftPicture ? 'provided' : 'none');
 
     // Get or create Firebase user by email
     let firebaseUser;
@@ -631,14 +652,17 @@ exports.handleMicrosoftCallback = async (req, res) => {
       }
     }
 
-    // Create Firebase custom token for this user
+    // Create Firebase custom token for this user with profile data
     const firebaseToken = await admin.auth().createCustomToken(firebaseUser.uid, {
       provider: 'microsoft.com',
       email: firebaseUser.email,
-      name: firebaseUser.displayName || firebaseUser.email
+      name: firebaseUser.displayName || firebaseUser.email,
+      given_name: microsoftGivenName,
+      family_name: microsoftFamilyName,
+      picture: microsoftPicture
     });
 
-    console.log('[OAuth] Firebase custom token created');
+    console.log('[OAuth] Firebase custom token created with profile data');
 
     // Redirect to app with Firebase token
     const appRedirect = `com.p.zzles.xscard://oauth-callback?token=${encodeURIComponent(firebaseToken)}&state=${state}&provider=microsoft`;

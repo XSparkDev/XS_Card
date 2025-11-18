@@ -87,8 +87,10 @@ export default function CompleteProfile() {
   // User data from signup/login
   const [userName, setUserName] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
+  const [userSurname, setUserSurname] = useState<string>('');
   
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [oauthPrefillImage, setOauthPrefillImage] = useState<string | null>(null); // Store OAuth provider image URL
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
@@ -191,6 +193,9 @@ export default function CompleteProfile() {
             if (userData.name) {
               setUserName(userData.name);
             }
+            if (userData.surname) {
+              setUserSurname(userData.surname);
+            }
             if (userData.email) {
               setUserEmail(userData.email);
               // Also store in tempUserEmail if not already there (for backend call)
@@ -209,6 +214,36 @@ export default function CompleteProfile() {
         } catch (userDataError) {
           console.error('Error loading user data:', userDataError);
           // Not critical - continue without user data display
+        }
+
+        // Load OAuth prefill data if available (from OAuth sign-in)
+        try {
+          const oauthPrefillDataString = await AsyncStorage.getItem('oauthPrefillData');
+          if (oauthPrefillDataString) {
+            const oauthPrefillData = JSON.parse(oauthPrefillDataString);
+            console.log('Loaded OAuth prefill data from AsyncStorage:', oauthPrefillData);
+            
+            // Prefill name fields if available and not already set
+            if (oauthPrefillData.givenName && !userName) {
+              setUserName(oauthPrefillData.givenName);
+              console.log('Prefilled userName from OAuth:', oauthPrefillData.givenName);
+            }
+            if (oauthPrefillData.familyName && !userSurname) {
+              setUserSurname(oauthPrefillData.familyName);
+              console.log('Prefilled userSurname from OAuth:', oauthPrefillData.familyName);
+            }
+            
+            // Store OAuth picture URL for prefill (but don't set as profileImage yet)
+            if (oauthPrefillData.picture) {
+              setOauthPrefillImage(oauthPrefillData.picture);
+              // Set as default profile image if user hasn't picked one yet
+              setProfileImage(oauthPrefillData.picture);
+              console.log('Prefilled profile image from OAuth:', oauthPrefillData.picture);
+            }
+          }
+        } catch (oauthPrefillError) {
+          console.error('Error loading OAuth prefill data:', oauthPrefillError);
+          // Not critical - continue without OAuth prefill
         }
       } catch (error) {
         console.error('Error retrieving userId:', error);
@@ -281,14 +316,22 @@ export default function CompleteProfile() {
           text: 'Camera',
           onPress: async () => {
             const imageUri = await pickImage(true);
-            if (imageUri) setProfileImage(imageUri);
+            if (imageUri) {
+              setProfileImage(imageUri);
+              // Clear OAuth prefill image if user picks their own
+              setOauthPrefillImage(null);
+            }
           },
         },
         {
           text: 'Gallery',
           onPress: async () => {
             const imageUri = await pickImage(false);
-            if (imageUri) setProfileImage(imageUri);
+            if (imageUri) {
+              setProfileImage(imageUri);
+              // Clear OAuth prefill image if user picks their own
+              setOauthPrefillImage(null);
+            }
           },
         },
         {
@@ -539,6 +582,7 @@ export default function CompleteProfile() {
       await AsyncStorage.removeItem('tempUserId');
       await AsyncStorage.removeItem('tempUserEmail');
       await AsyncStorage.removeItem('tempUserImages');
+      await AsyncStorage.removeItem('oauthPrefillData'); // Clean up OAuth prefill data
 
       // Navigate to main app
       Alert.alert(
@@ -617,6 +661,7 @@ export default function CompleteProfile() {
       await AsyncStorage.removeItem('tempUserId');
       await AsyncStorage.removeItem('tempUserEmail');
       await AsyncStorage.removeItem('tempUserImages');
+      await AsyncStorage.removeItem('oauthPrefillData'); // Clean up OAuth prefill data
       
       // Navigate to main app
       Alert.alert(
@@ -695,10 +740,12 @@ export default function CompleteProfile() {
           </View>
           
           <Text style={styles.title}>Complete Your Profile</Text>
-          {userName || userEmail ? (
+          {userName || userSurname || userEmail ? (
             <View style={styles.userInfoContainer}>
-              {userName ? (
-                <Text style={styles.userName}>Welcome back, {userName}!</Text>
+              {(userName || userSurname) ? (
+                <Text style={styles.userName}>
+                  Welcome back, {userName}{userSurname ? ` ${userSurname}` : ''}!
+                </Text>
               ) : null}
               {userEmail ? (
                 <Text style={styles.userEmail}>{userEmail}</Text>
