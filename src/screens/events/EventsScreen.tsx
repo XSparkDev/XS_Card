@@ -11,6 +11,7 @@ import {
   Image,
   ScrollView,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -24,6 +25,7 @@ import { useEventNotifications } from '../../context/EventNotificationContext';
 import { authenticatedFetchWithRefresh, ENDPOINTS, API_BASE_URL } from '../../utils/api';
 import { useToast } from '../../hooks/useToast';
 import { getRecentEvents, RecentEvent } from '../../utils/recentEvents';
+import { isTablet } from '../../utils/responsive';
 import {
   Event,
   EventListResponse,
@@ -403,13 +405,53 @@ export default function EventsScreen() {
     }
   };
 
+  // Calculate number of columns based on screen width (tablets only)
+  const getColumnCount = (): number => {
+    if (!isTablet()) return 1; // Mobile: always list
+    
+    const { width } = Dimensions.get('window');
+    if (width >= 1366) return 5; // Large tablets/MacBook
+    if (width >= 1024) return 4; // Medium tablets
+    if (width >= 768) return 3;   // Small tablets/iPads
+    return 1; // Fallback to list
+  };
+
+  const numColumns = getColumnCount();
+
   // Render event item
-  const renderEventItem = ({ item }: { item: Event }) => (
-    <EventCard
-      event={item}
-      onPress={() => handleEventPress(item)}
-    />
-  );
+  const renderEventItem = ({ item, index }: { item: Event; index: number }) => {
+    // For tablet grid layout, wrap card in container
+    if (isTablet() && numColumns > 1) {
+      const screenWidth = Dimensions.get('window').width;
+      const padding = 16 * 2; // Horizontal padding on both sides
+      const gaps = 12 * (numColumns - 1); // Gaps between columns
+      const cardWidth = (screenWidth - padding - gaps) / numColumns;
+      
+      // Check if this is the last item in its row (no marginRight needed)
+      const isLastInRow = (index + 1) % numColumns === 0;
+      
+      return (
+        <View style={[
+          styles.gridCardContainer, 
+          { width: cardWidth },
+          isLastInRow && styles.gridCardLastInRow
+        ]}>
+          <EventCard
+            event={item}
+            onPress={() => handleEventPress(item)}
+          />
+        </View>
+      );
+    }
+    
+    // Mobile: unchanged
+    return (
+      <EventCard
+        event={item}
+        onPress={() => handleEventPress(item)}
+      />
+    );
+  };
 
   // Render recent events section
   const renderRecentEvents = () => {
@@ -630,8 +672,9 @@ export default function EventsScreen() {
           data={events}
           renderItem={renderEventItem}
           keyExtractor={(item) => item.id}
+          numColumns={numColumns}
           contentContainerStyle={[
-            styles.listContainer,
+            isTablet() && numColumns > 1 ? styles.gridContainer : styles.listContainer,
             events.length === 0 && styles.emptyListContainer
           ]}
           showsVerticalScrollIndicator={false}
@@ -683,6 +726,17 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingHorizontal: 16,
     paddingBottom: 100, // Account for fab
+  },
+  gridContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 100, // Account for fab
+  },
+  gridCardContainer: {
+    marginRight: 12,
+    // marginBottom handled by EventCard's own styles
+  },
+  gridCardLastInRow: {
+    marginRight: 0,
   },
   emptyListContainer: {
     flexGrow: 1,

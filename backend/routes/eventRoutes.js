@@ -84,6 +84,11 @@ router.post('/events/:eventId/publish',
   eventController.publishEvent
 );
 
+// Recurring Events Routes (PROTECTED ROUTES)
+router.get('/events/:eventId/instances', optionalAuthentication, eventController.getEventInstances);
+router.get('/events/:eventId/instances/:instanceId', optionalAuthentication, eventController.getEventInstance);
+router.post('/events/:eventId/series/end', authenticateUser, eventController.endRecurringSeries);
+
 // Event registration with broadcasting (PROTECTED ROUTES)
 router.post('/events/:eventId/register', 
   authenticateUser,

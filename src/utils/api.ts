@@ -51,14 +51,14 @@ export const setGlobalAuthContextRef = (ref: any) => {
 const getBaseUrl = () => {
   // For production, use the deployed server
   //return 'https://xscard-app-8ign.onrender.com';
-    return 'https://baseurl.xscard.co.za';
+  // return 'https://baseurl.xscard.co.za';
 
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-  // return 'http://192.168.68.113:8383';
- // return 'https://2f0c56695d5a.ngrok-free.app';
+  // return 'http://192.168.8.249:8383';
+  return 'https://846084eede03.ngrok-free.app';
   
 };
 
@@ -148,6 +148,11 @@ export const ENDPOINTS = {
     GET_ORGANISER_STATUS: '/api/event-organisers/status',
     GET_ORGANISER_PROFILE: '/api/event-organisers/profile',
     UPDATE_ORGANISER_PROFILE: '/api/event-organisers/profile',
+    
+    // Recurring Events
+    GET_EVENT_INSTANCES: '/events/:eventId/instances',
+    GET_EVENT_INSTANCE: '/events/:eventId/instances/:instanceId',
+    END_RECURRING_SERIES: '/events/:eventId/series/end',
     
     // User Management
     DEACTIVATE_USER: '/Users',
@@ -640,6 +645,59 @@ export const manuallyExpireToken = async (): Promise<void> => {
     console.log('[Test] Token manually expired - next API call will trigger logout');
   } catch (error) {
     console.error('[Test] Error manually expiring token:', error);
+  }
+};
+
+// ============= CALENDAR PREFERENCES API =============
+
+/**
+ * Get calendar preferences
+ */
+export const getCalendarPreferences = async (): Promise<any> => {
+  try {
+    const response = await authenticatedFetchWithRefresh('/meetings/preferences', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Calendar Preferences] API error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to fetch calendar preferences (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[Calendar Preferences] Error fetching preferences:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update calendar preferences
+ */
+export const updateCalendarPreferences = async (preferences: any): Promise<any> => {
+  try {
+    const response = await authenticatedFetchWithRefresh('/meetings/preferences', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(preferences),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Calendar Preferences] Update error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to update calendar preferences (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[Calendar Preferences] Error updating preferences:', error);
+    throw error;
   }
 };
 

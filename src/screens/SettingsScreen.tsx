@@ -458,6 +458,13 @@ export default function SettingsScreen() {
           )}
 
           {renderSettingItem(
+            'calendar-today',
+            'Calendar Preferences',
+            'Configure your public booking calendar',
+            () => navigation.navigate('CalendarPreferences')
+          )}
+
+          {renderSettingItem(
             'security',
             'Privacy & Security',
             'Manage your privacy and security settings',

@@ -21,7 +21,7 @@ type RootStackParamList = {
   Events: undefined;
   Contacts: undefined;
   Settings: undefined;
-  AdminDashboard: undefined;
+  AdminDashboard: { screen?: 'Analytics' | 'Calendar' } | undefined;
   MainApp: undefined;
   EventPreferences: undefined;
   MyEvents: undefined;
@@ -171,12 +171,16 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
     }
   };
 
-  const handleNavigate = async (screenName: keyof RootStackParamList) => {
+  const handleNavigate = async (screenName: keyof RootStackParamList, screen?: string) => {
     setIsMenuVisible(false);
     try {
-      // For AdminDashboard, just navigate directly
+      // For AdminDashboard, navigate with optional screen parameter
       if (screenName === 'AdminDashboard') {
-        navigation.navigate('AdminDashboard');
+        if (screen) {
+          navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
+        } else {
+          navigation.navigate('AdminDashboard');
+        }
       } else if (screenName === 'Cards' || screenName === 'Contacts') {
         // For tab screens, navigate to MainTabs with the specific screen
         (navigation as any).navigate('MainTabs', { screen: screenName });
@@ -236,6 +240,16 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
               >
                 <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
                 <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
+              </TouchableOpacity>
+            )}
+
+            {userPlan !== 'free' && (
+              <TouchableOpacity 
+                style={styles.menuItem}
+                onPress={() => handleNavigate('AdminDashboard', 'Calendar')}
+              >
+                <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
+                <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
               </TouchableOpacity>
             )}
 

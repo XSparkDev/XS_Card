@@ -50,11 +50,56 @@ export interface Event {
   listingFee?: number;
   /** Detailed publishing cost returned from backend */
   publishingCost?: PublishingCost;
+  // Recurring events fields
+  isRecurring?: boolean;
+  recurrencePattern?: RecurrencePattern;
+  nextOccurrence?: string; // For search/list results
+  displayText?: string; // "Every Monday at 10:00 AM SAST"
+}
+
+// Recurrence Pattern for recurring events
+export interface RecurrencePattern {
+  type: 'weekly'; // MVP: weekly only
+  daysOfWeek: number[]; // [0-6] where 0=Sunday, 6=Saturday
+  timezone: string; // IANA timezone (e.g., "Africa/Johannesburg")
+  startDate: string; // First occurrence ISO date
+  startTime: string; // "HH:mm" format (e.g., "10:00")
+  endDate: string; // Required: Series end date (no "no end date" in MVP)
+  excludedDates?: string[]; // Array of YYYY-MM-DD dates to skip
+  eventId?: string; // Parent event template ID
+}
+
+// Event Instance (virtual, generated on-demand)
+export interface EventInstance {
+  instanceId: string; // Format: "eventId_YYYY-MM-DD"
+  eventId: string; // Parent event template ID
+  eventDate: string; // UTC timestamp
+  eventDateISO?: string; // ISO format
+  localTime: string; // "HH:mm" format in organizer timezone
+  localTimeFormatted: string; // "10:00 AM" format
+  timezone: string; // IANA timezone
+  timezoneAbbr: string; // "SAST", "GMT", etc.
+  date: string; // YYYY-MM-DD
+  dayOfWeek: string; // "Monday", "Tuesday", etc.
+  attendeeCount: number; // Number of registrations for this instance
+  maxAttendees: number; // From parent template
+  isCancelled: boolean;
+  // Inherits all other fields from Event template
+  title?: string;
+  description?: string;
+  location?: EventLocation;
+  category?: string;
+  eventType?: 'free' | 'paid';
+  ticketPrice?: number;
+  organizerInfo?: OrganizerInfo;
+  images?: string[];
+  bannerImage?: string;
 }
 
 export interface EventRegistration {
   id: string;
   eventId: string;
+  instanceId?: string | null; // For recurring events: "eventId_YYYY-MM-DD", null for non-recurring
   userId: string;
   userInfo: {
     name: string;
@@ -245,6 +290,9 @@ export interface CreateEventData {
   bannerImage?: string;
   tags?: string[];
   allowBulkRegistrations?: boolean;
+  // Recurring events fields
+  isRecurring?: boolean;
+  recurrencePattern?: RecurrencePattern;
 }
 
 // Event analytics data

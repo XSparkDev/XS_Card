@@ -1,18 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated, Modal, ActivityIndicator } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // ErrorPopup import removed - no popups on signin page
 import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData, getStoredAuthData } from '../../utils/authStorage';
 // Error handler imports removed - no popups on signin page
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
+// NEW: OAuth imports (POOP)
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { signInWithGoogle, handleGoogleCallback } from '../../services/oauth/googleProvider';
+// Phase 3: LinkedIn OAuth imports (POOP)
+import { signInWithLinkedIn, handleLinkedInCallback } from '../../services/oauth/linkedinProvider';
+// Phase 3: Microsoft OAuth imports (POOP)
+import { signInWithMicrosoft, handleMicrosoftCallback } from '../../services/oauth/microsoftProvider';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -29,13 +37,22 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false); // NEW: Google OAuth loading state (POOP)
+  const [isLinkedInLoading, setIsLinkedInLoading] = useState(false); // Phase 3: LinkedIn OAuth loading state (POOP)
+  const [isMicrosoftLoading, setIsMicrosoftLoading] = useState(false); // Phase 3: Microsoft OAuth loading state (POOP)
   const [keepLoggedIn, setKeepLoggedIn] = useState(true); // Default to true for better UX
   const [errors, setErrors] = useState({
     email: '',
     password: '',
   });
+  const [authFieldErrors, setAuthFieldErrors] = useState({
+    email: false,
+    password: false,
+  });
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [showRetryModal, setShowRetryModal] = useState(false);
   // Error popup removed - no popups on signin page
 
 
@@ -65,6 +82,41 @@ export default function SignInScreen() {
     setKeepLoggedIn(!keepLoggedIn);
   };
 
+  // Phase 3: Microsoft OAuth handler (POOP)
+  const handleMicrosoftSignIn = async () => {
+    setIsMicrosoftLoading(true);
+    
+    try {
+      console.log('[SignIn] Starting Microsoft OAuth...');
+      
+      // This will open the browser and return immediately
+      // The actual sign-in completes via deep link callback
+      await signInWithMicrosoft();
+      
+      // Note: signInWithMicrosoft throws 'pending_callback' error
+      // Deep link listener will handle the actual sign-in
+    } catch (error: any) {
+      setIsMicrosoftLoading(false);
+      
+      // If it's a pending_callback error, that's expected
+      if (error.code === 'pending_callback') {
+        console.log('[SignIn] Waiting for OAuth callback...');
+        return; // Deep link listener will handle completion
+      }
+      
+      // Handle user cancellation
+      if (error.code === 'user_cancelled') {
+        console.log('[SignIn] User cancelled Microsoft sign-in');
+        toast.info('Cancelled', 'Microsoft sign-in was cancelled');
+        return;
+      }
+      
+      // Handle other errors
+      console.error('[SignIn] Microsoft OAuth error:', error);
+      toast.error('Sign In Failed', error.message || 'Failed to sign in with Microsoft');
+    }
+  };
+
   // Optimized password visibility toggle to prevent shaking
   const handleTogglePasswordVisibility = () => {
     setShowPassword(prev => !prev);
@@ -83,6 +135,223 @@ export default function SignInScreen() {
     }
   };
 
+  // NEW: Google OAuth handler (POOP)
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    
+    try {
+      console.log('[SignIn] Starting Google OAuth...');
+      
+      // This will open the browser and return immediately
+      // The actual sign-in completes via deep link callback
+      await signInWithGoogle();
+      
+      // Note: signInWithGoogle throws 'pending_callback' error
+      // Deep link listener will handle the actual sign-in
+    } catch (error: any) {
+      setIsGoogleLoading(false);
+      
+      // If it's a pending_callback error, that's expected
+      if (error.code === 'pending_callback') {
+        console.log('[SignIn] Waiting for OAuth callback...');
+        return; // Deep link listener will handle completion
+      }
+      
+      // Handle user cancellation
+      if (error.code === 'user_cancelled') {
+        console.log('[SignIn] User cancelled Google sign-in');
+        toast.info('Cancelled', 'Google sign-in was cancelled');
+        return;
+      }
+      
+      // Handle other errors
+      console.error('[SignIn] Google OAuth error:', error);
+      toast.error('Sign In Failed', error.message || 'Failed to sign in with Google');
+    }
+  };
+
+  // Phase 3: LinkedIn OAuth handler (POOP)
+  const handleLinkedInSignIn = async () => {
+    setIsLinkedInLoading(true);
+    
+    try {
+      console.log('[SignIn] Starting LinkedIn OAuth...');
+      
+      // This will open the browser and return immediately
+      // The actual sign-in completes via deep link callback
+      await signInWithLinkedIn();
+      
+      // Note: signInWithLinkedIn throws 'pending_callback' error
+      // Deep link listener will handle the actual sign-in
+    } catch (error: any) {
+      setIsLinkedInLoading(false);
+      
+      // If it's a pending_callback error, that's expected
+      if (error.code === 'pending_callback') {
+        console.log('[SignIn] Waiting for OAuth callback...');
+        return; // Deep link listener will handle completion
+      }
+      
+      // Handle user cancellation
+      if (error.code === 'user_cancelled') {
+        console.log('[SignIn] User cancelled LinkedIn sign-in');
+        toast.info('Cancelled', 'LinkedIn sign-in was cancelled');
+        return;
+      }
+      
+      // Handle other errors
+      console.error('[SignIn] LinkedIn OAuth error:', error);
+      toast.error('Sign In Failed', error.message || 'Failed to sign in with LinkedIn');
+    }
+  };
+
+  // NEW: Deep link listener for OAuth callback (POOP)
+  useEffect(() => {
+    const handleDeepLink = async (event: { url: string }) => {
+      const url = event.url;
+      console.log('[SignIn] Deep link received:', url);
+      
+      // Check if it's an OAuth callback
+      if (url.includes('oauth-callback')) {
+        try {
+          console.log('[SignIn] Processing OAuth callback...');
+          
+          // Phase 3: Detect provider from URL and handle accordingly (POOP)
+          let oauthResult;
+          if (url.includes('provider=linkedin')) {
+            console.log('[SignIn] Processing LinkedIn callback');
+            oauthResult = await handleLinkedInCallback(url);
+          } else if (url.includes('provider=microsoft')) {
+            console.log('[SignIn] Processing Microsoft callback');
+            oauthResult = await handleMicrosoftCallback(url);
+          } else {
+            // Default to Google for backward compatibility
+            console.log('[SignIn] Processing Google callback');
+            oauthResult = await handleGoogleCallback(url);
+          }
+          
+          // Dismiss the browser window (it doesn't auto-close with custom URL schemes)
+          WebBrowser.dismissBrowser();
+          
+          console.log('[SignIn] OAuth successful, fetching user data...');
+          
+          // REUSE CEMENT - Same flow as email/password
+          const firebaseToken = oauthResult.token;
+          const firebaseUser = oauthResult.user;
+          
+          // Extract OAuth profile data from Firebase ID token claims
+          // Custom claims are set during OAuth callback on the backend
+          const idTokenResult = await auth.currentUser?.getIdTokenResult();
+          const claims = idTokenResult?.claims || {};
+          
+          const oauthProfileData = {
+            givenName: claims.given_name || '',
+            familyName: claims.family_name || '',
+            picture: claims.picture || firebaseUser.photoURL || null,
+          };
+          
+          console.log('[SignIn] OAuth profile data extracted:', oauthProfileData);
+          
+          // Store OAuth prefill data for CompleteProfile screen
+          if (oauthProfileData.givenName || oauthProfileData.familyName || oauthProfileData.picture) {
+            await AsyncStorage.setItem('oauthPrefillData', JSON.stringify(oauthProfileData));
+            console.log('[SignIn] OAuth prefill data stored in AsyncStorage');
+          }
+          
+          // Fetch user data from backend (REUSES CEMENT - same as email/password)
+          const response = await fetch(buildUrl(`/Users/${firebaseUser.uid}`), {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${firebaseToken}`,
+            },
+          });
+          
+          if (response.ok) {
+            const userData = await response.json();
+            
+            // REUSE CEMENT - storeAuthData (same as email/password)
+            await storeAuthData({
+              userToken: `Bearer ${firebaseToken}`,
+              userData: userData,
+              userRole: userData.role || 'user',
+              keepLoggedIn,
+              lastLoginTime: Date.now(),
+            });
+            
+            await updateLastLoginTime();
+            
+            console.log('[SignIn] OAuth sign-in complete, navigating to MainApp');
+            
+            // REUSE CEMENT - Same navigation as email/password
+            navigation.getParent()?.navigate('MainApp');
+            
+            toast.success('Welcome!', `Signed in as ${userData.email}`);
+          } else {
+            // Backend user fetch failed - use Firebase user data
+            console.warn('[SignIn] Backend user fetch failed, using Firebase data');
+            
+            const userData = {
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || '',
+              email: firebaseUser.email || '',
+              plan: 'free'
+            };
+            
+            await storeAuthData({
+              userToken: `Bearer ${firebaseToken}`,
+              userData: userData,
+              userRole: 'user',
+              keepLoggedIn,
+              lastLoginTime: Date.now(),
+            });
+            
+            await updateLastLoginTime();
+            
+            navigation.getParent()?.navigate('MainApp');
+            
+            toast.success('Welcome!', `Signed in as ${userData.email}`);
+          }
+          
+          // Phase 3: Clear loading state for all providers (POOP)
+          setIsGoogleLoading(false);
+          setIsLinkedInLoading(false);
+          setIsMicrosoftLoading(false);
+        } catch (error: any) {
+          // Silently ignore stale callbacks - they're from previous OAuth attempts
+          if (error.code === 'stale_callback') {
+            console.log('[SignIn] Ignoring stale OAuth callback from previous attempt');
+            setIsGoogleLoading(false);
+            setIsLinkedInLoading(false);
+            setIsMicrosoftLoading(false);
+            return; // Don't show error toast
+          }
+          
+          console.error('[SignIn] OAuth callback error:', error);
+          setIsGoogleLoading(false);
+          setIsLinkedInLoading(false);
+          setIsMicrosoftLoading(false);
+          toast.error('Sign In Failed', error.message || 'Failed to complete OAuth sign-in');
+        }
+      }
+    };
+    
+    // Listen for deep links
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+    
+    // Cleanup
+    return () => {
+      subscription.remove();
+    };
+  }, [keepLoggedIn, navigation, toast]);
 
   // const validateEmail = (email: string) => {
   //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -114,6 +383,10 @@ export default function SignInScreen() {
     }
 
     setErrors(newErrors);
+    setAuthFieldErrors({
+      email: false,
+      password: false,
+    });
     return isValid;
   };
 
@@ -124,13 +397,16 @@ export default function SignInScreen() {
       return;
     }
 
+    const trimmedEmail = email.trim();
+    if (trimmedEmail !== email) {
+      setEmail(trimmedEmail);
+    }
+
     setIsLoading(true);
 
     try {
       console.log('SignIn: Starting Firebase authentication...');
-      
-      // 🔥 FIX: Trim email before Firebase authentication
-      const trimmedEmail = email.trim();
+
       const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
       const firebaseUser = userCredential.user;
       
@@ -202,6 +478,13 @@ export default function SignInScreen() {
         
         // Navigate to root navigator's MainApp screen
         navigation.getParent()?.navigate('MainApp');
+        setAuthFieldErrors({ email: false, password: false });
+        if (failedAttempts !== 0) {
+          setFailedAttempts(0);
+        }
+        if (showRetryModal) {
+          setShowRetryModal(false);
+        }
       } else {
         // Handle backend data retrieval failures
         console.warn('SignIn: Backend user data retrieval failed, using Firebase user data');
@@ -232,6 +515,13 @@ export default function SignInScreen() {
         
         // Navigate to root navigator's MainApp screen
         navigation.getParent()?.navigate('MainApp');
+        setAuthFieldErrors({ email: false, password: false });
+        if (failedAttempts !== 0) {
+          setFailedAttempts(0);
+        }
+        if (showRetryModal) {
+          setShowRetryModal(false);
+        }
       }
     } catch (error: any) {
       console.error('SignIn: Authentication error:', error);
@@ -239,21 +529,60 @@ export default function SignInScreen() {
       // Handle Firebase authentication errors silently
       if (error.code) {
         console.error('SignIn: Authentication error:', error.code, error.message);
+
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+          try {
+            const signInMethods = await fetchSignInMethodsForEmail(auth, trimmedEmail);
+
+            if (!signInMethods || signInMethods.length === 0) {
+              setFailedAttempts(prev => {
+                const next = prev + 1;
+                if (next >= 3) {
+                  setShowRetryModal(true);
+                }
+                return next;
+              });
+              const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
+              setAuthFieldErrors({ email: true, password: true });
+              setErrors(prev => ({ ...prev, email: '', password: '' }));
+              toast.error('Sign In Failed', neutralMessage);
+              return;
+            }
+          } catch (methodCheckError) {
+            console.warn('SignIn: Failed to check sign-in methods:', methodCheckError);
+          }
+        }
         
         // Set field-specific errors and show toast notifications
         switch (error.code) {
-          case 'auth/user-not-found':
-            setErrors(prev => ({ ...prev, email: 'No account found with this email' }));
-            toast.error('Sign In Failed', 'No account found with this email address');
+          case 'auth/wrong-password': {
+            const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
+            setAuthFieldErrors({ email: true, password: true });
+            setErrors(prev => ({ ...prev, email: '', password: '' }));
+            toast.error('Sign In Failed', neutralMessage);
+            setFailedAttempts(prev => {
+              const next = prev + 1;
+              if (next >= 3) {
+                setShowRetryModal(true);
+              }
+              return next;
+            });
             break;
-          case 'auth/wrong-password':
-            setErrors(prev => ({ ...prev, password: 'Invalid password' }));
-            toast.error('Sign In Failed', 'Incorrect password. Please try again');
+          }
+          case 'auth/invalid-credential': {
+            const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
+            setAuthFieldErrors({ email: true, password: true });
+            setErrors(prev => ({ ...prev, email: '', password: '' }));
+            toast.error('Sign In Failed', neutralMessage);
+            setFailedAttempts(prev => {
+              const next = prev + 1;
+              if (next >= 3) {
+                setShowRetryModal(true);
+              }
+              return next;
+            });
             break;
-          case 'auth/invalid-credential':
-            setErrors(prev => ({ ...prev, email: 'Invalid credentials' }));
-            toast.error('Sign In Failed', 'Invalid email or password. Please check your credentials and try again');
-            break;
+          }
           case 'auth/invalid-email':
             setErrors(prev => ({ ...prev, email: 'Invalid email format' }));
             toast.error('Invalid Email', 'Please enter a valid email address');
@@ -306,10 +635,15 @@ export default function SignInScreen() {
       <Text style={styles.title}>Sign In</Text>
 
       <TextInput
-        style={[styles.input, errors.email ? styles.inputError : null]}
+        style={[styles.input, (errors.email || authFieldErrors.email) ? styles.inputError : null]}
         placeholder="Email"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(value) => {
+          setEmail(value);
+          if (authFieldErrors.email) {
+            setAuthFieldErrors(prev => ({ ...prev, email: false }));
+          }
+        }}
         keyboardType="email-address"
         autoCapitalize="none"
         placeholderTextColor="#999"
@@ -318,10 +652,15 @@ export default function SignInScreen() {
 
       <View style={styles.passwordContainer}>
         <TextInput
-          style={[styles.input, styles.passwordInput, errors.password ? styles.inputError : null]}
+          style={[styles.input, styles.passwordInput, (errors.password || authFieldErrors.password) ? styles.inputError : null]}
           placeholder="Password"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(value) => {
+            setPassword(value);
+            if (authFieldErrors.password) {
+              setAuthFieldErrors(prev => ({ ...prev, password: false }));
+            }
+          }}
           secureTextEntry={!showPassword}
           placeholderTextColor="#999"
         />
@@ -397,7 +736,74 @@ export default function SignInScreen() {
         </Text>
       </TouchableOpacity>
 
+      {/* NEW: OAuth divider (POOP) */}
+      <View style={styles.oauthDivider}>
+        <View style={styles.oauthDividerLine} />
+        <Text style={styles.oauthDividerText}>OR</Text>
+        <View style={styles.oauthDividerLine} />
+      </View>
 
+      <View style={styles.oauthButtonRow}>
+        <View style={styles.oauthIconWrapper}>
+          <TouchableOpacity
+            style={[
+              styles.oauthIconButton,
+              styles.googleCircle,
+              (isGoogleLoading || isLinkedInLoading || isLoading) && styles.oauthIconDisabled
+            ]}
+            onPress={handleGoogleSignIn}
+            disabled={isGoogleLoading || isLinkedInLoading || isLoading}
+            accessibilityLabel="Continue with Google"
+          >
+            {isGoogleLoading ? (
+              <ActivityIndicator color="#4285F4" />
+            ) : (
+              <FontAwesome5 name="google" size={24} color="#4285F4" />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.oauthIconLabel}>Google</Text>
+        </View>
+
+        <View style={styles.oauthIconWrapper}>
+          <TouchableOpacity
+            style={[
+              styles.oauthIconButton,
+              styles.linkedinCircle,
+              (isLinkedInLoading || isGoogleLoading || isLoading) && styles.oauthIconDisabled
+            ]}
+            onPress={handleLinkedInSignIn}
+            disabled={isLinkedInLoading || isGoogleLoading || isLoading}
+            accessibilityLabel="Continue with LinkedIn"
+          >
+            {isLinkedInLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <FontAwesome5 name="linkedin-in" size={22} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.oauthIconLabel}>LinkedIn</Text>
+        </View>
+
+        <View style={styles.oauthIconWrapper}>
+          <TouchableOpacity
+            style={[
+              styles.oauthIconButton,
+              styles.microsoftCircle,
+              (isMicrosoftLoading || isGoogleLoading || isLinkedInLoading || isLoading) && styles.oauthIconDisabled
+            ]}
+            onPress={handleMicrosoftSignIn}
+            disabled={isMicrosoftLoading || isGoogleLoading || isLinkedInLoading || isLoading}
+            accessibilityLabel="Continue with Microsoft"
+          >
+            {isMicrosoftLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <FontAwesome5 name="microsoft" size={22} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.oauthIconLabel}>Microsoft</Text>
+        </View>
+      </View>
 
       <View style={styles.signUpContainer}>
         <Text style={styles.signUpText}>Don't have an account? </Text>
@@ -414,6 +820,59 @@ export default function SignInScreen() {
         userEmail={unverifiedEmail}
         onSignOut={handleSignOut}
       />
+
+      <Modal
+        visible={showRetryModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRetryModal(false)}
+      >
+        <View style={styles.retryOverlay}>
+          <View style={styles.retryModal}>
+            <View style={styles.retryIconContainer}>
+              <MaterialIcons name="help-outline" size={36} color={COLORS.primary} />
+            </View>
+            <Text style={styles.retryTitle}>Need a Hand?</Text>
+            <Text style={styles.retryMessage}>
+              We haven’t been able to sign you in after a few tries. You can reset your password or create a new account to keep going.
+            </Text>
+            <View style={styles.retryButtons}>
+              <TouchableOpacity
+                style={[styles.retryButton, styles.retryPrimaryButton]}
+                onPress={() => {
+                  setShowRetryModal(false);
+                  setFailedAttempts(0);
+                  setAuthFieldErrors({ email: false, password: false });
+                  navigation.navigate('ForgotPassword');
+                }}
+              >
+                <Text style={styles.retryPrimaryButtonText}>Reset Password</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.retryButton, styles.retrySecondaryButton]}
+                onPress={() => {
+                  setShowRetryModal(false);
+                  navigation.navigate('SignUp', { prefillEmail: email.trim() });
+                  setFailedAttempts(0);
+                  setAuthFieldErrors({ email: false, password: false });
+                }}
+              >
+                <Text style={styles.retrySecondaryButtonText}>Create Account</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.retryLink}
+              onPress={() => {
+                  setShowRetryModal(false);
+                  setFailedAttempts(0);
+                setAuthFieldErrors({ email: false, password: false });
+                }}
+              >
+              <Text style={styles.retryLinkText}>Back to sign in</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -533,5 +992,135 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     fontWeight: '500',
+  },
+  retryOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  retryModal: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  retryIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  retryTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  retryMessage: {
+    fontSize: 15,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  retryButtons: {
+    flexDirection: 'column',
+    gap: 12,
+    width: '100%',
+  },
+  retryButton: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  retrySecondaryButton: {
+    backgroundColor: '#F3F4F6',
+  },
+  retrySecondaryButtonText: {
+    color: '#4B5563',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  retryPrimaryButton: {
+    backgroundColor: COLORS.secondary,
+  },
+  retryPrimaryButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  retryLink: {
+    marginTop: 16,
+  },
+  retryLinkText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  // NEW: OAuth styles (POOP)
+  oauthDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  oauthDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  oauthDividerText: {
+    marginHorizontal: 15,
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  oauthButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    marginTop: 10,
+  },
+  oauthIconWrapper: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  oauthIconButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  googleCircle: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E0E0',
+  },
+  linkedinCircle: {
+    backgroundColor: '#0A66C2',
+    borderColor: '#0A66C2',
+  },
+  microsoftCircle: {
+    backgroundColor: '#00A4EF',
+    borderColor: '#00A4EF',
+  },
+  oauthIconLabel: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#555',
+    textAlign: 'center',
+  },
+  oauthIconDisabled: {
+    opacity: 0.6,
   },
 });

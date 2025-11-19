@@ -14,6 +14,7 @@ router.get('/Contacts', authenticateUser, contactController.getAllContacts);
 router.get('/Contacts/:id', authenticateUser, contactController.getContactById);
 router.patch('/Contacts/:id', authenticateUser, contactController.updateContact);
 router.delete('/Contacts/:id', authenticateUser, contactController.deleteContact);
+router.delete('/Contacts/:id/bulk', authenticateUser, contactController.deleteMultipleContacts);
 router.delete('/Contacts/:id/contact/:index', authenticateUser, contactController.deleteContactFromList);
 
 module.exports = router;

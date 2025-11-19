@@ -1,24 +1,27 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 // ErrorPopup import removed - no popups on signup page
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandler, ERROR_CODES, createAppError, handleStorageError } from '../../utils/errorHandler';
+import { PRIVACY_POLICY_SECTIONS, TERMS_OF_USE_SECTIONS } from '../../constants/legal';
 
 type SignUpScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignUp'>;
+type SignUpScreenRouteProp = RouteProp<AuthStackParamList, 'SignUp'>;
 
 export default function SignUpScreen() {
   const navigation = useNavigation<SignUpScreenNavigationProp>();
+  const route = useRoute<SignUpScreenRouteProp>();
   const toast = useToast();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(route.params?.prefillEmail?.trim() ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,6 +33,10 @@ export default function SignUpScreen() {
     email: '',
     password: '',
   });
+  const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
+  const [consentError, setConsentError] = useState('');
+  const [isPrivacyModalVisible, setIsPrivacyModalVisible] = useState(false);
+  const [isTermsModalVisible, setIsTermsModalVisible] = useState(false);
   // Error popup removed - no popups on signup page
 
   const validateEmail = (email: string) => {
@@ -94,6 +101,14 @@ export default function SignUpScreen() {
       isValid = false;
     }
 
+    if (!hasAcceptedLegal) {
+      setConsentError('Please agree to the Privacy Policy and Terms of Use to continue');
+      setShowError(true);
+      isValid = false;
+    } else {
+      setConsentError('');
+    }
+
     setErrors(newErrors);
     return isValid;
   };
@@ -113,6 +128,9 @@ export default function SignUpScreen() {
         email: email.trim(), // 🔥 FIX: Trim email before sending to backend
         password,
         status: 'active',
+        termsAccepted: hasAcceptedLegal,
+        privacyAccepted: hasAcceptedLegal,
+        legalAcceptedAt: new Date().toISOString(),
       };
 
       const response = await fetch(buildUrl(ENDPOINTS.ADD_USER), {
@@ -290,6 +308,54 @@ export default function SignUpScreen() {
           </View>
           {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
+          <View style={styles.consentContainer}>
+            <TouchableOpacity
+              style={styles.checkboxTouchable}
+              onPress={() => {
+                setHasAcceptedLegal(prev => {
+                  const nextValue = !prev;
+                  if (nextValue) {
+                    setConsentError('');
+                  }
+                  return nextValue;
+                });
+              }}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: hasAcceptedLegal }}
+              accessibilityLabel="Agree to Privacy Policy and Terms of Use"
+            >
+              <View style={[styles.checkbox, hasAcceptedLegal && styles.checkboxChecked]}>
+                {hasAcceptedLegal ? (
+                  <MaterialIcons name="check" size={18} color={COLORS.white} />
+                ) : null}
+              </View>
+              <Text style={styles.consentText}>
+                I agree to the{' '}
+                <Text
+                  style={styles.linkText}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setIsPrivacyModalVisible(true);
+                  }}
+                >
+                  Privacy Policy
+                </Text>{' '}
+                and{' '}
+                <Text
+                  style={styles.linkText}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setIsTermsModalVisible(true);
+                  }}
+                >
+                  Terms of Use
+                </Text>
+                .
+              </Text>
+            </TouchableOpacity>
+            {consentError ? <Text style={styles.consentError}>{consentError}</Text> : null}
+          </View>
+
           <TouchableOpacity 
             style={[styles.signUpButton, isLoading && styles.disabledButton]}
             onPress={handleSignUp}
@@ -318,6 +384,94 @@ export default function SignUpScreen() {
           />
         )}
       </KeyboardAvoidingView>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isPrivacyModalVisible}
+        onRequestClose={() => setIsPrivacyModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Privacy Policy</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setIsPrivacyModalVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close Privacy Policy"
+              >
+                <MaterialIcons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {PRIVACY_POLICY_SECTIONS.map(section => (
+                <View key={section.heading} style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>{section.heading}</Text>
+                  {section.body.map((paragraph, index) => (
+                    <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
+                      {paragraph}
+                    </Text>
+                  ))}
+                  {section.bullets?.map((bullet, index) => (
+                    <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
+                      - {bullet}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isTermsModalVisible}
+        onRequestClose={() => setIsTermsModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Terms of Use</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setIsTermsModalVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close Terms of Use"
+              >
+                <MaterialIcons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {TERMS_OF_USE_SECTIONS.map(section => (
+                <View key={section.heading} style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>{section.heading}</Text>
+                  {section.body.map((paragraph, index) => (
+                    <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
+                      {paragraph}
+                    </Text>
+                  ))}
+                  {section.bullets?.map((bullet, index) => (
+                    <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
+                      - {bullet}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -499,6 +653,44 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '500',
   },
+  consentContainer: {
+    marginTop: 10,
+  },
+  checkboxTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#C5C5C5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    backgroundColor: COLORS.white,
+  },
+  checkboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  consentText: {
+    flex: 1,
+    color: '#333',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  linkText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  consentError: {
+    color: 'red',
+    fontSize: 12,
+    marginTop: 8,
+    marginLeft: 36,
+  },
   disabledButton: {
     backgroundColor: '#999',
     opacity: 0.7,
@@ -549,5 +741,62 @@ const styles = StyleSheet.create({
   imagePreview: {
     width: '100%',
     height: '100%',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    flex: 1,
+    marginRight: 12,
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingBottom: 40,
+  },
+  modalSection: {
+    marginBottom: 16,
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F1F1F',
+    marginBottom: 6,
+  },
+  modalParagraph: {
+    fontSize: 14,
+    color: '#444',
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  modalBullet: {
+    fontSize: 14,
+    color: '#444',
+    lineHeight: 20,
+    marginLeft: 10,
+    marginBottom: 4,
   },
 });

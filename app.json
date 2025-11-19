@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/icons/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#FFFFFF"
     },
     "assetBundlePatterns": [
       "assets/**/*",
@@ -25,7 +25,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
       },
-      "scheme": "XSCard"
+      "scheme": "com.p.zzles.xscard"
     },
     "android": {
       "adaptiveIcon": {
@@ -45,6 +45,7 @@
     "web": {
       "favicon": "./assets/icons/favicon.png"
     },
+    "scheme": "com.p.zzles.xscard",
     "extra": {
       "eas": {
         "projectId": "75e89bdc-a27b-4ca7-bce8-f76c910d1d47"

@@ -44,6 +44,7 @@ const cardRoutes = require('./routes/cardRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const contactRequestRoutes = require('./routes/contactRequestRoutes'); // Add contact request routes
 const meetingRoutes = require('./routes/meetingRoutes');
+const meetingController = require('./controllers/meetingController');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes'); // Add subscription routes
 const apkRoutes = require('./routes/apkRoutes'); // Add APK routes
@@ -55,6 +56,7 @@ const bulkRegistrationRoutes = require('./routes/bulkRegistrationRoutes'); // Ad
 const revenueCatRoutes = require('./routes/revenueCatRoutes'); // Add RevenueCat routes
 const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple receipt validation routes
 const videoRoutes = require('./routes/videoRoutes'); // Add video routes
+const oauthRoutes = require('./routes/oauthRoutes'); // NEW: Add OAuth routes (POOP)
 
 app.use(express.json());
 
@@ -179,7 +181,7 @@ const addContactHandler = async (req, res) => {
                     const mailOptions = {
                         from: process.env.EMAIL_USER,
                         to: userData.email,
-                        subject: 'Someone Saved Your Contact Information',
+                        subject: `${contactInfo.name} Saved Your Contact Information`,
                         html: `
                             <h2>New Contact Added</h2>
                             <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
@@ -243,6 +245,15 @@ app.get('/saveContact', (req, res) => {
 app.get('/saveContact.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
 });
+
+// Public calendar booking routes (NO AUTH REQUIRED)
+// IMPORTANT: .html route MUST come before the API route to avoid route conflicts
+app.get('/public/calendar/:userId.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'bookCalendar.html'));
+});
+app.get('/public/calendar/:userId/cancel/:token', meetingController.cancelPublicBooking);
+app.get('/public/calendar/:userId', meetingController.getPublicCalendarAvailability);
+app.post('/public/calendar/:userId/book', meetingController.createPublicBooking);
 
 // Now mount static middleware AFTER critical routes
 app.use(express.static(path.join(__dirname, 'public')));
@@ -567,6 +578,10 @@ app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
 
 // Public routes - must be before authentication middleware
 // NOTE: express.static moved to line 248 (after critical routes, before other endpoints)
+
+// OAuth routes MUST be first (POOP) - No auth required, must match before other routes
+app.use('/oauth', oauthRoutes);
+
 app.use('/', paymentRoutes); // Add this line before protected routes
 app.use('/', subscriptionRoutes); // Add subscription routes
 app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
@@ -876,8 +891,8 @@ const verifyCaptchaEnvironmentAware = async (token) => {
                            process.env.ALLOW_CAPTCHA_BYPASS === 'true';
       
       if (isDevelopment) {
-        console.log('Bypassing captcha for development environment');
-        return true;
+      console.log('Bypassing captcha for development environment');
+      return true;
       } else {
         console.log('Bypass token received in production - rejecting');
         return false;
