@@ -202,7 +202,7 @@ Phase 5 was **already implemented** during Google OAuth setup! The auto-provisio
 3. Navigate to: Auth tab → OAuth 2.0 settings
 4. Add redirect URLs:
    ```
-   Dev:     https://819a88ef045d.ngrok-free.app/oauth/linkedin/callback
+   Dev:     https://846084eede03.ngrok-free.app/oauth/linkedin/callback
    Staging: https://apistaging.xscard.co.za/oauth/linkedin/callback  
    Prod:    https://baseurl.xscard.co.za/oauth/linkedin/callback
    ```

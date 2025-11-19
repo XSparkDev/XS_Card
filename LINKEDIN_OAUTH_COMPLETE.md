@@ -78,7 +78,7 @@ LINKEDIN_CLIENT_SECRET=[REDACTED - stored in environment secrets]
 **Client ID**: `<redacted>`  
 **Scopes**: `openid`, `profile`, `email`  
 **Redirect URLs**:
-- Dev: `https://819a88ef045d.ngrok-free.app/oauth/linkedin/callback`
+- Dev: `https://846084eede03.ngrok-free.app/oauth/linkedin/callback`
 - Staging: `https://apistaging.xscard.co.za/oauth/linkedin/callback`
 - Prod: `https://baseurl.xscard.co.za/oauth/linkedin/callback`
 

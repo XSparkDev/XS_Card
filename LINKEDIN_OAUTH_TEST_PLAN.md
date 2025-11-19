@@ -50,7 +50,7 @@
   - [x] `LINKEDIN_CLIENT_ID=<your_linkedin_client_id>`
   - [x] `LINKEDIN_CLIENT_SECRET=[REDACTED - stored securely]`
 - [x] Backend running: ✅ (PID 76333)
-- [x] Ngrok URL: `https://819a88ef045d.ngrok-free.app`
+- [x] Ngrok URL: `https://846084eede03.ngrok-free.app`
 
 ### LinkedIn Developer Portal:
 
@@ -59,7 +59,7 @@
 - [x] Scopes enabled: `openid`, `profile`, `email`
 - [ ] **REQUIRED**: Add redirect URLs:
   ```
-  Dev:     https://819a88ef045d.ngrok-free.app/oauth/linkedin/callback
+  Dev:     https://846084eede03.ngrok-free.app/oauth/linkedin/callback
   Staging: https://apistaging.xscard.co.za/oauth/linkedin/callback
   Prod:    https://baseurl.xscard.co.za/oauth/linkedin/callback
   ```
