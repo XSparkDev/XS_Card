@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.p.zzles.xscard",
-      "buildNumber": "25",
+      "buildNumber": "26",
       "icon": "./assets/icons/icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
