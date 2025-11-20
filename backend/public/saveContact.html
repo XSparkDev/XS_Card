@@ -1214,13 +1214,13 @@
                 Save Contact
             </button>
             
-            <button class="app-btn" id="appButton" onclick="handleAppDownload(event)">
-                <span class="material-icons" id="appIcon">android</span>
-                <span id="appLinkText">Get XS Card</span>
+            <button class="app-btn" id="appButton" data-app-button>
+                <span class="material-icons" data-app-icon>android</span>
+                <span data-app-text>Get XS Card</span>
             </button>
             
-            <div class="app-description-text" id="appDescription">
-                XS Card is currently in beta testing - Get early access!
+            <div class="app-description-text" data-app-description>
+                Available on Google Play and the App Store
             </div>
         </div>
 
@@ -1291,13 +1291,13 @@
                     Send Contact
                 </button>
                 
-                <button class="app-btn" id="appButton2" onclick="handleAppDownload(event)">
-                    <span class="material-icons" id="appIcon2">android</span>
-                    <span id="appLinkText2">Get XS Card</span>
+                <button class="app-btn" id="appButton2" data-app-button>
+                    <span class="material-icons" data-app-icon>android</span>
+                    <span data-app-text>Get XS Card</span>
                 </button>
                 
-                <div class="app-description-text" id="appDescription2">
-                    XS Card is currently in beta testing - Get early access!
+                <div class="app-description-text" data-app-description>
+                    Available on Google Play and the App Store
                 </div>
             </div>
         </div>
@@ -1353,9 +1353,9 @@
                     <span class="material-icons">done</span>
                     <span>Done</span>
                 </button>
-                <button id="downloadAppBtn" class="secondary-action-btn" onclick="handleAppDownload(event)">
-                    <span class="material-icons" id="appIconOverlay">android</span>
-                    <span id="appTextOverlay">Get XS Card</span>
+                <button id="downloadAppBtn" class="secondary-action-btn" data-app-button>
+                    <span class="material-icons" data-app-icon>android</span>
+                    <span data-app-text>Get XS Card</span>
                 </button>
             </div>
         </div>
@@ -2248,76 +2248,86 @@ END:VCARD`;
             }
         };
 
-        // Function to handle app download
-        function handleAppDownload(event) {
-            const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            
-            if (iOS) {
-                // For iOS users, open TestFlight
-                window.open('https://apps.apple.com/app/testflight/id899247664', '_blank');
-                
-                // Send email request for TestFlight invite
-                try {
-                    const emailData = {
-                        name: 'iOS User',
-                        email: 'ios-invite-request@xscard.temp',
-                        message: `An iOS user has requested access to the XS Card TestFlight beta. They clicked the app download button from a contact save page.
-                        
-Contact Details from scan:
-- Name: ${userData ? userData.name + ' ' + userData.surname : 'Unknown'}
-- Email: ${userData ? userData.email : 'Unknown'}
-- Company: ${userData ? userData.company : 'Unknown'}
+        // Store links configuration
+        const STORE_LINKS = {
+            android: 'https://play.google.com/store/apps/details?id=com.p.zzles.xscard',
+            ios: 'https://apps.apple.com/us/app/xs-card/id6742452317?uo=4',
+            huawei: 'https://www.xscard.com/download',
+            default: 'https://www.xscard.com/download'
+        };
 
-Please send them a TestFlight invite.`,
-                        to: 'support@xscard.co.za'
-                    };
+        // Detect OS from user agent
+        function detectOS() {
+            if (typeof window === 'undefined' || !navigator.userAgent) return { os: 'unknown' };
+            const ua = navigator.userAgent.toLowerCase();
 
-                    fetch('/submit-query', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(emailData)
-                    });
-                    
-                    console.log('TestFlight invite request sent');
-                } catch (error) {
-                    console.error('Error sending TestFlight request:', error);
-                }
-            } else {
-                // For Android users, trigger direct APK download
-                console.log('Initiating APK download for Android user');
-                
-                // Trigger direct download without changing button appearance
-                window.location.href = '/download-apk';
+            if (ua.includes('huawei') || ua.includes('honor')) return { os: 'huawei' };
+            if (ua.includes('android')) return { os: 'android' };
+            if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) return { os: 'ios' };
+            if (ua.includes('windows')) return { os: 'windows' };
+            if (ua.includes('mac os x') || ua.includes('macintosh')) return { os: 'mac' };
+            if (ua.includes('linux')) return { os: 'linux' };
+            return { os: 'unknown' };
+        }
+
+        // Get store-specific copy for description
+        function getStoreCopy(os) {
+            switch (os) {
+                case 'android':
+                    return 'Available on Google Play';
+                case 'ios':
+                    return 'Available on the App Store';
+                case 'huawei':
+                    return 'Coming soon to Huawei AppGallery';
+                default:
+                    return 'Available on Google Play and the App Store';
             }
         }
 
-        // iOS detection and app button customization
-        document.addEventListener('DOMContentLoaded', function() {
-            const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            const appButton = document.getElementById('appButton');
-            const appIcon = document.getElementById('appIcon');
-            const appLinkText = document.getElementById('appLinkText');
-            const appDescription = document.getElementById('appDescription');
-            
-            // Second button in exchange form
-            const appButton2 = document.getElementById('appButton2');
-            const appIcon2 = document.getElementById('appIcon2');
-            const appLinkText2 = document.getElementById('appLinkText2');
-            const appDescription2 = document.getElementById('appDescription2');
+        // Get button configuration based on OS
+        function getButtonConfig(os) {
+            if (os === 'android') return { icon: 'android', text: 'Get XS Card', href: STORE_LINKS.android };
+            if (os === 'ios') return { icon: 'apple', text: 'Get XS Card', href: STORE_LINKS.ios };
+            if (os === 'huawei') return { icon: 'phone_android', text: 'Coming soon to Huawei', href: STORE_LINKS.huawei };
+            return { icon: 'smartphone', text: 'Get XS Card', href: STORE_LINKS.default };
+        }
 
-            if (iOS) {
-                // Customize for iOS users - first button
-                appIcon.textContent = 'apple';
-                appLinkText.textContent = 'Get TestFlight';
-                appDescription.textContent = 'XS Card is currently in beta testing - Get early access by installing TestFlight, we will send you an invite shortly after.';
-                
-                // Customize for iOS users - second button
-                appIcon2.textContent = 'apple';
-                appLinkText2.textContent = 'Get TestFlight';
-                appDescription2.textContent = 'XS Card is currently in beta testing - Get early access by installing TestFlight, we will send you an invite shortly after.';
-            }        });        // Function to reset company field state
+        // Update all download buttons based on detected OS
+        function updateDownloadButtons() {
+            const { os } = detectOS();
+            const copy = getStoreCopy(os);
+            const cfg = getButtonConfig(os);
+
+            document.querySelectorAll('[data-app-button]').forEach(btn => {
+                const iconSpan = btn.querySelector('[data-app-icon]');
+                const textSpan = btn.querySelector('[data-app-text]');
+                if (iconSpan) iconSpan.textContent = cfg.icon;
+                if (textSpan) textSpan.textContent = cfg.text;
+                btn.dataset.storeHref = cfg.href;
+                btn.classList.toggle('disabled', os === 'huawei');
+            });
+
+            document.querySelectorAll('[data-app-description]').forEach(desc => {
+                desc.textContent = copy;
+            });
+        }
+
+        // Handle app download click
+        function handleAppDownload(event) {
+            event.preventDefault();
+            const btn = event.currentTarget;
+            const target = btn.dataset.storeHref || STORE_LINKS.default;
+            if (btn.classList.contains('disabled')) return;
+            window.open(target, '_blank', 'noopener');
+        }
+
+        // Initialize download buttons on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateDownloadButtons();
+            document.querySelectorAll('[data-app-button]').forEach(btn => {
+                btn.addEventListener('click', handleAppDownload);
+            });
+        });        // Function to reset company field state
         function resetCompanyField() {
             const companyInput = document.getElementById('scannerCompany');
             const submitBtn = document.querySelector('#exchangeForm .submit-btn');
