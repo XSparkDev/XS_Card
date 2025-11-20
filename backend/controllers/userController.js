@@ -172,12 +172,13 @@ exports.addUser = async (req, res) => {
     try {
         console.log('Starting user creation process for:', email);
 
-        if (!termsAccepted || !privacyAccepted) {
-            return res.status(400).send({
-                message: 'You must accept the Privacy Policy and Terms of Use before creating an account.',
-                code: 'LEGAL_NOT_ACCEPTED'
-            });
-        }
+        // TEMPORARILY disabled legal requirement check
+        // if (!termsAccepted || !privacyAccepted) {
+        //     return res.status(400).send({
+        //         message: 'You must accept the Privacy Policy and Terms of Use before creating an account.',
+        //         code: 'LEGAL_NOT_ACCEPTED'
+        //     });
+        // }
 
         let legalAcceptedTimestamp = admin.firestore.Timestamp.now();
         if (legalAcceptedAt) {
