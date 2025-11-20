@@ -62,6 +62,7 @@ export type RootStackParamList = {
   EventAnalytics: { event: any };
   OrganiserRegistration: undefined;
   Settings: undefined;
+  UserProfile: undefined;
   AdminDashboard: { screen?: 'Analytics' | 'Calendar' } | undefined;
   CalendarPreferences: undefined;
 };

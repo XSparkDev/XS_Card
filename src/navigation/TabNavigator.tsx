@@ -32,6 +32,7 @@ import SubscriptionManagementScreen from '../screens/SubscriptionManagementScree
 import PrivacySecurityScreen from '../screens/PrivacySecurityScreen'; // NEW IMPORT
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import CalendarPreferencesScreen from '../screens/settings/CalendarPreferencesScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createStackNavigator<RootStackParamList>();
@@ -173,6 +174,7 @@ export default function AppNavigator() {
       <Stack.Screen name="EventAnalytics" component={EventAnalyticsScreen} />
       <Stack.Screen name="OrganiserRegistration" component={OrganiserRegistrationScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="CalendarPreferences" component={CalendarPreferencesScreen} />
       <Stack.Screen name="AdminDashboard" component={DashboardNavigator} />
     </Stack.Navigator>

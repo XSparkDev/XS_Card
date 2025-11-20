@@ -109,7 +109,7 @@ function generateTimeSlotsForDay(date, workingHours, allowedDurations, bufferTim
     // Fallback to range-based generation (current behavior)
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
-    const slotInterval = 15; // 15-minute intervals
+    const slotInterval = 30; // 30-minute intervals
 
     // Use the minimum duration for slot generation
     const minDuration = Math.min(...allowedDurations);
@@ -248,7 +248,11 @@ function calculateAvailableSlots(userId, startDate, daysToCalculate, preferences
         if (!meeting.meetingWhen) continue;
         
         const meetingDate = meeting.meetingWhen.toDate ? meeting.meetingWhen.toDate() : new Date(meeting.meetingWhen);
-        const dateKey = meetingDate.toISOString().split('T')[0];
+        // Use local date components to avoid timezone issues
+        const year = meetingDate.getFullYear();
+        const month = String(meetingDate.getMonth() + 1).padStart(2, '0');
+        const day = String(meetingDate.getDate()).padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
         
         if (!meetingsByDate[dateKey]) {
             meetingsByDate[dateKey] = [];
@@ -257,12 +261,26 @@ function calculateAvailableSlots(userId, startDate, daysToCalculate, preferences
     }
 
     // Generate availability for each day
+    // Parse startDate properly to avoid timezone issues
+    let startDateObj;
+    if (typeof startDate === 'string') {
+        // Parse date string (YYYY-MM-DD) as local date to avoid timezone conversion
+        const [year, month, day] = startDate.split('-').map(Number);
+        startDateObj = new Date(year, month - 1, day, 0, 0, 0, 0); // Local midnight
+    } else {
+        startDateObj = new Date(startDate);
+    }
+    
     for (let i = 0; i < daysToCalculate; i++) {
-        const currentDate = new Date(startDate);
+        const currentDate = new Date(startDateObj);
         currentDate.setDate(currentDate.getDate() + i);
         currentDate.setHours(0, 0, 0, 0);
         
-        const dateKey = currentDate.toISOString().split('T')[0];
+        // Use local date components to create dateKey, avoiding timezone conversion
+        const year = currentDate.getFullYear();
+        const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+        const day = String(currentDate.getDate()).padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
         const dayName = getDayName(currentDate);
         
         // Skip weekends if not allowed
@@ -327,23 +345,27 @@ function calculateAvailableSlots(userId, startDate, daysToCalculate, preferences
         const daySlots = generateTimeSlotsForDay(currentDate, workingHours, allowedDurations, bufferTime, preferences);
         const dateMeetings = meetingsByDate[dateKey] || [];
         
-        // Filter out conflicting slots
-        const availableSlots = daySlots.filter(slot => {
+        // Mark slots as available or unavailable (don't filter them out)
+        const processedSlots = daySlots.map(slot => {
             // Check each available duration for this slot
             const validDurations = slot.availableDurations.filter(duration => {
                 return !isSlotConflicting(slot.time, duration, dateMeetings, bufferTime);
             });
             
-            // Only include slot if at least one duration is available
-            if (validDurations.length > 0) {
-                slot.availableDurations = validDurations;
-                return true;
-            }
-            return false;
+            // Mark slot as available if at least one duration is available
+            const isAvailable = validDurations.length > 0;
+            
+            return {
+                time: slot.time,
+                availableDurations: validDurations,
+                available: isAvailable, // Add availability flag
+                allDurations: slot.availableDurations // Keep original durations for display
+            };
         });
 
-        if (availableSlots.length > 0) {
-            availability[dateKey] = availableSlots;
+        // Include all slots (both available and unavailable)
+        if (processedSlots.length > 0) {
+            availability[dateKey] = processedSlots;
         }
     }
 

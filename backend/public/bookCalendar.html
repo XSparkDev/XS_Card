@@ -1,19 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Book a Meeting</title>
     <style>
         :root {
-            --primary: #007AFF;
-            --secondary: #1B2B5B;
-            --white: #FFFFFF;
-            --black: #000000;
-            --gray: #8E8E93;
-            --light-gray: #F5F5F5;
-            --border-gray: #E5E5E5;
-            --error: #FF3B30;
-            --success: #34C759;
+            --primary-blue: #1a73e8;
+            --hover-blue: #1557b0;
+            --light-blue: #e8f0fe;
+            --gray-50: #f8f9fa;
+            --gray-100: #f1f3f4;
+            --gray-200: #e8eaed;
+            --gray-300: #dadce0;
+            --gray-400: #9aa0a6;
+            --gray-600: #5f6368;
+            --gray-700: #3c4043;
+            --gray-800: #202124;
+            --white: #ffffff;
+            --success-green: #34c759;
+            --error-red: #ea4335;
+            --border-color: #dadce0;
         }
 
         * {
@@ -23,29 +30,25 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
             background-color: var(--white);
-            color: var(--black);
-            min-height: 100vh;
+            color: var(--gray-800);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
-        /* Layout Container */
-        .booking-container {
+        /* Banner Section */
+        .banner {
             display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            width: 100%;
-        }
-
-        /* Left Side - User Info (Top Panel) */
-        .left-panel {
-            width: 100%;
-            padding: 40px;
-            border-bottom: 1px solid var(--border-gray);
+            align-items: center;
+            gap: 24px;
+            padding: 40px 48px;
             background-color: var(--white);
+            border-bottom: 1px solid var(--border-color);
         }
 
-        .user-avatar {
+        .profile-avatar {
             width: 80px;
             height: 80px;
             border-radius: 50%;
@@ -53,449 +56,467 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--white);
-            font-size: 32px;
-            font-weight: 600;
-            margin-bottom: 20px;
+            flex-shrink: 0;
+            overflow: hidden;
         }
 
-        .user-avatar img {
+        .profile-avatar img {
             width: 100%;
             height: 100%;
-            border-radius: 50%;
             object-fit: cover;
         }
 
+        .profile-avatar-initials {
+            color: var(--white);
+            font-size: 32px;
+            font-weight: 500;
+            user-select: none;
+        }
+
+        .banner-content {
+            flex: 1;
+        }
+
         .user-name {
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 400;
+            color: var(--gray-700);
+            margin-bottom: 4px;
         }
 
         .meeting-title {
-            font-size: 28px;
-            font-weight: 700;
-            margin-bottom: 20px;
-            color: var(--black);
+            font-size: 32px;
+            font-weight: 400;
+            color: var(--gray-800);
+            margin-bottom: 16px;
+            line-height: 1.2;
         }
 
-        .meeting-info {
+        .banner-info {
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            margin-top: 30px;
+            gap: 8px;
         }
 
         .info-item {
             display: flex;
             align-items: center;
-            gap: 10px;
-            color: var(--gray);
-            font-size: 15px;
+            gap: 8px;
+            color: var(--gray-600);
+            font-size: 14px;
         }
 
         .info-icon {
             font-size: 18px;
         }
 
-        /* Right Side - Calendar (Bottom Panel) */
-        .right-panel {
-            width: fit-content;
-            max-width: calc(100% - 40px);
-            padding: 30px;
-            margin: 20px auto;
-            border: 1px solid var(--border-gray);
-            border-radius: 12px;
-            background-color: var(--white);
+        /* Main Container */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 48px 48px 24px;
         }
 
-        .calendar-section {
-            width: 100%;
+        .section-header {
+            margin-bottom: 24px;
         }
 
-        .calendar-title {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 10px;
+        .section-title {
+            font-size: 24px;
+            font-weight: 400;
+            color: var(--gray-800);
+            margin-bottom: 8px;
         }
 
-        .timezone {
-            color: var(--gray);
+        .timezone-text {
             font-size: 14px;
-            margin-bottom: 30px;
-            text-align: right;
+            color: var(--gray-600);
         }
 
+        /* Two Column Layout */
         .calendar-layout {
-            display: flex;
-            gap: 30px;
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 48px;
+            margin-top: 32px;
         }
 
-        /* Small Month Calendar */
-        .mini-calendar {
-            width: 280px;
-            flex-shrink: 0;
+        /* Month Calendar (Left) */
+        .month-calendar-container {
+            background: var(--white);
         }
 
-        .mini-calendar-header {
+        .month-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
 
         .month-name {
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 500;
+            color: var(--gray-800);
         }
 
-        .nav-buttons {
+        .month-nav {
             display: flex;
-            gap: 5px;
+            gap: 8px;
         }
 
         .nav-btn {
-            width: 28px;
-            height: 28px;
+            width: 40px;
+            height: 40px;
             border: none;
-            background-color: transparent;
-            border-radius: 6px;
+            background: transparent;
+            border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
-            color: var(--gray);
+            transition: background-color 0.2s;
+            color: var(--gray-600);
+            font-size: 20px;
         }
 
         .nav-btn:hover {
-            background-color: var(--light-gray);
+            background-color: var(--gray-100);
         }
 
-        .mini-calendar-grid {
+        .nav-btn:active {
+            background-color: var(--gray-200);
+        }
+
+        /* Calendar Grid */
+        .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
+            gap: 8px;
         }
 
-        .mini-day-header {
+        .calendar-day-header {
             text-align: center;
-            padding: 6px;
+            padding: 8px;
             font-size: 11px;
-            font-weight: 600;
-            color: var(--gray);
+            font-weight: 500;
+            color: var(--gray-600);
             text-transform: uppercase;
+            letter-spacing: 0.3px;
         }
 
-        .mini-day {
+        .calendar-day {
             aspect-ratio: 1;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
             font-size: 13px;
+            font-weight: 400;
+            color: var(--gray-800);
             cursor: pointer;
             transition: all 0.2s;
+            border: 2px solid transparent;
         }
 
-        .mini-day.disabled {
-            color: var(--border-gray);
+        .calendar-day:hover:not(.disabled):not(.other-month) {
+            background-color: var(--gray-100);
+        }
+
+        .calendar-day.other-month {
+            color: var(--gray-400);
+            cursor: default;
+        }
+
+        .calendar-day.disabled {
+            color: var(--gray-300);
             cursor: not-allowed;
         }
 
-        .mini-day.available {
-            background-color: rgba(0, 122, 255, 0.1);
-            color: var(--primary);
-            font-weight: 600;
+        .calendar-day.today {
+            border-color: var(--primary-blue);
+            color: var(--primary-blue);
         }
 
-        .mini-day.available:hover {
-            background-color: var(--primary);
+        .calendar-day.available {
+            background-color: var(--light-blue);
+            color: var(--primary-blue);
+            font-weight: 500;
+        }
+
+        .calendar-day.available:hover {
+            background-color: var(--primary-blue);
             color: var(--white);
         }
 
-        .mini-day.selected {
-            background-color: var(--primary);
+        .calendar-day.selected {
+            background-color: var(--primary-blue);
             color: var(--white);
-            font-weight: 700;
+            font-weight: 500;
         }
 
-        /* Day Selector */
-        .day-selector {
-            flex: 1;
+        /* Day Selector (Right) */
+        .day-time-container {
+            background: var(--white);
         }
 
-        .day-selector-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .day-selector-nav {
-            display: flex;
-            gap: 10px;
-        }
-
-        .days-row-wrapper {
+        .days-selector-wrapper {
             position: relative;
-            margin-bottom: 30px;
-            border: none;
+            margin-bottom: 32px;
         }
 
-        .days-row {
+        .days-selector {
             display: flex;
-            gap: 15px;
+            gap: 16px;
             overflow-x: auto;
-            padding: 20px 40px;
+            padding: 8px 48px;
             scroll-behavior: smooth;
             -webkit-overflow-scrolling: touch;
-            align-items: flex-start;
         }
 
-        .days-row-nav {
+        .days-selector::-webkit-scrollbar {
+            height: 0;
+        }
+
+        .day-nav-btn {
             position: absolute;
             top: 50%;
             transform: translateY(-50%);
-            z-index: 10;
-            width: 32px;
-            height: 32px;
+            width: 40px;
+            height: 40px;
             border: none;
-            background-color: transparent;
-            border-radius: 6px;
+            background: var(--white);
+            border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
-            color: var(--gray);
             transition: all 0.2s;
+            color: var(--gray-600);
+            font-size: 20px;
+            box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+            z-index: 10;
         }
 
-        .days-row-nav:hover {
-            background-color: var(--light-gray);
+        .day-nav-btn:hover {
+            background-color: var(--gray-100);
+            box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
         }
 
-        .days-row-nav.left {
+        .day-nav-btn.left {
             left: 0;
         }
 
-        .days-row-nav.right {
+        .day-nav-btn.right {
             right: 0;
         }
 
         .day-card {
-            min-width: 90px;
-            padding: 10px 8px;
-            border: none;
+            min-width: 80px;
             text-align: center;
-            background-color: transparent;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
+            cursor: pointer;
+            padding: 12px 16px;
+            border-radius: 8px;
+            transition: all 0.2s;
+            user-select: none;
         }
 
-        .day-indicators {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0;
-            width: 100%;
+        .day-card:hover:not(.disabled-day) {
+            background-color: var(--gray-100);
         }
 
-        .pills-container {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            align-items: center;
-            width: 100%;
+        .day-card.disabled-day {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
-        .dashes-container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            align-items: center;
-            width: 100%;
+        .day-card.selected-day {
+            background-color: var(--light-blue);
         }
 
-        .pill-dash-separator {
-            height: 20px;
-        }
-
-        .day-indicators-row {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            align-items: center;
-            width: 100%;
-        }
-
-        .time-slot-pill {
-            padding: 6px 12px;
-            background-color: transparent;
-            border: 1px solid var(--primary);
-            color: var(--primary);
-            border-radius: 16px;
+        .day-abbreviation {
             font-size: 12px;
             font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-            min-width: 70px;
-            text-align: center;
-        }
-
-        .time-slot-pill:hover {
-            background-color: var(--primary);
-            color: var(--white);
-            transform: scale(1.05);
-        }
-
-        .dash-indicator {
-            width: 25px;
-            height: 3px;
-            border-radius: 2px;
-            flex-shrink: 0;
-        }
-
-        .dash-indicator.free {
-            background-color: #34C759;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .dash-indicator.free:hover {
-            background-color: #28A745;
-            transform: scaleY(1.3);
-        }
-
-        .dash-indicator.blocked {
-            background-color: var(--gray);
-        }
-
-        .schedule-meeting-btn {
-            margin-top: 4px;
-            padding: 6px 12px;
-            background-color: var(--primary);
-            color: var(--white);
-            border: none;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-
-        .schedule-meeting-btn:hover {
-            background-color: #0056CC;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0, 122, 255, 0.3);
-        }
-
-        .day-name {
-            font-size: 12px;
+            color: var(--gray-600);
             text-transform: uppercase;
-            color: var(--gray);
-            margin-bottom: 6px;
-            font-weight: 600;
+            margin-bottom: 4px;
         }
 
         .day-number {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--black);
+            font-size: 24px;
+            font-weight: 400;
+            color: var(--gray-800);
         }
 
-        .day-card.selected .day-name {
-            color: var(--white);
-            font-size: 11px;
-            margin-bottom: 2px;
+        .day-card.selected-day .day-abbreviation,
+        .day-card.selected-day .day-number {
+            color: var(--primary-blue);
         }
 
-        .day-card.selected .day-number {
-            color: var(--white);
-            font-size: 20px;
+        /* Time Slots Section */
+        .time-slots-section {
+            margin-top: 24px;
         }
 
-        /* Free All Day Button */
-        .free-all-day {
-            padding: 16px 24px;
-            border: 2px solid var(--primary);
-            border-radius: 10px;
+        .time-slots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .time-slot {
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
             text-align: center;
             cursor: pointer;
-            background-color: rgba(0, 122, 255, 0.05);
+            background-color: var(--white);
             transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--gray-800);
+        }
+
+        .time-slot:hover {
+            border-color: var(--primary-blue);
+            background-color: var(--light-blue);
+        }
+
+        .time-slot.selected {
+            border-color: var(--primary-blue);
+            background-color: var(--primary-blue);
+            color: var(--white);
+            border-width: 2px;
+        }
+
+        .time-slot.disabled {
+            background-color: var(--gray-100);
+            border-color: var(--gray-200);
+            color: var(--gray-400);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .time-slot.disabled:hover {
+            background-color: var(--gray-100);
+            border-color: var(--gray-200);
+        }
+
+        /* Duration Pills */
+        .duration-pills {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }
+
+        .duration-pill {
+            padding: 10px 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            cursor: pointer;
+            background-color: var(--white);
+            transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--gray-800);
+        }
+
+        .duration-pill:hover {
+            border-color: var(--primary-blue);
+            background-color: var(--light-blue);
+        }
+
+        .duration-pill.selected {
+            border-color: var(--primary-blue);
+            background-color: var(--primary-blue);
+            color: var(--white);
+        }
+
+        /* Free All Day Banner */
+        .free-all-day-banner {
+            background-color: var(--light-blue);
+            border: 1px solid var(--primary-blue);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .free-all-day-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .free-all-day-icon {
+            font-size: 18px;
+            color: var(--primary-blue);
             font-weight: 600;
+        }
+
+        .free-all-day-text {
             font-size: 16px;
-            color: var(--primary);
-            margin-bottom: 15px;
+            font-weight: 500;
+            color: var(--primary-blue);
         }
 
-        .free-all-day:hover {
-            background-color: var(--primary);
-            color: var(--white);
-        }
-
-        .free-all-day.selected {
-            background-color: var(--primary);
-            color: var(--white);
-        }
-
-        /* Time Dropdown */
+        /* Time Dropdown Container */
         .time-dropdown-container {
-            margin-top: 15px;
-            display: none;
-        }
-
-        .time-dropdown-container.active {
-            display: block;
+            position: relative;
+            margin-bottom: 24px;
         }
 
         .time-dropdown-toggle {
-            padding: 12px 20px;
-            border: 1.5px solid var(--border-gray);
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             background-color: var(--white);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 15px;
-            font-weight: 500;
-            color: var(--black);
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--gray-800);
             transition: all 0.2s;
+            font-family: inherit;
         }
 
         .time-dropdown-toggle:hover {
-            border-color: var(--primary);
-            background-color: rgba(0, 122, 255, 0.05);
+            border-color: var(--primary-blue);
+            background-color: var(--gray-50);
         }
 
-        .time-dropdown-toggle::after {
-            content: '▼';
+        .time-dropdown-toggle.open {
+            border-color: var(--primary-blue);
+            background-color: var(--light-blue);
+        }
+
+        .dropdown-arrow {
             font-size: 12px;
-            color: var(--gray);
-            margin-left: 10px;
+            color: var(--gray-600);
             transition: transform 0.2s;
         }
 
-        .time-dropdown-toggle.open::after {
+        .time-dropdown-toggle.open .dropdown-arrow {
             transform: rotate(180deg);
         }
 
         .time-dropdown-menu {
             display: none;
-            margin-top: 8px;
-            border: 1.5px solid var(--border-gray);
-            border-radius: 8px;
-            background-color: var(--white);
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
             max-height: 300px;
             overflow-y: auto;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--white);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 100;
         }
 
         .time-dropdown-menu.active {
@@ -503,11 +524,12 @@
         }
 
         .time-dropdown-item {
-            padding: 12px 20px;
+            padding: 12px 16px;
             cursor: pointer;
-            border-bottom: 1px solid var(--light-gray);
-            transition: all 0.2s;
-            font-size: 15px;
+            border-bottom: 1px solid var(--gray-100);
+            transition: background-color 0.2s;
+            font-size: 14px;
+            color: var(--gray-800);
         }
 
         .time-dropdown-item:last-child {
@@ -515,97 +537,51 @@
         }
 
         .time-dropdown-item:hover {
-            background-color: rgba(0, 122, 255, 0.05);
-            color: var(--primary);
+            background-color: var(--gray-50);
         }
 
-        .time-slots-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 12px;
-            position: relative;
-            z-index: 1;
+        .time-dropdown-item:active {
+            background-color: var(--light-blue);
         }
 
+        .time-dropdown-item.disabled {
+            background-color: var(--gray-50);
+            color: var(--gray-400);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .time-dropdown-item.disabled:hover {
+            background-color: var(--gray-50);
+        }
+
+        /* No Availability */
         .no-availability {
             text-align: center;
-            padding: 60px 20px;
+            padding: 48px 24px;
         }
 
         .no-availability-text {
-            font-size: 18px;
-            color: var(--gray);
-            margin-bottom: 15px;
+            font-size: 16px;
+            color: var(--gray-600);
+            margin-bottom: 16px;
         }
 
         .jump-link {
-            color: var(--primary);
+            display: inline-block;
+            color: var(--primary-blue);
             text-decoration: none;
-            font-weight: 600;
+            font-weight: 500;
+            font-size: 14px;
             cursor: pointer;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
         }
 
         .jump-link:hover {
+            background-color: var(--light-blue);
             text-decoration: underline;
-        }
-
-        .time-slot {
-            padding: 14px;
-            border: 1.5px solid var(--border-gray);
-            border-radius: 8px;
-            text-align: center;
-            cursor: pointer;
-            background-color: var(--white);
-            transition: all 0.2s;
-            font-weight: 500;
-            font-size: 15px;
-            pointer-events: auto;
-            user-select: none;
-            -webkit-user-select: none;
-            position: relative;
-            z-index: 1;
-        }
-
-        .time-slot:hover {
-            border-color: var(--primary);
-            background-color: rgba(0, 122, 255, 0.05);
-        }
-
-        .time-slot.selected {
-            border-color: var(--primary);
-            background-color: var(--primary);
-            color: var(--white);
-            border-width: 2px;
-        }
-
-        /* Duration Pills */
-        .duration-pills {
-            display: flex;
-            gap: 8px;
-            margin-top: 20px;
-            flex-wrap: wrap;
-        }
-
-        .duration-pill {
-            padding: 8px 16px;
-            border: 1.5px solid var(--border-gray);
-            border-radius: 20px;
-            cursor: pointer;
-            background-color: var(--white);
-            transition: all 0.2s;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .duration-pill:hover {
-            border-color: var(--primary);
-            background-color: rgba(0, 122, 255, 0.05);
-        }
-
-        .duration-pill.selected {
-            border-color: var(--primary);
-            background-color: var(--primary);
-            color: var(--white);
         }
 
         /* Modal */
@@ -622,6 +598,7 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
+            padding: 16px;
         }
 
         .modal-overlay.active {
@@ -630,41 +607,50 @@
 
         .modal {
             background-color: var(--white);
-            border-radius: 16px;
-            padding: 40px;
+            border-radius: 8px;
+            padding: 24px;
             max-width: 500px;
-            width: 90%;
+            width: 100%;
             max-height: 90vh;
             overflow-y: auto;
             position: relative;
+            box-shadow: 0 8px 10px 1px rgba(0, 0, 0, 0.14), 0 3px 14px 2px rgba(0, 0, 0, 0.12), 0 5px 5px -3px rgba(0, 0, 0, 0.2);
         }
 
         .modal-close {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            top: 16px;
+            right: 16px;
             width: 32px;
             height: 32px;
             border: none;
-            background-color: var(--light-gray);
+            background-color: transparent;
             border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 24px;
+            color: var(--gray-600);
+            transition: background-color 0.2s;
+        }
+
+        .modal-close:hover {
+            background-color: var(--gray-100);
         }
 
         .modal-title {
             font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 10px;
+            font-weight: 400;
+            margin-bottom: 8px;
+            color: var(--gray-800);
+            padding-right: 40px;
         }
 
         .modal-subtitle {
-            color: var(--gray);
+            color: var(--gray-600);
             font-size: 14px;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
         }
 
         .form-group {
@@ -674,15 +660,16 @@
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            font-weight: 600;
+            font-weight: 500;
             font-size: 14px;
+            color: var(--gray-700);
         }
 
         .form-hint {
             display: block;
             margin-top: 4px;
             font-size: 12px;
-            color: var(--gray);
+            color: var(--gray-600);
             font-style: italic;
         }
 
@@ -690,17 +677,19 @@
         .form-group textarea {
             width: 100%;
             padding: 12px 14px;
-            border: 1.5px solid var(--border-gray);
-            border-radius: 8px;
-            font-size: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
             font-family: inherit;
             background-color: var(--white);
+            transition: border-color 0.2s;
         }
 
         .form-group input:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: var(--primary);
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 1px var(--primary-blue);
         }
 
         .form-group textarea {
@@ -709,51 +698,55 @@
         }
 
         .form-error {
-            color: var(--error);
+            color: var(--error-red);
             font-size: 12px;
-            margin-top: 5px;
+            margin-top: 4px;
         }
 
         /* Buttons */
         .btn {
             width: 100%;
-            padding: 15px;
+            padding: 12px 24px;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
+            letter-spacing: 0.25px;
         }
 
         .btn-primary {
-            background-color: var(--primary);
+            background-color: var(--primary-blue);
             color: var(--white);
+            box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
         }
 
-        .btn-primary:hover {
-            opacity: 0.9;
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--hover-blue);
+            box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
         }
 
         .btn-primary:disabled {
-            background-color: var(--gray);
+            background-color: var(--gray-300);
             cursor: not-allowed;
+            box-shadow: none;
         }
 
-        /* Loading */
+        /* Loading State */
         .loading {
             text-align: center;
-            padding: 60px;
+            padding: 80px 24px;
         }
 
         .spinner {
-            border: 3px solid var(--light-gray);
-            border-top: 3px solid var(--primary);
+            border: 3px solid var(--gray-200);
+            border-top: 3px solid var(--primary-blue);
             border-radius: 50%;
             width: 50px;
             height: 50px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
+            margin: 0 auto 24px;
         }
 
         @keyframes spin {
@@ -761,11 +754,16 @@
             100% { transform: rotate(360deg); }
         }
 
+        .loading-text {
+            font-size: 16px;
+            color: var(--gray-600);
+        }
+
         /* Success State */
         .success-container {
             display: none;
             text-align: center;
-            padding: 60px;
+            padding: 80px 24px;
             max-width: 600px;
             margin: 0 auto;
         }
@@ -778,116 +776,206 @@
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background-color: var(--success);
+            background-color: var(--success-green);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 30px;
+            margin: 0 auto 24px;
             font-size: 40px;
             color: var(--white);
         }
 
         .success-title {
             font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 15px;
+            font-weight: 400;
+            margin-bottom: 16px;
+            color: var(--gray-800);
         }
 
         .success-message {
-            color: var(--gray);
+            color: var(--gray-600);
             font-size: 16px;
-            margin-bottom: 30px;
+            margin-bottom: 32px;
+            line-height: 1.5;
         }
 
         .success-details {
-            background-color: var(--light-gray);
-            border-radius: 12px;
-            padding: 30px;
+            background-color: var(--gray-50);
+            border-radius: 8px;
+            padding: 24px;
             text-align: left;
-            margin-bottom: 30px;
+            margin-bottom: 32px;
         }
 
         .success-details h3 {
             font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 20px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            color: var(--gray-800);
         }
 
         .success-details p {
             margin-bottom: 12px;
-            font-size: 15px;
+            font-size: 14px;
+            color: var(--gray-700);
+        }
+
+        .success-details p:last-child {
+            margin-bottom: 0;
         }
 
         .success-details strong {
-            color: var(--primary);
-            font-weight: 600;
+            color: var(--primary-blue);
+            font-weight: 500;
         }
 
-        /* Responsive */
+        /* Footer */
+        .footer {
+            background-color: var(--gray-50);
+            padding: 24px 48px;
+            margin-top: 48px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+            align-items: center;
+            font-size: 12px;
+            color: var(--gray-600);
+        }
+
+        .footer-text {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .footer-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .footer-link {
+            color: var(--primary-blue);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer-link:hover {
+            color: var(--hover-blue);
+            text-decoration: underline;
+        }
+
+        .footer-separator {
+            color: var(--gray-400);
+        }
+
+        /* Utility Classes */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Responsive Design */
         @media (max-width: 1024px) {
-            .left-panel {
-                padding: 30px 20px;
-            }
-
-            .right-panel {
-                margin: 15px;
-                padding: 30px 20px;
-                width: calc(100% - 30px);
-            }
-
             .calendar-layout {
-                flex-direction: column;
+                grid-template-columns: 1fr;
+                gap: 32px;
             }
 
-            .mini-calendar {
-                width: 100%;
+            .month-calendar-container {
+                order: 2;
+            }
+
+            .day-time-container {
+                order: 1;
             }
         }
 
         @media (max-width: 768px) {
-            .left-panel {
-                padding: 20px 15px;
+            .banner {
+                flex-direction: column;
+                align-items: flex-start;
+                padding: 24px 20px;
             }
 
-            .right-panel {
-                margin: 10px;
-                padding: 20px 15px;
-                width: calc(100% - 20px);
-                border-radius: 8px;
+            .profile-avatar {
+                width: 64px;
+                height: 64px;
             }
 
-            .days-row {
-                gap: 10px;
-            }
-
-            .day-card {
-                min-width: 80px;
-                padding: 12px 8px;
-            }
-
-            .day-number {
+            .profile-avatar-initials {
                 font-size: 24px;
-            }
-
-            .time-slots-grid {
-                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            }
-
-            .calendar-title {
-                font-size: 18px;
-            }
-
-            .user-name {
-                font-size: 20px;
             }
 
             .meeting-title {
                 font-size: 24px;
             }
+
+            .main-container {
+                padding: 32px 20px 16px;
+            }
+
+            .section-title {
+                font-size: 20px;
+            }
+
+            .calendar-layout {
+                gap: 24px;
+            }
+
+            .time-slots-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .footer {
+                padding: 20px;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+            }
+
+            .day-nav-btn {
+                display: none;
+            }
+
+            .days-selector {
+                padding: 8px 0;
+            }
         }
 
-        .hidden {
-            display: none !important;
+        @media (max-width: 480px) {
+            .banner {
+                padding: 20px 16px;
+            }
+
+            .main-container {
+                padding: 24px 16px;
+            }
+
+            .meeting-title {
+                font-size: 20px;
+            }
+
+            .modal {
+                padding: 20px;
+            }
+
+            .calendar-grid {
+                gap: 4px;
+            }
+
+            .calendar-day {
+                font-size: 12px;
+            }
         }
     </style>
 </head>
@@ -895,74 +983,123 @@
     <!-- Loading State -->
     <div id="loadingState" class="loading">
         <div class="spinner"></div>
-        <p>Loading availability...</p>
+        <p class="loading-text">Loading availability...</p>
     </div>
 
     <!-- Error State -->
     <div id="errorState" class="loading hidden">
-        <p style="color: var(--error); font-size: 18px; font-weight: 600; margin-bottom: 10px;">Unable to load calendar</p>
-        <p id="errorMessage" style="color: var(--gray);"></p>
+        <p style="color: var(--error-red); font-size: 18px; font-weight: 500; margin-bottom: 10px;">Unable to load calendar</p>
+        <p id="errorMessage" style="color: var(--gray-600);"></p>
         <button class="btn btn-primary" onclick="window.location.reload()" style="max-width: 200px; margin: 20px auto 0;">Try Again</button>
     </div>
 
     <!-- Main Content -->
-    <div id="mainContent" class="booking-container hidden">
-        <!-- Left Panel -->
-        <div class="left-panel">
-            <div class="user-avatar" id="userAvatar"></div>
-            <div class="user-name" id="userName"></div>
-            <div class="meeting-title" id="meetingTitle">1 Hour Meetings</div>
-            
-            <div class="meeting-info">
-                <div class="info-item">
-                    <span class="info-icon">🕐</span>
-                    <span id="meetingDuration">60 min appointments</span>
+    <div id="mainContent" class="hidden">
+        <!-- Banner -->
+        <div class="banner">
+            <div class="profile-avatar" id="userAvatar">
+                <span class="profile-avatar-initials">NM</span>
+            </div>
+            <div class="banner-content">
+                <h2 class="user-name" id="userName">Loading...</h2>
+                <h1 class="meeting-title" id="meetingTitle">1 Hour Meetings</h1>
+                <div class="banner-info">
+                    <div class="info-item">
+                        <span class="info-icon">🕐</span>
+                        <span id="meetingDuration">60 min appointments</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Right Panel -->
-        <div class="right-panel">
-            <div class="calendar-section">
-                <div class="calendar-title">Select an appointment time</div>
-                <div class="timezone" id="timezone">(GMT+00:00) UTC</div>
-                
-                <div class="calendar-layout">
-                    <!-- Mini Calendar -->
-                    <div class="mini-calendar">
-                        <div class="mini-calendar-header">
-                            <span class="month-name" id="miniMonthName"></span>
-                            <div class="nav-buttons">
-                                <button class="nav-btn" id="prevMonth">◀</button>
-                                <button class="nav-btn" id="nextMonth">▶</button>
-                            </div>
-                        </div>
-                        <div class="mini-calendar-grid" id="miniCalendarGrid"></div>
-                    </div>
+        <!-- Main Container -->
+        <div class="main-container">
+            <div class="section-header">
+                <h2 class="section-title">Select an appointment time</h2>
+                <div class="timezone-text" id="timezone">(GMT+00:00) UTC</div>
+            </div>
 
-                    <!-- Day Selector & Time Slots -->
-                    <div class="day-selector">
-                        <div class="days-row-wrapper">
-                            <button class="days-row-nav left" id="prevDays">◀</button>
-                            <div class="days-row" id="daysRow"></div>
-                            <button class="days-row-nav right" id="nextDays">▶</button>
-                        </div>
-                        
-                        <div id="timeSlotsContainer" class="time-slots-section hidden">
-                            <div id="freeAllDayBtn" class="free-all-day">Free All Day</div>
-                            <div id="timeDropdownContainer" class="time-dropdown-container">
-                                <div id="timeDropdownToggle" class="time-dropdown-toggle">Select a specific time</div>
-                                <div id="timeDropdownMenu" class="time-dropdown-menu"></div>
-                            </div>
-                            <div id="timeSlotsGrid" class="time-slots-grid hidden"></div>
-                            <div id="durationPills" class="duration-pills hidden"></div>
-                        </div>
-
-                        <div id="noAvailability" class="no-availability hidden">
-                            <p class="no-availability-text">No availability during these days</p>
-                            <a class="jump-link" onclick="jumpToNextAvailable()">Jump to the next bookable date</a>
+            <div class="calendar-layout">
+                <!-- Month Calendar (Left) -->
+                <div class="month-calendar-container">
+                    <div class="month-header">
+                        <span class="month-name" id="miniMonthName">November 2025</span>
+                        <div class="month-nav">
+                            <button class="nav-btn" id="prevMonth" aria-label="Previous month">◀</button>
+                            <button class="nav-btn" id="nextMonth" aria-label="Next month">▶</button>
                         </div>
                     </div>
+                    <div class="calendar-grid" id="miniCalendarGrid">
+                        <!-- Calendar will be rendered here by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Day Selector & Time Slots (Right) -->
+                <div class="day-time-container">
+                    <!-- Day Selector -->
+                    <div class="days-selector-wrapper">
+                        <button class="day-nav-btn left" id="prevDays" aria-label="Previous days">◀</button>
+                        <div class="days-selector" id="daysRow">
+                            <!-- Days will be rendered here by JavaScript -->
+                        </div>
+                        <button class="day-nav-btn right" id="nextDays" aria-label="Next days">▶</button>
+                    </div>
+
+                    <!-- Time Slots Section -->
+                    <div id="timeSlotsContainer" class="time-slots-section hidden">
+                        <!-- Free All Day Banner (for range-based availability) -->
+                        <div id="freeAllDayBanner" class="free-all-day-banner hidden">
+                            <div class="free-all-day-content">
+                                <span class="free-all-day-icon">✓</span>
+                                <span class="free-all-day-text">Free All Day</span>
+                            </div>
+                        </div>
+
+                        <!-- Time Dropdown Selector (for range-based availability) -->
+                        <div id="timeDropdownContainer" class="time-dropdown-container hidden">
+                            <button id="timeDropdownToggle" class="time-dropdown-toggle" type="button">
+                                <span id="timeDropdownText">Select a specific time</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div id="timeDropdownMenu" class="time-dropdown-menu">
+                                <!-- Time options will be rendered here by JavaScript -->
+                            </div>
+                        </div>
+
+                        <!-- Time Slots Grid (for specific slots) -->
+                        <div id="timeSlotsGrid" class="time-slots-grid">
+                            <!-- Time slots will be rendered here by JavaScript -->
+                        </div>
+                        <div id="durationPills" class="duration-pills hidden">
+                            <!-- Duration pills will be rendered here by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- No Availability Message -->
+                    <div id="noAvailability" class="no-availability hidden">
+                        <p class="no-availability-text">No availability during these days</p>
+                        <a class="jump-link" onclick="jumpToNextAvailable()">Jump to the next bookable date</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-content">
+                <div class="footer-text">
+                    <span>Developed by </span>
+                    <a href="https://xspark.co.za" target="_blank" rel="noopener noreferrer" class="footer-link">X Spark Pty Ltd</a>
+                </div>
+                <span class="footer-separator">•</span>
+                <div class="footer-text">
+                    <a href="https://xscard.co.za" target="_blank" rel="noopener noreferrer" class="footer-link">XS Card</a>
+                </div>
+                <span class="footer-separator">•</span>
+                <div class="footer-links">
+                    <a href="https://xscard.co.za/privacy" target="_blank" rel="noopener noreferrer" class="footer-link">Privacy Policy</a>
+                    <span class="footer-separator">•</span>
+                    <a href="https://xscard.co.za/terms" target="_blank" rel="noopener noreferrer" class="footer-link">Terms of Service</a>
                 </div>
             </div>
         </div>
@@ -971,7 +1108,7 @@
     <!-- Booking Form Modal -->
     <div id="bookingModal" class="modal-overlay">
         <div class="modal">
-            <button class="modal-close" onclick="closeModal()">×</button>
+            <button class="modal-close" onclick="closeModal()" aria-label="Close">×</button>
             <h2 class="modal-title">Enter Details</h2>
             <p class="modal-subtitle" id="modalSubtitle"></p>
             
@@ -1041,7 +1178,7 @@
         let availabilityData = {};
         let userData = {};
         let allowedDurations = [];
-        let advanceBookingDays = 90; // Default, will be updated from API
+        let advanceBookingDays = 90;
         let timezone = 'UTC';
         let currentMonth = new Date();
         let currentDaysStart = new Date();
@@ -1059,15 +1196,48 @@
             return `${hours12}:${minutes.toString().padStart(2, '0')}${period}`;
         }
 
-        // Format timezone display (e.g., "UTC" -> "(GMT+00:00) UTC")
+        // Format date to YYYY-MM-DD using local date (not UTC)
+        function formatDateString(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // Check if a time slot is in the past for a given date
+        function isTimeSlotInPast(dateString, time24) {
+            if (!dateString || !time24) return false;
+            
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            // Parse the selected date (assume local timezone)
+            const [year, month, day] = dateString.split('-').map(Number);
+            const selectedDate = new Date(year, month - 1, day);
+            
+            // Check if selected date is today
+            const isToday = selectedDate.getTime() === today.getTime();
+            
+            if (!isToday) {
+                // If not today, the slot is not in the past (future dates don't need filtering)
+                return false;
+            }
+            
+            // Parse the time slot
+            const [hours, minutes] = time24.split(':').map(Number);
+            const slotTime = new Date(year, month - 1, day, hours, minutes);
+            
+            // Check if slot time is in the past
+            return slotTime < now;
+        }
+
+        // Format timezone display
         function formatTimezone(tz) {
             if (!tz || tz === 'UTC') {
                 return '(GMT+00:00) UTC';
             }
             try {
                 const now = new Date();
-                
-                // Get timezone name
                 const formatter = new Intl.DateTimeFormat('en-US', {
                     timeZone: tz,
                     timeZoneName: 'long'
@@ -1075,8 +1245,6 @@
                 const parts = formatter.formatToParts(now);
                 const tzName = parts.find(p => p.type === 'timeZoneName')?.value || tz;
                 
-                // Calculate offset using a more reliable method
-                // Format the same moment in UTC and in the target timezone
                 const utcStr = now.toLocaleString('en-US', {
                     timeZone: 'UTC',
                     hour: '2-digit',
@@ -1090,7 +1258,6 @@
                     hour12: false
                 });
                 
-                // Parse times to get hour and minute
                 const utcMatch = utcStr.match(/(\d{2}):(\d{2})/);
                 const tzMatch = tzStr.match(/(\d{2}):(\d{2})/);
                 
@@ -1100,12 +1267,10 @@
                     const tzHours = parseInt(tzMatch[1]);
                     const tzMins = parseInt(tzMatch[2]);
                     
-                    // Calculate offset in minutes
                     const utcTotalMins = utcHours * 60 + utcMins;
                     const tzTotalMins = tzHours * 60 + tzMins;
                     let offsetMins = tzTotalMins - utcTotalMins;
                     
-                    // Handle day boundaries (add/subtract 24 hours)
                     if (offsetMins > 12 * 60) offsetMins -= 24 * 60;
                     if (offsetMins < -12 * 60) offsetMins += 24 * 60;
                     
@@ -1119,21 +1284,9 @@
                     return `(GMT${sign}${hoursStr}:${minsStr}) ${tzName}`;
                 }
                 
-                // Fallback to timezone name only
                 return `(GMT+00:00) ${tzName}`;
             } catch (e) {
                 console.warn('[Calendar] Timezone formatting error:', e);
-                // Fallback: try to extract common timezone patterns
-                const tzLower = tz.toLowerCase();
-                if (tzLower.includes('africa') && tzLower.includes('south')) {
-                    return '(GMT+02:00) South Africa Standard Time';
-                }
-                if (tzLower.includes('america') && tzLower.includes('new_york')) {
-                    return '(GMT-05:00) Eastern Time';
-                }
-                if (tzLower.includes('europe') && tzLower.includes('london')) {
-                    return '(GMT+00:00) Greenwich Mean Time';
-                }
                 return `(GMT+00:00) ${tz}`;
             }
         }
@@ -1159,8 +1312,8 @@
 
         // Fetch availability
         async function fetchAvailability() {
-            const startDate = new Date().toISOString().split('T')[0];
-            // Use a large default (365 days) - backend will cap it to user's advanceBookingDays preference
+            const today = new Date();
+            const startDate = formatDateString(today);
             const apiUrl = `/public/calendar/${userId}?startDate=${startDate}&days=365`;
             console.log('[Calendar] Fetching from:', apiUrl);
             
@@ -1177,12 +1330,11 @@
             timezone = data.data.timezone || 'UTC';
             advanceBookingDays = data.data.advanceBookingDays || 90;
             
-            // Build array of available dates
             availableDatesArray = Object.keys(availabilityData)
                 .filter(date => availabilityData[date] && availabilityData[date].length > 0)
                 .sort();
             
-            console.log('[Calendar] Available dates:', availableDatesArray.length, 'out of', advanceBookingDays, 'days configured');
+            console.log('[Calendar] Available dates:', availableDatesArray.length);
         }
 
         // Render user info
@@ -1197,17 +1349,15 @@
                 avatar.innerHTML = `<img src="${userData.profileImage}" alt="${userData.name}">`;
             } else {
                 const initials = userData.name.split(' ').map(n => n[0]).join('').toUpperCase();
-                avatar.innerHTML = `<span style="color: white; font-size: 32px; font-weight: 700;">${initials}</span>`;
+                avatar.innerHTML = `<span class="profile-avatar-initials">${initials}</span>`;
             }
 
             name.textContent = userData.name;
             
-            // Update timezone display
             if (timezoneEl) {
                 timezoneEl.textContent = formatTimezone(timezone);
             }
             
-            // Update meeting title and duration based on allowed durations
             if (allowedDurations.length > 0) {
                 const primaryDuration = allowedDurations[0];
                 if (allowedDurations.length === 1) {
@@ -1221,7 +1371,7 @@
             }
         }
 
-        // Render mini calendar
+        // Render full month calendar
         function renderMiniCalendar() {
             const grid = document.getElementById('miniCalendarGrid');
             const monthName = document.getElementById('miniMonthName');
@@ -1237,7 +1387,7 @@
             const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
             days.forEach(day => {
                 const header = document.createElement('div');
-                header.className = 'mini-day-header';
+                header.className = 'calendar-day-header';
                 header.textContent = day;
                 grid.appendChild(header);
             });
@@ -1245,22 +1395,33 @@
             // Days
             const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
             const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+            const prevMonthDays = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 0).getDate();
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            for (let i = 0; i < firstDay; i++) {
-                grid.appendChild(document.createElement('div'));
+            // Previous month days
+            for (let i = firstDay - 1; i >= 0; i--) {
+                const dayCell = document.createElement('div');
+                dayCell.className = 'calendar-day other-month';
+                dayCell.textContent = prevMonthDays - i;
+                grid.appendChild(dayCell);
             }
 
+            // Current month days
             for (let day = 1; day <= daysInMonth; day++) {
                 const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-                const dateString = date.toISOString().split('T')[0];
+                const dateString = formatDateString(date);
                 
                 const dayCell = document.createElement('div');
-                dayCell.className = 'mini-day';
+                dayCell.className = 'calendar-day';
                 dayCell.textContent = day;
 
                 const hasSlots = availabilityData[dateString] && availabilityData[dateString].length > 0;
+                const isToday = date.getTime() === today.getTime();
+                
+                if (isToday) {
+                    dayCell.classList.add('today');
+                }
                 
                 if (date < today) {
                     dayCell.classList.add('disabled');
@@ -1268,7 +1429,6 @@
                     dayCell.classList.add('available');
                     dayCell.onclick = () => {
                         selectDate(dateString);
-                        // Jump to this date in days row
                         currentDaysStart = new Date(date);
                         currentDaysStart.setDate(currentDaysStart.getDate() - 3);
                         renderDaysRow();
@@ -1281,6 +1441,16 @@
                     dayCell.classList.add('selected');
                 }
 
+                grid.appendChild(dayCell);
+            }
+
+            // Next month days to fill the grid
+            const totalCells = grid.children.length - 7; // Minus headers
+            const remainingCells = 42 - totalCells - 7; // 6 rows * 7 days - headers - existing cells
+            for (let i = 1; i <= remainingCells; i++) {
+                const dayCell = document.createElement('div');
+                dayCell.className = 'calendar-day other-month';
+                dayCell.textContent = i;
                 grid.appendChild(dayCell);
             }
         }
@@ -1296,7 +1466,7 @@
             renderMiniCalendar();
         };
 
-        // Render days row (horizontal)
+        // Render days row
         function renderDaysRow() {
             const container = document.getElementById('daysRow');
             container.innerHTML = '';
@@ -1307,7 +1477,7 @@
             for (let i = 0; i < 7; i++) {
                 const date = new Date(currentDaysStart);
                 date.setDate(date.getDate() + i);
-                const dateString = date.toISOString().split('T')[0];
+                const dateString = formatDateString(date);
 
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
@@ -1315,154 +1485,47 @@
                 const slots = availabilityData[dateString] || [];
                 const isPast = date < today;
                 const hasSlots = slots.length > 0;
-                const isFreeAllDay = slots.length > 10; // Many slots = free all day
-                const hasSpecificSlots = slots.length > 0 && slots.length <= 10; // Few slots = specific times
 
-                // Day header
-                const dayName = document.createElement('div');
-                dayName.className = 'day-name';
-                dayName.textContent = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-
-                const dayNumber = document.createElement('div');
-                dayNumber.className = 'day-number';
-                dayNumber.textContent = date.getDate();
-
-                // Indicators container
-                const indicators = document.createElement('div');
-                indicators.className = 'day-indicators';
-
-                if (isPast) {
-                    // Past dates: show 4 grey dashes
-                    const dashesContainer = document.createElement('div');
-                    dashesContainer.className = 'dashes-container';
-                    for (let j = 0; j < 4; j++) {
-                        const dash = document.createElement('div');
-                        dash.className = 'dash-indicator blocked';
-                        dashesContainer.appendChild(dash);
-                    }
-                    indicators.appendChild(dashesContainer);
-                } else if (isFreeAllDay) {
-                    // Free all day: show 4 green dashes + schedule button
-                    const dashesContainer = document.createElement('div');
-                    dashesContainer.className = 'dashes-container';
-                    for (let j = 0; j < 4; j++) {
-                        const dash = document.createElement('div');
-                        dash.className = 'dash-indicator free';
-                        dash.onclick = (e) => {
-                            e.stopPropagation();
-                            // Select first available slot for free all day
-                            if (slots.length > 0 && slots[0].time) {
-                                const firstSlot = slots[0];
-                                const availableDurations = firstSlot.availableDurations || allowedDurations || [];
-                                selectDate(dateString);
-                                selectTime(firstSlot.time, availableDurations);
-                            }
-                        };
-                        dashesContainer.appendChild(dash);
-                    }
-                    indicators.appendChild(dashesContainer);
-
-                    // Schedule Meeting button
-                    const scheduleBtn = document.createElement('button');
-                    scheduleBtn.className = 'schedule-meeting-btn';
-                    scheduleBtn.textContent = 'Schedule';
-                    scheduleBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        if (slots.length > 0 && slots[0].time) {
-                            const firstSlot = slots[0];
-                            const availableDurations = firstSlot.availableDurations || allowedDurations || [];
-                            selectDate(dateString);
-                            selectTime(firstSlot.time, availableDurations);
-                        }
-                    };
-                    indicators.appendChild(scheduleBtn);
-                } else if (hasSpecificSlots) {
-                    // Specific slots: show pills + grey dashes (total 4 indicators vertically)
-                    const slotsToShow = Math.min(slots.length, 4);
-                    const remainingDashes = 4 - slotsToShow;
-                    
-                    // Pills container with 5px gap
-                    if (slotsToShow > 0) {
-                        const pillsContainer = document.createElement('div');
-                        pillsContainer.className = 'pills-container';
-                        for (let j = 0; j < slotsToShow; j++) {
-                            const slot = slots[j];
-                            if (slot && slot.time) {
-                                const pill = document.createElement('div');
-                                pill.className = 'time-slot-pill';
-                                pill.textContent = formatTime12Hour(slot.time);
-                                pill.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const availableDurations = slot.availableDurations || allowedDurations || [];
-                                    selectDate(dateString);
-                                    selectTime(slot.time, availableDurations);
-                                };
-                                pillsContainer.appendChild(pill);
-                            }
-                        }
-                        indicators.appendChild(pillsContainer);
-                    }
-                    
-                    // Separator between pills and dashes (20px)
-                    if (slotsToShow > 0 && remainingDashes > 0) {
-                        const separator = document.createElement('div');
-                        separator.className = 'pill-dash-separator';
-                        indicators.appendChild(separator);
-                    }
-                    
-                    // Dashes container with 20px gap
-                    if (remainingDashes > 0) {
-                        const dashesContainer = document.createElement('div');
-                        dashesContainer.className = 'dashes-container';
-                        for (let j = 0; j < remainingDashes; j++) {
-                            const dash = document.createElement('div');
-                            dash.className = 'dash-indicator blocked';
-                            dashesContainer.appendChild(dash);
-                        }
-                        indicators.appendChild(dashesContainer);
-                    }
-                } else {
-                    // No slots / blocked: show 4 grey dashes
-                    const dashesContainer = document.createElement('div');
-                    dashesContainer.className = 'dashes-container';
-                    for (let j = 0; j < 4; j++) {
-                        const dash = document.createElement('div');
-                        dash.className = 'dash-indicator blocked';
-                        dashesContainer.appendChild(dash);
-                    }
-                    indicators.appendChild(dashesContainer);
+                if (isPast || !hasSlots) {
+                    dayCard.classList.add('disabled-day');
                 }
 
-                dayCard.appendChild(dayName);
-                dayCard.appendChild(dayNumber);
-                dayCard.appendChild(indicators);
+                if (selectedDate === dateString) {
+                    dayCard.classList.add('selected-day');
+                }
+
+                const dayAbbr = document.createElement('div');
+                dayAbbr.className = 'day-abbreviation';
+                dayAbbr.textContent = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+                const dayNum = document.createElement('div');
+                dayNum.className = 'day-number';
+                dayNum.textContent = date.getDate();
+
+                dayCard.appendChild(dayAbbr);
+                dayCard.appendChild(dayNum);
+
+                if (!isPast && hasSlots) {
+                    dayCard.onclick = () => selectDate(dateString);
+                }
+
                 container.appendChild(dayCard);
             }
 
-            // Hide the old time slots container since we're showing slots under days now
-            document.getElementById('timeSlotsContainer').classList.add('hidden');
-            document.getElementById('noAvailability').classList.add('hidden');
+            if (selectedDate) {
+                renderTimeSlots();
+            }
         }
 
-        // Navigate days with smooth scrolling
+        // Navigate days
         document.getElementById('prevDays').onclick = () => {
             currentDaysStart.setDate(currentDaysStart.getDate() - 7);
             renderDaysRow();
-            // Smooth scroll to start after render
-            setTimeout(() => {
-                const daysRow = document.getElementById('daysRow');
-                daysRow.scrollTo({ left: 0, behavior: 'smooth' });
-            }, 10);
         };
 
         document.getElementById('nextDays').onclick = () => {
             currentDaysStart.setDate(currentDaysStart.getDate() + 7);
             renderDaysRow();
-            // Smooth scroll to end after render
-            setTimeout(() => {
-                const daysRow = document.getElementById('daysRow');
-                daysRow.scrollTo({ left: daysRow.scrollWidth, behavior: 'smooth' });
-            }, 10);
         };
 
         // Jump to next available date
@@ -1473,18 +1536,17 @@
             }
 
             const nextDate = availableDatesArray[0];
-            const date = new Date(nextDate + 'T00:00:00');
+            // Parse date string as local date
+            const [year, month, day] = nextDate.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
             
-            // Update month calendar
             currentMonth = new Date(date);
             renderMiniCalendar();
             
-            // Update days row
             currentDaysStart = new Date(date);
             currentDaysStart.setDate(currentDaysStart.getDate() - 3);
             renderDaysRow();
             
-            // Select the date
             selectDate(nextDate);
         }
 
@@ -1494,19 +1556,16 @@
             selectedTime = null;
             selectedDuration = null;
             
-            // Reset free all day button
-            const freeAllDayBtn = document.getElementById('freeAllDayBtn');
-            if (freeAllDayBtn) {
-                freeAllDayBtn.classList.remove('selected');
-            }
-            
-            // Close dropdown if open
-            const dropdownMenu = document.getElementById('timeDropdownMenu');
-            const dropdownToggle = document.getElementById('timeDropdownToggle');
-            if (dropdownMenu && dropdownToggle) {
-                dropdownMenu.classList.remove('active');
-                dropdownToggle.classList.remove('open');
-                dropdownToggle.textContent = 'Select a specific time';
+            // Reset dropdown state
+            const timeDropdownMenu = document.getElementById('timeDropdownMenu');
+            const timeDropdownToggle = document.getElementById('timeDropdownToggle');
+            const timeDropdownText = document.getElementById('timeDropdownText');
+            if (timeDropdownMenu && timeDropdownToggle) {
+                timeDropdownMenu.classList.remove('active');
+                timeDropdownToggle.classList.remove('open');
+                if (timeDropdownText) {
+                    timeDropdownText.textContent = 'Select a specific time';
+                }
             }
             
             renderMiniCalendar();
@@ -1519,9 +1578,10 @@
             const container = document.getElementById('timeSlotsGrid');
             const slotsContainer = document.getElementById('timeSlotsContainer');
             const noAvail = document.getElementById('noAvailability');
-            const freeAllDayBtn = document.getElementById('freeAllDayBtn');
-            const dropdownContainer = document.getElementById('timeDropdownContainer');
-            const dropdownMenu = document.getElementById('timeDropdownMenu');
+            const freeAllDayBanner = document.getElementById('freeAllDayBanner');
+            const timeDropdownContainer = document.getElementById('timeDropdownContainer');
+            const timeDropdownMenu = document.getElementById('timeDropdownMenu');
+            const timeDropdownToggle = document.getElementById('timeDropdownToggle');
             
             if (!container || !slotsContainer) {
                 console.error('[Calendar] Container elements not found');
@@ -1529,7 +1589,7 @@
             }
             
             container.innerHTML = '';
-            dropdownMenu.innerHTML = '';
+            timeDropdownMenu.innerHTML = '';
             
             const slots = availabilityData[selectedDate] || [];
             console.log('[Calendar] Rendering time slots for', selectedDate, 'Slots:', slots);
@@ -1537,110 +1597,131 @@
             if (slots.length === 0) {
                 slotsContainer.classList.add('hidden');
                 noAvail.classList.remove('hidden');
+                freeAllDayBanner.classList.add('hidden');
+                timeDropdownContainer.classList.add('hidden');
                 return;
             }
             
             slotsContainer.classList.remove('hidden');
             noAvail.classList.add('hidden');
             
-            // Filter slots: only show user-selected specific slots (not 15-min auto-generated intervals)
-            // If there are many slots (>10), they're likely auto-generated, so show "Free all day" with dropdown
-            // If there are few slots (<=10), they're likely user-selected, show them directly
+            // Filter out past time slots if the selected date is today
+            const filteredSlots = slots.filter(slot => {
+                if (!slot || !slot.time) return false;
+                // Remove past time slots for today's date
+                return !isTimeSlotInPast(selectedDate, slot.time);
+            });
             
-            const hasManySlots = slots.length > 10;
+            // If no slots remain after filtering, show "no availability" message
+            if (filteredSlots.length === 0) {
+                slotsContainer.classList.add('hidden');
+                noAvail.classList.remove('hidden');
+                freeAllDayBanner.classList.add('hidden');
+                timeDropdownContainer.classList.add('hidden');
+                return;
+            }
+            
+            // Determine if this is a range-based day (many slots) or specific slots (few slots)
+            // Range-based days typically have 10+ slots (30-minute intervals)
+            // Specific slots usually have 1-10 slots
+            const hasManySlots = filteredSlots.length > 10;
             
             if (hasManySlots) {
-                // Show "Free all day" with dropdown for specific times
+                // Show "Free All Day" banner + dropdown for range-based days
+                freeAllDayBanner.classList.remove('hidden');
+                timeDropdownContainer.classList.remove('hidden');
                 container.classList.add('hidden');
-                freeAllDayBtn.classList.remove('hidden');
-                dropdownContainer.classList.add('active');
                 
-                // Populate dropdown with all available times
-                slots.forEach((slot) => {
+                // Populate dropdown with filtered available times (including unavailable ones)
+                filteredSlots.forEach((slot) => {
                     if (!slot || !slot.time) return;
                     
                     const item = document.createElement('div');
-                    item.className = 'time-dropdown-item';
                     const formattedTime = formatTime12Hour(slot.time);
                     item.textContent = formattedTime;
                     item.dataset.time24 = slot.time;
                     
-                    const availableDurations = slot.availableDurations || allowedDurations || [];
+                    // Check if slot is available (has at least one available duration)
+                    const isAvailable = slot.available !== false && slot.availableDurations && slot.availableDurations.length > 0;
                     
-                    item.onclick = (e) => {
-                        e.stopPropagation();
-                        selectTime(slot.time, availableDurations);
-                        dropdownMenu.classList.remove('active');
-                        document.getElementById('timeDropdownToggle').classList.remove('open');
-                        document.getElementById('timeDropdownToggle').textContent = formattedTime;
-                    };
+                    if (isAvailable) {
+                        item.className = 'time-dropdown-item';
+                        const availableDurations = slot.availableDurations || allowedDurations || [];
+                        
+                        item.onclick = (e) => {
+                            e.stopPropagation();
+                            selectTime(slot.time, availableDurations);
+                            timeDropdownMenu.classList.remove('active');
+                            timeDropdownToggle.classList.remove('open');
+                            const toggleText = document.getElementById('timeDropdownText');
+                            if (toggleText) {
+                                toggleText.textContent = formattedTime;
+                            }
+                        };
+                    } else {
+                        item.className = 'time-dropdown-item disabled';
+                        item.title = 'Not available';
+                    }
                     
-                    dropdownMenu.appendChild(item);
+                    timeDropdownMenu.appendChild(item);
                 });
                 
                 // Dropdown toggle handler
-                const toggle = document.getElementById('timeDropdownToggle');
-                toggle.onclick = (e) => {
+                timeDropdownToggle.onclick = (e) => {
                     e.stopPropagation();
-                    const isOpen = dropdownMenu.classList.contains('active');
-                    dropdownMenu.classList.toggle('active');
-                    toggle.classList.toggle('open');
+                    const isOpen = timeDropdownMenu.classList.contains('active');
+                    timeDropdownMenu.classList.toggle('active');
+                    timeDropdownToggle.classList.toggle('open');
                 };
                 
                 // Close dropdown when clicking outside
-                document.addEventListener('click', function closeDropdown(e) {
-                    if (!dropdownContainer.contains(e.target) && dropdownMenu.classList.contains('active')) {
-                        dropdownMenu.classList.remove('active');
-                        toggle.classList.remove('open');
-                    }
-                });
-                
-                // Free all day button handler
-                freeAllDayBtn.onclick = () => {
-                    // Select first available time slot for "free all day"
-                    if (slots.length > 0 && slots[0].time) {
-                        const firstSlot = slots[0];
-                        const availableDurations = firstSlot.availableDurations || allowedDurations || [];
-                        selectTime(firstSlot.time, availableDurations);
-                        freeAllDayBtn.classList.add('selected');
+                const closeDropdown = (e) => {
+                    if (!timeDropdownContainer.contains(e.target) && timeDropdownMenu.classList.contains('active')) {
+                        timeDropdownMenu.classList.remove('active');
+                        timeDropdownToggle.classList.remove('open');
+                        document.removeEventListener('click', closeDropdown);
                     }
                 };
                 
-            } else {
-                // Show specific user-selected slots directly
-                container.classList.remove('hidden');
-                freeAllDayBtn.classList.add('hidden');
-                dropdownContainer.classList.remove('active');
+                document.addEventListener('click', closeDropdown);
                 
-                slots.forEach((slot, index) => {
+            } else {
+                // Show grid for specific slots
+                freeAllDayBanner.classList.add('hidden');
+                timeDropdownContainer.classList.add('hidden');
+                container.classList.remove('hidden');
+                
+                filteredSlots.forEach((slot, index) => {
                     if (!slot || !slot.time) {
-                        console.warn('[Calendar] Invalid slot structure at index', index, ':', slot);
+                        console.warn('[Calendar] Invalid slot at index', index, ':', slot);
                         return;
                     }
 
                     const timeSlot = document.createElement('div');
-                    timeSlot.className = 'time-slot';
                     const formattedTime = formatTime12Hour(slot.time);
                     timeSlot.textContent = formattedTime;
                     timeSlot.dataset.time24 = slot.time;
                     
-                    const availableDurations = slot.availableDurations || allowedDurations || [];
+                    // Check if slot is available (has at least one available duration)
+                    const isAvailable = slot.available !== false && slot.availableDurations && slot.availableDurations.length > 0;
                     
-                    timeSlot.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        selectTime(slot.time, availableDurations);
-                    });
-                    
-                    timeSlot.style.cursor = 'pointer';
-                    timeSlot.style.pointerEvents = 'auto';
-                    timeSlot.style.userSelect = 'none';
+                    if (isAvailable) {
+                        timeSlot.className = 'time-slot';
+                        const availableDurations = slot.availableDurations || allowedDurations || [];
+                        
+                        timeSlot.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            selectTime(slot.time, availableDurations);
+                        });
+                    } else {
+                        timeSlot.className = 'time-slot disabled';
+                        timeSlot.title = 'Not available';
+                    }
                     
                     container.appendChild(timeSlot);
                 });
             }
-            
-            console.log('[Calendar] Rendered time slots. Has many slots:', hasManySlots);
         }
 
         // Select time
@@ -1648,21 +1729,13 @@
             selectedTime = time;
             selectedDuration = null;
 
-            // Update UI
             document.querySelectorAll('.time-slot').forEach(slot => {
                 slot.classList.remove('selected');
                 if (slot.dataset.time24 === time) {
                     slot.classList.add('selected');
                 }
             });
-            
-            // Update free all day button state
-            const freeAllDayBtn = document.getElementById('freeAllDayBtn');
-            if (freeAllDayBtn && !freeAllDayBtn.classList.contains('hidden')) {
-                freeAllDayBtn.classList.add('selected');
-            }
 
-            // Render duration pills
             const container = document.getElementById('durationPills');
             container.innerHTML = '';
             
@@ -1678,7 +1751,6 @@
                 });
             } else {
                 container.classList.add('hidden');
-                // Auto-select default duration if only one option
                 if (allowedDurations.length === 1) {
                     selectDuration(allowedDurations[0]);
                 }
@@ -1689,7 +1761,6 @@
         function selectDuration(duration) {
             selectedDuration = duration;
 
-            // Update UI
             document.querySelectorAll('.duration-pill').forEach(pill => {
                 pill.classList.remove('selected');
                 if (pill.textContent === `${duration} min`) {
@@ -1697,7 +1768,6 @@
                 }
             });
 
-            // Open booking modal
             setTimeout(() => openModal(), 300);
         }
 
@@ -1706,7 +1776,9 @@
             const modal = document.getElementById('bookingModal');
             const subtitle = document.getElementById('modalSubtitle');
             
-            const date = new Date(selectedDate + 'T00:00:00');
+            // Parse date string as local date
+            const [year, month, day] = selectedDate.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
             const dateStr = date.toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
@@ -1727,7 +1799,6 @@
         document.getElementById('bookingForm').onsubmit = async (e) => {
             e.preventDefault();
             
-            // Clear errors
             document.querySelectorAll('.form-error').forEach(el => el.textContent = '');
             
             const name = document.getElementById('name').value.trim();
@@ -1736,7 +1807,6 @@
             const location = document.getElementById('location').value.trim();
             const message = document.getElementById('message').value.trim();
             
-            // Validate
             let hasError = false;
             
             if (!name) {
@@ -1756,7 +1826,6 @@
             
             if (hasError) return;
             
-            // Submit
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
             submitBtn.textContent = 'Booking...';
@@ -1797,7 +1866,9 @@
             document.getElementById('bookingModal').classList.remove('active');
             document.getElementById('successState').classList.add('active');
             
-            const date = new Date(selectedDate + 'T00:00:00');
+            // Parse date string as local date
+            const [year, month, day] = selectedDate.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
             document.getElementById('successUserName').textContent = userData.name;
             document.getElementById('successDate').textContent = date.toLocaleDateString('en-US', {
                 weekday: 'long',

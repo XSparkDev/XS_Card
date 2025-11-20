@@ -793,7 +793,20 @@ exports.getPublicCalendarAvailability = async (req, res) => {
         const existingMeetings = meetingDoc.exists ? (meetingDoc.data().bookings || []) : [];
 
         // Calculate availability
-        const start = startDate ? new Date(startDate) : new Date();
+        // Parse startDate to avoid timezone issues - ensure it's treated as local date
+        let start;
+        if (startDate) {
+            // If startDate is a string (YYYY-MM-DD), parse it as local date
+            if (typeof startDate === 'string' && startDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [year, month, day] = startDate.split('-').map(Number);
+                start = new Date(year, month - 1, day, 0, 0, 0, 0); // Local midnight
+            } else {
+                start = new Date(startDate);
+            }
+        } else {
+            start = new Date();
+        }
+        start.setHours(0, 0, 0, 0); // Ensure midnight
         const daysToCalculate = Math.min(parseInt(days), preferences.advanceBookingDays || 30);
         
         const availability = availabilityService.calculateAvailableSlots(

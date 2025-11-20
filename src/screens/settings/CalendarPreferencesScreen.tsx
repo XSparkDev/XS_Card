@@ -115,6 +115,33 @@ export default function CalendarPreferencesScreen() {
     loadUserId();
   }, []);
 
+  useEffect(() => {
+    const checkUserPlan = async () => {
+      try {
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const { plan } = JSON.parse(userData);
+          
+          // Redirect if user is on free plan
+          if (plan === 'free') {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'MainApp', params: undefined }],
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error checking user plan:', error);
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'MainApp', params: undefined }],
+        });
+      }
+    };
+
+    checkUserPlan();
+  }, [navigation]);
+
   const loadUserId = async () => {
     try {
       const userData = await AsyncStorage.getItem('userData');
