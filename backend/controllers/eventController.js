@@ -2275,38 +2275,71 @@ exports.getEventAttendees = async (req, res) => {
 exports.getMyTicketForEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
+    const { instanceId } = req.query; // Optional: get ticket for specific instance
     const userId = req.user.uid;
 
     console.log('[getMyTicketForEvent] Event ID:', eventId);
+    console.log('[getMyTicketForEvent] Instance ID:', instanceId);
     console.log('[getMyTicketForEvent] User ID:', userId);
 
-    // Check if user is registered for this event
-    const registrationSnapshot = await db.collection('event_registrations')
-      .where('eventId', '==', eventId)
-      .where('userId', '==', userId)
-      .get();
-    
-    console.log('[getMyTicketForEvent] User registrations for this event:', registrationSnapshot.size);
-    registrationSnapshot.docs.forEach(doc => {
-      const regData = doc.data();
-      console.log('[getMyTicketForEvent] Registration:', doc.id, 'ticketId:', regData.ticketId, 'status:', regData.status);
-    });
+    // Get event to check if it's recurring
+    const eventDoc = await db.collection('events').doc(eventId).get();
+    const eventData = eventDoc.exists ? eventDoc.data() : null;
+    const isRecurring = eventData?.isRecurring || false;
 
-    // First, let's see all tickets for this user
-    const allUserTickets = await db.collection('tickets')
-      .where('userId', '==', userId)
-      .get();
-    
-    console.log('[getMyTicketForEvent] User has', allUserTickets.size, 'total tickets');
-    allUserTickets.docs.forEach(doc => {
-      console.log('[getMyTicketForEvent] Ticket:', doc.id, 'for event:', doc.data().eventId);
-    });
+    // If instanceId is provided, get ticket for that specific instance
+    if (instanceId) {
+      // Find registration with this instanceId
+      const registrationSnapshot = await db.collection('event_registrations')
+        .where('eventId', '==', eventId)
+        .where('userId', '==', userId)
+        .where('instanceId', '==', instanceId)
+        .limit(1)
+        .get();
 
-    // Find the user's ticket for this event
+      if (registrationSnapshot.empty) {
+        return res.status(404).json({
+          success: false,
+          message: 'No registration found for this instance'
+        });
+      }
+
+      const registration = registrationSnapshot.docs[0].data();
+      if (!registration.ticketId) {
+        return res.status(404).json({
+          success: false,
+          message: 'No ticket found for this registration'
+        });
+      }
+
+      const ticketDoc = await db.collection('tickets').doc(registration.ticketId).get();
+      if (!ticketDoc.exists) {
+        return res.status(404).json({
+          success: false,
+          message: 'Ticket not found'
+        });
+      }
+
+      const ticketDocData = ticketDoc.data();
+      const ticketData = {
+        id: ticketDoc.id,
+        ...ticketDocData,
+        createdAt: ticketDocData.createdAt?.toDate().toISOString(),
+        updatedAt: ticketDocData.updatedAt?.toDate().toISOString(),
+        checkedInAt: ticketDocData.checkedInAt?.toDate().toISOString(),
+        instanceId: registration.instanceId, // Include instanceId in ticket data
+      };
+
+      return res.status(200).json({
+        success: true,
+        ticket: ticketData
+      });
+    }
+
+    // Find all user's tickets for this event
     const ticketSnapshot = await db.collection('tickets')
       .where('eventId', '==', eventId)
       .where('userId', '==', userId)
-      .limit(1)
       .get();
 
     console.log('[getMyTicketForEvent] Tickets found for this event:', ticketSnapshot.size);
@@ -2318,31 +2351,60 @@ exports.getMyTicketForEvent = async (req, res) => {
       });
     }
 
-    const ticketDoc = ticketSnapshot.docs[0];
-    const ticketDocData = ticketDoc.data();
-    
-    console.log('[getMyTicketForEvent] Found ticket document ID:', ticketDoc.id);
-    console.log('[getMyTicketForEvent] Internal ticket ID field:', ticketDocData.id);
-    console.log('[getMyTicketForEvent] Ticket data keys:', Object.keys(ticketDocData));
-    
-    const ticketData = {
-      id: ticketDoc.id, // Always use the Firestore document ID
-      ...ticketDocData,
-      // Override any internal id field with the document ID
-      createdAt: ticketDocData.createdAt?.toDate().toISOString(),
-      updatedAt: ticketDocData.updatedAt?.toDate().toISOString(),
-      checkedInAt: ticketDocData.checkedInAt?.toDate().toISOString(),
-    };
-    
-    // Ensure the ID is the document ID
-    ticketData.id = ticketDoc.id;
-    
-    console.log('[getMyTicketForEvent] Final ticket ID being returned:', ticketData.id);
+    // For recurring events, return all tickets. For non-recurring, return the first one.
+    if (isRecurring && ticketSnapshot.size > 1) {
+      // Get registrations to include instanceId info
+      const registrationSnapshot = await db.collection('event_registrations')
+        .where('eventId', '==', eventId)
+        .where('userId', '==', userId)
+        .get();
 
-    res.status(200).json({
-      success: true,
-      ticket: ticketData
-    });
+      const registrationsByTicketId = {};
+      registrationSnapshot.docs.forEach(doc => {
+        const regData = doc.data();
+        if (regData.ticketId) {
+          registrationsByTicketId[regData.ticketId] = regData;
+        }
+      });
+
+      const tickets = ticketSnapshot.docs.map(doc => {
+        const ticketDocData = doc.data();
+        const registration = registrationsByTicketId[doc.id] || {};
+        
+        return {
+          id: doc.id,
+          ...ticketDocData,
+          createdAt: ticketDocData.createdAt?.toDate().toISOString(),
+          updatedAt: ticketDocData.updatedAt?.toDate().toISOString(),
+          checkedInAt: ticketDocData.checkedInAt?.toDate().toISOString(),
+          instanceId: registration.instanceId || null,
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        tickets: tickets, // Return array for multiple tickets
+        ticket: tickets[0], // Also include first ticket for backward compatibility
+        isRecurring: true
+      });
+    } else {
+      // Non-recurring or single ticket - return single ticket
+      const ticketDoc = ticketSnapshot.docs[0];
+      const ticketDocData = ticketDoc.data();
+      
+      const ticketData = {
+        id: ticketDoc.id,
+        ...ticketDocData,
+        createdAt: ticketDocData.createdAt?.toDate().toISOString(),
+        updatedAt: ticketDocData.updatedAt?.toDate().toISOString(),
+        checkedInAt: ticketDocData.checkedInAt?.toDate().toISOString(),
+      };
+
+      return res.status(200).json({
+        success: true,
+        ticket: ticketData
+      });
+    }
 
   } catch (error) {
     sendError(res, 500, 'Error getting user ticket', error);

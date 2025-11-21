@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,8 +17,11 @@ import { formatInstanceDate } from '../../../utils/eventsRecurrence';
 interface EventInstanceListProps {
   eventId: string;
   onSelectInstance: (instance: EventInstance) => void;
-  selectedInstanceId?: string | null;
+  selectedInstanceIds?: string[]; // Changed to array for multi-select
   maxAttendees: number;
+  showRegisterButton?: boolean;
+  onRegister?: (selectedInstances: EventInstance[]) => void;
+  loading?: boolean;
 }
 
 interface GroupedInstances {
@@ -29,19 +32,45 @@ interface GroupedInstances {
 export default function EventInstanceList({ 
   eventId, 
   onSelectInstance, 
-  selectedInstanceId,
-  maxAttendees 
+  selectedInstanceIds = [],
+  maxAttendees,
+  showRegisterButton = true,
+  onRegister,
+  loading = false
 }: EventInstanceListProps) {
+  const [localSelectedIds, setLocalSelectedIds] = useState<string[]>(selectedInstanceIds);
   const [instances, setInstances] = useState<EventInstance[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingInstances, setLoadingInstances] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [currentLimit, setCurrentLimit] = useState(12);
 
   useEffect(() => {
+    setLocalSelectedIds(selectedInstanceIds);
+  }, [selectedInstanceIds]);
+
+  useEffect(() => {
     loadInstances();
   }, [eventId]);
+
+  // Get selected instances from the instances array
+  const selectedInstances = useMemo(() => {
+    return instances.filter(inst => localSelectedIds.includes(inst.instanceId));
+  }, [instances, localSelectedIds]);
+
+  const toggleInstance = (instance: EventInstance) => {
+    const isSelected = localSelectedIds.includes(instance.instanceId);
+    const newSelected = isSelected
+      ? localSelectedIds.filter(id => id !== instance.instanceId)
+      : [...localSelectedIds, instance.instanceId];
+    
+    setLocalSelectedIds(newSelected);
+    // Notify parent of selection change
+    if (onSelectInstance) {
+      onSelectInstance(instance);
+    }
+  };
 
   const loadInstances = async (refresh: boolean = false) => {
     try {
@@ -49,7 +78,7 @@ export default function EventInstanceList({
         setRefreshing(true);
         setCurrentLimit(12);
       } else {
-        setLoading(true);
+        setLoadingInstances(true);
       }
 
       const response = await getEventInstances(eventId, { limit: currentLimit });
@@ -61,7 +90,7 @@ export default function EventInstanceList({
     } catch (error) {
       console.error('Error loading instances:', error);
     } finally {
-      setLoading(false);
+      setLoadingInstances(false);
       setRefreshing(false);
     }
   };
@@ -108,7 +137,7 @@ export default function EventInstanceList({
   };
 
   const renderInstance = (instance: EventInstance) => {
-    const isSelected = selectedInstanceId === instance.instanceId;
+    const isSelected = localSelectedIds.includes(instance.instanceId);
     const spotsLeft = maxAttendees - (instance.attendeeCount || 0);
     const isFull = maxAttendees > 0 && spotsLeft <= 0;
     const isAlmostFull = maxAttendees > 0 && spotsLeft <= 5 && spotsLeft > 0;
@@ -121,11 +150,22 @@ export default function EventInstanceList({
           isSelected && styles.instanceCardSelected,
           isFull && styles.instanceCardDisabled
         ]}
-        onPress={() => !isFull && onSelectInstance(instance)}
+        onPress={() => !isFull && toggleInstance(instance)}
         disabled={isFull}
       >
         <View style={styles.instanceHeader}>
           <View style={styles.instanceDateContainer}>
+            {/* Checkbox */}
+            <View style={[
+              styles.checkbox,
+              isSelected && styles.checkboxSelected,
+              isFull && styles.checkboxDisabled
+            ]}>
+              {isSelected && (
+                <MaterialIcons name="check" size={16} color={COLORS.white} />
+              )}
+            </View>
+            
             <MaterialIcons 
               name="event" 
               size={20} 
@@ -147,12 +187,6 @@ export default function EventInstanceList({
               </Text>
             </View>
           </View>
-          
-          {isSelected && (
-            <View style={styles.selectedBadge}>
-              <MaterialIcons name="check-circle" size={20} color={COLORS.primary} />
-            </View>
-          )}
         </View>
         
         <View style={styles.instanceFooter}>
@@ -171,8 +205,8 @@ export default function EventInstanceList({
             </Text>
           </View>
           
-          {!isFull && !isSelected && (
-            <Text style={styles.selectText}>Tap to select</Text>
+          {!isFull && isSelected && (
+            <Text style={styles.selectedText}>Selected</Text>
           )}
         </View>
       </TouchableOpacity>
@@ -186,7 +220,7 @@ export default function EventInstanceList({
     </View>
   );
 
-  if (loading) {
+  if (loadingInstances) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -209,8 +243,12 @@ export default function EventInstanceList({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Select an occurrence</Text>
-        <Text style={styles.subtitle}>Choose a date and time to attend</Text>
+        <Text style={styles.title}>Select dates to attend</Text>
+        <Text style={styles.subtitle}>
+          {localSelectedIds.length > 0 
+            ? `${localSelectedIds.length} date${localSelectedIds.length > 1 ? 's' : ''} selected`
+            : 'Choose one or more dates and times'}
+        </Text>
       </View>
       
       <FlatList
@@ -225,22 +263,47 @@ export default function EventInstanceList({
           />
         }
         ListFooterComponent={() => (
-          hasMore ? (
-            <TouchableOpacity
-              style={styles.loadMoreButton}
-              onPress={loadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore ? (
-                <ActivityIndicator size="small" color={COLORS.primary} />
-              ) : (
-                <>
-                  <MaterialIcons name="expand-more" size={20} color={COLORS.primary} />
-                  <Text style={styles.loadMoreText}>Load 12 more dates</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : null
+          <View>
+            {hasMore && (
+              <TouchableOpacity
+                style={styles.loadMoreButton}
+                onPress={loadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? (
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                ) : (
+                  <>
+                    <MaterialIcons name="expand-more" size={20} color={COLORS.primary} />
+                    <Text style={styles.loadMoreText}>Load 12 more dates</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+            {showRegisterButton && localSelectedIds.length > 0 && onRegister && (
+              <View style={styles.registerButtonContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.registerButton,
+                    loading && styles.registerButtonDisabled
+                  ]}
+                  onPress={() => onRegister(selectedInstances)}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                  ) : (
+                    <>
+                      <MaterialIcons name="event-available" size={20} color={COLORS.white} />
+                      <Text style={styles.registerButtonText}>
+                        Register for {localSelectedIds.length} date{localSelectedIds.length > 1 ? 's' : ''}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         )}
       />
     </View>
@@ -305,6 +368,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: COLORS.gray,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  checkboxDisabled: {
+    opacity: 0.3,
+  },
   instanceDateText: {
     flex: 1,
   },
@@ -348,6 +428,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.primary,
     fontWeight: '500',
+  },
+  selectedText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  registerButtonContainer: {
+    padding: 16,
+    backgroundColor: COLORS.white,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.background,
+  },
+  registerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  registerButtonDisabled: {
+    opacity: 0.6,
+  },
+  registerButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.white,
   },
   loadMoreButton: {
     flexDirection: 'row',

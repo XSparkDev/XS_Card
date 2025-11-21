@@ -24,6 +24,7 @@ import { COLORS } from '../../constants/colors';
 import * as ScreenCapture from 'expo-screen-capture';
 import { BlurView } from 'expo-blur';
 import { generateAndEmailTicketPDF, shareTicketInfo } from '../../services/ticketService';
+import { formatInstanceDate } from '../../utils/eventsRecurrence';
 
 interface EventTicketScreenProps {
   route: {
@@ -44,6 +45,8 @@ export const EventTicketScreen: React.FC = () => {
   const { event, ticket: initialTicket } = route.params;
 
   const [ticket, setTicket] = useState<EventTicket | null>(initialTicket || null);
+  const [allTickets, setAllTickets] = useState<EventTicket[]>([]);
+  const [selectedTicketIndex, setSelectedTicketIndex] = useState(0);
   const [qrData, setQrData] = useState<string>('');
   const [qrVerificationToken, setQrVerificationToken] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -98,10 +101,26 @@ export const EventTicketScreen: React.FC = () => {
       const response = await getMyTicketForEvent(event.id);
       console.log('[EventTicketScreen] Ticket response:', response);
       
-      if (response && response.success && response.ticket) {
-        console.log('[EventTicketScreen] Ticket found:', response.ticket.id);
-        console.log('[EventTicketScreen] Full ticket object:', JSON.stringify(response.ticket, null, 2));
-        setTicket(response.ticket);
+      if (response && response.success) {
+        // Handle multiple tickets for recurring events
+        if (response.tickets && response.tickets.length > 1) {
+          console.log('[EventTicketScreen] Multiple tickets found:', response.tickets.length);
+          setAllTickets(response.tickets);
+          setTicket(response.tickets[0]); // Show first ticket by default
+          setSelectedTicketIndex(0);
+        } else if (response.ticket) {
+          console.log('[EventTicketScreen] Single ticket found:', response.ticket.id);
+          setAllTickets([response.ticket]);
+          setTicket(response.ticket);
+          setSelectedTicketIndex(0);
+        } else {
+          console.log('[EventTicketScreen] No ticket found or invalid response');
+          console.log('[EventTicketScreen] Response details:', JSON.stringify(response, null, 2));
+          
+          // More specific error message based on response
+          const errorMessage = response?.message || 'You are not registered for this event or no ticket was found.';
+          Alert.alert('No Ticket Found', errorMessage);
+        }
       } else {
         console.log('[EventTicketScreen] No ticket found or invalid response');
         console.log('[EventTicketScreen] Response details:', JSON.stringify(response, null, 2));
@@ -303,6 +322,17 @@ export const EventTicketScreen: React.FC = () => {
     }
   };
 
+  const switchTicket = (index: number) => {
+    if (allTickets[index]) {
+      setSelectedTicketIndex(index);
+      setTicket(allTickets[index]);
+      // Clear QR when switching tickets
+      setQrData('');
+      setQrVerificationToken('');
+      setShowQR(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -352,6 +382,48 @@ export const EventTicketScreen: React.FC = () => {
           </TouchableOpacity>
       </View>
 
+      {/* Ticket Selector for Multiple Tickets (Recurring Events) */}
+      {allTickets.length > 1 && (
+        <View style={styles.ticketSelectorContainer}>
+          <Text style={styles.ticketSelectorTitle}>Select Ticket ({allTickets.length} total)</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.ticketSelectorScroll}
+            contentContainerStyle={styles.ticketSelectorContent}
+          >
+            {allTickets.map((t, index) => {
+              const isSelected = index === selectedTicketIndex;
+              const instanceId = (t as any).instanceId;
+              const dateStr = instanceId ? instanceId.split('_')[1] : null;
+              
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[
+                    styles.ticketSelectorItem,
+                    isSelected && styles.ticketSelectorItemSelected
+                  ]}
+                  onPress={() => switchTicket(index)}
+                >
+                  <MaterialIcons 
+                    name={isSelected ? "check-circle" : "radio-button-unchecked"} 
+                    size={20} 
+                    color={isSelected ? COLORS.primary : COLORS.gray} 
+                  />
+                  <Text style={[
+                    styles.ticketSelectorText,
+                    isSelected && styles.ticketSelectorTextSelected
+                  ]}>
+                    {dateStr ? formatInstanceDate(instanceId) : `Ticket ${index + 1}`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Ticket Card */}
       <View style={styles.ticketCard}>
         {/* Event Info */}
@@ -363,11 +435,32 @@ export const EventTicketScreen: React.FC = () => {
           <View style={styles.eventDetails}>
             <View style={styles.detailRow}>
               <MaterialIcons name="event" size={20} color="#666" />
-              <Text style={styles.detailText}>{formatDate(event.eventDate, event.eventDateISO)}</Text>
+              <Text style={styles.detailText}>
+                {(() => {
+                  // For recurring events, show instance-specific date if available
+                  const instanceId = (ticket as any)?.instanceId;
+                  if (instanceId) {
+                    const dateStr = instanceId.split('_')[1];
+                    if (dateStr) {
+                      return formatInstanceDate(instanceId);
+                    }
+                  }
+                  return formatDate(event.eventDate, event.eventDateISO);
+                })()}
+              </Text>
             </View>
             <View style={styles.detailRow}>
               <MaterialIcons name="access-time" size={20} color="#666" />
-              <Text style={styles.detailText}>{formatTime(event.eventDate, event.eventDateISO)}</Text>
+              <Text style={styles.detailText}>
+                {(() => {
+                  // For recurring events, show instance-specific time if available
+                  const instanceId = (ticket as any)?.instanceId;
+                  if (instanceId && event.isRecurring && event.recurrencePattern) {
+                    return event.recurrencePattern.startTime || formatTime(event.eventDate, event.eventDateISO);
+                  }
+                  return formatTime(event.eventDate, event.eventDateISO);
+                })()}
+              </Text>
             </View>
             <View style={styles.detailRow}>
               <MaterialIcons name="location-on" size={20} color="#666" />
@@ -955,6 +1048,49 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  ticketSelectorContainer: {
+    padding: 16,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
+  },
+  ticketSelectorTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.black,
+    marginBottom: 12,
+  },
+  ticketSelectorScroll: {
+    flexGrow: 0,
+  },
+  ticketSelectorContent: {
+    paddingRight: 16,
+  },
+  ticketSelectorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 8,
+    borderRadius: 20,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    borderColor: COLORS.background,
+    gap: 8,
+  },
+  ticketSelectorItemSelected: {
+    backgroundColor: '#E3F2FD',
+    borderColor: COLORS.primary,
+  },
+  ticketSelectorText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.gray,
+  },
+  ticketSelectorTextSelected: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
 });
 

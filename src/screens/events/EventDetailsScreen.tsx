@@ -32,6 +32,7 @@ import { enhanceEventsWithOrganizerInfo, publishEvent } from '../../services/eve
 import { canBulkRegister } from '../../utils/bulkRegistrationUtils';
 import BulkRegistrationModal from '../../components/bulk/BulkRegistrationModal';
 import EventInstanceList from './components/EventInstanceList';
+import { formatInstanceDate } from '../../utils/eventsRecurrence';
 
 // Navigation types
 type RootStackParamList = {
@@ -60,7 +61,7 @@ export default function EventDetailsScreen() {
   const [event, setEvent] = useState<Event | null>(passedEvent || null);
   const [loading, setLoading] = useState(!passedEvent);
   const [registering, setRegistering] = useState(false);
-  const [selectedInstance, setSelectedInstance] = useState<EventInstance | null>(null);
+  const [selectedInstanceIds, setSelectedInstanceIds] = useState<string[]>([]);
   const [showInstanceSelector, setShowInstanceSelector] = useState(false);
   const [userRegistration, setUserRegistration] = useState<EventRegistration | null>(null);
   const [isOrganizer, setIsOrganizer] = useState(false);
@@ -268,14 +269,114 @@ export default function EventDetailsScreen() {
     }
   };
 
-  // Handle event registration
+  // Handle multi-instance registration for recurring events
+  const handleMultiInstanceRegister = async (selectedInstances: EventInstance[]) => {
+    if (!event || selectedInstances.length === 0) return;
+
+    // Show confirmation dialog
+    Alert.alert(
+      'Confirm Registration',
+      `Are you sure you want to register for ${selectedInstances.length} occurrence${selectedInstances.length > 1 ? 's' : ''}?\n\nYou will receive ${selectedInstances.length} separate ticket${selectedInstances.length > 1 ? 's' : ''} (one for each date).`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Register',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setRegistering(true);
+              setShowInstanceSelector(false);
+
+              let successCount = 0;
+              let failCount = 0;
+              const errors: string[] = [];
+
+              // Register for each selected instance
+              for (const instance of selectedInstances) {
+                try {
+                  // Check capacity for this instance
+                  const spotsLeft = event.maxAttendees - (instance.attendeeCount || 0);
+                  if (event.maxAttendees > 0 && spotsLeft <= 0) {
+                    failCount++;
+                    errors.push(`${instance.date}: Event is full`);
+                    continue;
+                  }
+
+                  const response = await authenticatedFetchWithRefresh(
+                    ENDPOINTS.REGISTER_EVENT.replace(':eventId', eventId),
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        specialRequests: '',
+                        instanceId: instance.instanceId,
+                      }),
+                    }
+                  );
+
+                  if (response.ok) {
+                    const data: EventRegistrationResponse = await response.json();
+                    if (data.success) {
+                      successCount++;
+                    } else {
+                      failCount++;
+                      errors.push(`${instance.date}: ${data.message || 'Registration failed'}`);
+                    }
+                  } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    failCount++;
+                    errors.push(`${instance.date}: ${errorData.message || 'Registration failed'}`);
+                  }
+                } catch (error) {
+                  failCount++;
+                  errors.push(`${instance.date}: ${error instanceof Error ? error.message : 'Registration failed'}`);
+                }
+              }
+
+              // Clear selections
+              setSelectedInstanceIds([]);
+
+              // Refresh event details
+              await loadEventDetails();
+
+              // Show results
+              if (successCount > 0 && failCount === 0) {
+                toast.success(
+                  'Registration Successful!',
+                  `You've successfully registered for ${successCount} occurrence${successCount > 1 ? 's' : ''}. You will receive ${successCount} ticket${successCount > 1 ? 's' : ''}.`
+                );
+              } else if (successCount > 0) {
+                toast.warning(
+                  'Partial Success',
+                  `Registered for ${successCount} occurrence${successCount > 1 ? 's' : ''}, but ${failCount} failed. ${errors.slice(0, 2).join('; ')}`
+                );
+              } else {
+                toast.error(
+                  'Registration Failed',
+                  `Failed to register for all occurrences. ${errors.slice(0, 2).join('; ')}`
+                );
+              }
+            } catch (error) {
+              console.error('Error in multi-instance registration:', error);
+              toast.error('Error', 'Failed to complete registration. Please try again.');
+            } finally {
+              setRegistering(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle event registration (for non-recurring or single instance)
   const handleRegister = async () => {
     if (!event) return;
 
-    // For recurring events, require instance selection
-    if (event.isRecurring && !selectedInstance) {
+    // For recurring events, open instance selector
+    if (event.isRecurring) {
       setShowInstanceSelector(true);
-      toast.warning('Select Date', 'Please select a specific date/time to register for this recurring event.');
       return;
     }
 
@@ -297,7 +398,7 @@ export default function EventDetailsScreen() {
           },
           body: JSON.stringify({
             specialRequests: '', // You can add a text input for this later
-            instanceId: selectedInstance?.instanceId || null,
+            instanceId: null,
           }),
         }
       );
@@ -312,6 +413,8 @@ export default function EventDetailsScreen() {
       if (data.success) {
         // Check if payment is required
         if (data.paymentRequired && data.paymentUrl) {
+          // Clear selected instances (registration already stored with instanceId)
+          setSelectedInstanceIds([]);
           // For paid events, don't update the UI yet
           // The registration is in pending_payment status
           // Navigate to payment pending screen
@@ -335,6 +438,9 @@ export default function EventDetailsScreen() {
             phone: ''
           }
         });
+        
+        // Clear selected instances after successful registration
+        setSelectedInstanceIds([]);
         
         // Update event attendance count for free events
         setEvent(prev => prev ? {
@@ -404,6 +510,8 @@ export default function EventDetailsScreen() {
               console.log('Unregister response:', responseData);
 
               setUserRegistration(null);
+              // Clear selected instances when unregistering so user can select again
+              setSelectedInstanceIds([]);
               
               // Only update event attendance count if it wasn't a pending payment
               if (!responseData.wasPendingPayment) {
@@ -896,20 +1004,20 @@ export default function EventDetailsScreen() {
           </View>
         ) : canRegister ? (
           <View style={styles.registrationButtonsContainer}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.primaryButton, { flex: 1, marginRight: 8 }]}
-              onPress={handleRegister}
-              disabled={registering}
-            >
-              {registering ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <>
-                  <MaterialIcons name="event-available" size={20} color={COLORS.white} />
-                  <Text style={styles.actionButtonText}>Register</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.primaryButton, { flex: 1, marginRight: 8 }]}
+                onPress={handleRegister}
+                disabled={registering}
+              >
+                {registering ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <>
+                    <MaterialIcons name="event-available" size={20} color={COLORS.white} />
+                    <Text style={styles.actionButtonText}>Register</Text>
+                  </>
+                )}
+              </TouchableOpacity>
 
             {canBulkRegister(event, event.currentAttendees || 0) && (
               <TouchableOpacity
@@ -1013,12 +1121,20 @@ export default function EventDetailsScreen() {
             <EventInstanceList
               eventId={eventId}
               onSelectInstance={(instance) => {
-                setSelectedInstance(instance);
-                setShowInstanceSelector(false);
-                toast.success('Date Selected', `You've selected ${instance.dayOfWeek}, ${instance.date}`);
+                // Toggle instance in selection
+                setSelectedInstanceIds(prev => {
+                  if (prev.includes(instance.instanceId)) {
+                    return prev.filter(id => id !== instance.instanceId);
+                  } else {
+                    return [...prev, instance.instanceId];
+                  }
+                });
               }}
-              selectedInstanceId={selectedInstance?.instanceId}
+              selectedInstanceIds={selectedInstanceIds}
               maxAttendees={event.maxAttendees}
+              showRegisterButton={true}
+              onRegister={handleMultiInstanceRegister}
+              loading={registering}
             />
           </View>
         </Modal>
@@ -1335,5 +1451,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.black,
+  },
+  selectedInstanceCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+  selectedInstanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  selectedInstanceTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  changeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  changeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  selectedInstanceDate: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  selectedInstanceFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  selectedInstanceSpots: {
+    fontSize: 14,
+    color: COLORS.gray,
   },
 }); 
