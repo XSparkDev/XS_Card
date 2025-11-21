@@ -724,6 +724,22 @@ exports.getAllEvents = async (req, res) => {
       }
       
       if (shouldInclude) {
+        // For recurring events, compute displayText and nextOccurrence
+        let displayText = null;
+        let nextOccurrence = null;
+        
+        if (eventData.isRecurring && eventData.recurrencePattern) {
+          try {
+            displayText = recurrenceCalculator.formatRecurrenceDisplay(eventData.recurrencePattern);
+            const nextOccurrenceDate = recurrenceCalculator.findNextOccurrence(new Date(), eventData.recurrencePattern);
+            if (nextOccurrenceDate) {
+              nextOccurrence = formatDate(admin.firestore.Timestamp.fromDate(nextOccurrenceDate));
+            }
+          } catch (recurrenceError) {
+            console.error('Error computing recurrence data:', recurrenceError);
+          }
+        }
+        
         allEvents.push({
         ...eventData,
         // Send both formatted (for display) and ISO (for parsing) dates
@@ -731,7 +747,10 @@ exports.getAllEvents = async (req, res) => {
         eventDateISO: convertToISOString(eventData.eventDate),
         endDate: eventData.endDate ? formatDate(eventData.endDate) : null,
         endDateISO: eventData.endDate ? convertToISOString(eventData.endDate) : null,
-        createdAt: formatDate(eventData.createdAt)
+        createdAt: formatDate(eventData.createdAt),
+        // Recurring event metadata
+        displayText,
+        nextOccurrence
       });
       }
     });

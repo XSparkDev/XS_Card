@@ -26,10 +26,12 @@ import {
   EventDetailsResponse,
   EventRegistration,
   EventRegistrationResponse,
+  EventInstance,
 } from '../../types/events';
 import { enhanceEventsWithOrganizerInfo, publishEvent } from '../../services/eventService';
 import { canBulkRegister } from '../../utils/bulkRegistrationUtils';
 import BulkRegistrationModal from '../../components/bulk/BulkRegistrationModal';
+import EventInstanceList from './components/EventInstanceList';
 
 // Navigation types
 type RootStackParamList = {
@@ -58,6 +60,8 @@ export default function EventDetailsScreen() {
   const [event, setEvent] = useState<Event | null>(passedEvent || null);
   const [loading, setLoading] = useState(!passedEvent);
   const [registering, setRegistering] = useState(false);
+  const [selectedInstance, setSelectedInstance] = useState<EventInstance | null>(null);
+  const [showInstanceSelector, setShowInstanceSelector] = useState(false);
   const [userRegistration, setUserRegistration] = useState<EventRegistration | null>(null);
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [imageModalVisible, setImageModalVisible] = useState(false);
@@ -268,6 +272,13 @@ export default function EventDetailsScreen() {
   const handleRegister = async () => {
     if (!event) return;
 
+    // For recurring events, require instance selection
+    if (event.isRecurring && !selectedInstance) {
+      setShowInstanceSelector(true);
+      toast.warning('Select Date', 'Please select a specific date/time to register for this recurring event.');
+      return;
+    }
+
     try {
       setRegistering(true);
 
@@ -286,6 +297,7 @@ export default function EventDetailsScreen() {
           },
           body: JSON.stringify({
             specialRequests: '', // You can add a text input for this later
+            instanceId: selectedInstance?.instanceId || null,
           }),
         }
       );
@@ -977,6 +989,40 @@ export default function EventDetailsScreen() {
           }}
         />
       )}
+
+      {/* Instance Selector Modal for Recurring Events */}
+      {event && event.isRecurring && (
+        <Modal
+          visible={showInstanceSelector}
+          animationType="slide"
+          transparent={false}
+          onRequestClose={() => setShowInstanceSelector(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowInstanceSelector(false)}
+              >
+                <MaterialIcons name="close" size={24} color={COLORS.black} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Select Date & Time</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            
+            <EventInstanceList
+              eventId={eventId}
+              onSelectInstance={(instance) => {
+                setSelectedInstance(instance);
+                setShowInstanceSelector(false);
+                toast.success('Date Selected', `You've selected ${instance.dayOfWeek}, ${instance.date}`);
+              }}
+              selectedInstanceId={selectedInstance?.instanceId}
+              maxAttendees={event.maxAttendees}
+            />
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -1269,5 +1315,25 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
+  },
+  modalCloseButton: {
+    padding: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.black,
   },
 }); 

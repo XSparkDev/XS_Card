@@ -701,5 +701,99 @@ export const updateCalendarPreferences = async (preferences: any): Promise<any> 
   }
 };
 
+// ============= RECURRING EVENTS API =============
+
+/**
+ * Get event instances for a recurring event
+ */
+export const getEventInstances = async (
+  eventId: string,
+  params?: { startDate?: string; endDate?: string; limit?: number }
+): Promise<any> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params?.startDate) queryParams.append('startDate', params.startDate);
+    if (params?.endDate) queryParams.append('endDate', params.endDate);
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    
+    const endpoint = ENDPOINTS.GET_EVENT_INSTANCES.replace(':eventId', eventId);
+    const url = queryParams.toString() ? `${endpoint}?${queryParams.toString()}` : endpoint;
+    
+    const response = await authenticatedFetchWithRefresh(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Event Instances] API error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to fetch event instances (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[Event Instances] Error fetching instances:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific event instance
+ */
+export const getEventInstance = async (eventId: string, instanceId: string): Promise<any> => {
+  try {
+    const endpoint = ENDPOINTS.GET_EVENT_INSTANCE
+      .replace(':eventId', eventId)
+      .replace(':instanceId', instanceId);
+    
+    const response = await authenticatedFetchWithRefresh(endpoint, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Event Instance] API error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to fetch event instance (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[Event Instance] Error fetching instance:', error);
+    throw error;
+  }
+};
+
+/**
+ * End a recurring event series
+ */
+export const endRecurringSeries = async (eventId: string): Promise<any> => {
+  try {
+    const endpoint = ENDPOINTS.END_RECURRING_SERIES.replace(':eventId', eventId);
+    
+    const response = await authenticatedFetchWithRefresh(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[End Series] API error:', response.status, errorData);
+      throw new Error(errorData.message || `Failed to end recurring series (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    console.error('[End Series] Error ending series:', error);
+    throw error;
+  }
+};
+
 // Re-export toast service and hook for centralized imports
 export { toastService, useToast };

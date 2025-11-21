@@ -228,17 +228,38 @@ export default function EventCard({ event, onPress }: EventCardProps) {
           {/* Title and Category */}
           <View style={styles.titleRow}>
             <Text style={styles.title} numberOfLines={2}>{event.title}</Text>
-            <View style={styles.categoryBadge}>
-              <Text style={styles.categoryText}>
-                {event.category.charAt(0).toUpperCase() + event.category.slice(1)}
-              </Text>
+            <View style={styles.badgesContainer}>
+              {event.isRecurring && (
+                <View style={[styles.categoryBadge, styles.recurringBadge]}>
+                  <MaterialIcons name="repeat" size={12} color={COLORS.primary} />
+                  <Text style={[styles.categoryText, styles.recurringText]}>
+                    Recurring
+                  </Text>
+                </View>
+              )}
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryText}>
+                  {event.category.charAt(0).toUpperCase() + event.category.slice(1)}
+                </Text>
+              </View>
             </View>
           </View>
 
-          {/* Date and Time */}
+          {/* Date and Time - show recurrence display or regular date */}
           <View style={styles.dateRow}>
             <MaterialIcons name="schedule" size={16} color={COLORS.gray} />
-            <Text style={styles.dateText}>{formatDate(event.eventDate, event.eventDateISO)}</Text>
+            {event.isRecurring && event.displayText ? (
+              <View style={styles.recurringDateContainer}>
+                <Text style={styles.dateText}>{event.displayText}</Text>
+                {event.nextOccurrence && (
+                  <Text style={styles.nextOccurrenceText}>
+                    Next: {formatDate(event.nextOccurrence)}
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.dateText}>{formatDate(event.eventDate, event.eventDateISO)}</Text>
+            )}
           </View>
 
           {/* Location */}
@@ -338,16 +359,38 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     marginRight: 8,
   },
+  badgesContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
   categoryBadge: {
     backgroundColor: COLORS.background,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
+  recurringBadge: {
+    backgroundColor: '#E3F2FD',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   categoryText: {
     fontSize: 12,
     color: COLORS.gray,
     fontWeight: '500',
+  },
+  recurringText: {
+    color: COLORS.primary,
+  },
+  recurringDateContainer: {
+    flex: 1,
+  },
+  nextOccurrenceText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
   },
   dateRow: {
     flexDirection: 'row',

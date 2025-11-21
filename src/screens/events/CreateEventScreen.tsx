@@ -28,8 +28,11 @@ import {
   EVENT_CATEGORIES,
   EventCategory,
   EventLocation,
+  RecurrencePattern,
 } from '../../types/events';
 import { getUserPlan, getPlanLimits } from '../../utils/userPlan';
+import RecurrenceConfig from './components/RecurrenceConfig';
+import { validateRecurrencePattern } from '../../utils/eventsRecurrence';
 
 type NavigationProp = NativeStackNavigationProp<any>;
 
@@ -78,7 +81,13 @@ export default function CreateEventScreen() {
     images: [],
     tags: [],
     allowBulkRegistrations: false,
+    isRecurring: false,
+    recurrencePattern: null,
   });
+  
+  // Recurrence state
+  const [recurrencePattern, setRecurrencePattern] = useState<RecurrencePattern | null>(null);
+  const [recurrenceErrors, setRecurrenceErrors] = useState<string[]>([]);
 
   // UI state - Updated for Android compatibility
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -349,6 +358,17 @@ export default function CreateEventScreen() {
         return;
       }
       
+      // Validate recurrence pattern if recurring
+      if (recurrencePattern) {
+        const validation = validateRecurrencePattern(recurrencePattern);
+        if (!validation.valid) {
+          setRecurrenceErrors(validation.errors);
+          toast.warning('Recurrence Error', 'Please fix the recurrence pattern errors.');
+          return;
+        }
+        setRecurrenceErrors([]);
+      }
+      
       // Check if trying to create a paid event without being an organiser
       if (formData.eventType === 'paid' && formData.ticketPrice > 0 && !isOrganiser) {
         toast.warning(
@@ -381,6 +401,14 @@ export default function CreateEventScreen() {
       // Location & tags as JSON strings for backend parsing
       payload.append('location', JSON.stringify(formData.location));
       payload.append('tags', JSON.stringify(formData.tags || []));
+      
+      // Recurring events fields
+      if (recurrencePattern) {
+        payload.append('isRecurring', 'true');
+        payload.append('recurrencePattern', JSON.stringify(recurrencePattern));
+      } else {
+        payload.append('isRecurring', 'false');
+      }
 
       // Images   – first image ➜ bannerImage, rest ➜ eventImages[]
       if (selectedImages.length > 0) {
@@ -726,6 +754,20 @@ export default function CreateEventScreen() {
           </Text>
         )}
       </View>
+
+      {/* Recurrence Configuration */}
+      <RecurrenceConfig
+        value={recurrencePattern}
+        onChange={(pattern) => {
+          setRecurrencePattern(pattern);
+          updateFormData({ 
+            isRecurring: !!pattern,
+            recurrencePattern: pattern 
+          });
+        }}
+        eventDate={formData.eventDate}
+        errors={recurrenceErrors}
+      />
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Event Visibility</Text>
