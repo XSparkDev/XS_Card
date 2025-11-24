@@ -3,12 +3,12 @@ import {
   StyleSheet,
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   Switch,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -293,7 +293,16 @@ export default function EventPreferencesScreen() {
     <View style={styles.container}>
       <EventHeader title="Event Preferences" />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        enableOnAndroid
+        enableAutomaticScroll
+        extraScrollHeight={220}
+        extraHeight={120}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Introduction */}
         <View style={styles.introContainer}>
           <MaterialIcons name="tune" size={32} color={COLORS.primary} />
@@ -517,7 +526,9 @@ export default function EventPreferencesScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
+
+        <View style={styles.bottomSpacer} />
+      </KeyboardAwareScrollView>
     </View>
   );
 }
@@ -527,6 +538,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  flex: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
@@ -535,7 +549,10 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 16,
     paddingHorizontal: 16, // Smaller horizontal padding
-    paddingBottom: 40,
+    paddingBottom: 220, // Extra padding for keyboard
+  },
+  bottomSpacer: {
+    height: 120,
   },
   loading: {
     flex: 1,

@@ -572,7 +572,9 @@ export default function CompleteProfile() {
           console.error('Could not parse error response as JSON');
           errorData = { message: 'Unknown server error' };
         }
-        throw new Error(errorData.message || 'Failed to create your card');
+        const serverError = new Error(errorData.message || 'Failed to create your card');
+        (serverError as any).code = errorData?.code;
+        throw serverError;
       }
 
       // Handle success
@@ -592,10 +594,22 @@ export default function CompleteProfile() {
       );
     } catch (error) {
       console.error('UPLOAD ERROR:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Failed to create your business card'
-      );
+
+      if ((error as any)?.code === 'PHONE_ALREADY_IN_USE') {
+        setErrors(prev => ({
+          ...prev,
+          phone: 'This phone number is already registered with another XSCard account',
+        }));
+        Alert.alert(
+          'Duplicate Phone Number',
+          'This phone number is already registered with another XSCard account. Please use a different number.'
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          error instanceof Error ? error.message : 'Failed to create your business card'
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -651,7 +665,9 @@ export default function CompleteProfile() {
       if (!response.ok) {
         const errorData = await response.json();
         console.error('SERVER ERROR:', JSON.stringify(errorData));
-        throw new Error(errorData.message || 'Failed to create your card');
+        const serverError = new Error(errorData.message || 'Failed to create your card');
+        (serverError as any).code = errorData?.code;
+        throw serverError;
       }
       
       // Handle success
@@ -671,10 +687,22 @@ export default function CompleteProfile() {
       );
     } catch (error) {
       console.error('SKIP ERROR:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Failed to create your business card'
-      );
+
+      if ((error as any)?.code === 'PHONE_ALREADY_IN_USE') {
+        setErrors(prev => ({
+          ...prev,
+          phone: 'This phone number is already registered with another XSCard account',
+        }));
+        Alert.alert(
+          'Duplicate Phone Number',
+          'This phone number is already registered with another XSCard account. Please use a different number.'
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          error instanceof Error ? error.message : 'Failed to create your business card'
+        );
+      }
     } finally {
       setIsSkipping(false);
     }
@@ -744,7 +772,7 @@ export default function CompleteProfile() {
             <View style={styles.userInfoContainer}>
               {(userName || userSurname) ? (
                 <Text style={styles.userName}>
-                  Welcome back, {userName}{userSurname ? ` ${userSurname}` : ''}!
+                  Welcome, {userName}{userSurname ? ` ${userSurname}` : ''}!
                 </Text>
               ) : null}
               {userEmail ? (

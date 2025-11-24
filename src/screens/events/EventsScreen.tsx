@@ -14,6 +14,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -614,7 +615,7 @@ export default function EventsScreen() {
         {/* Quick Action Buttons */}
         <View style={styles.quickActions}>
           <TouchableOpacity 
-            style={styles.quickActionButton}
+            style={[styles.quickActionButton, styles.quickActionTextButton]}
             onPress={() => navigation.navigate('MyEvents')}
           >
             <MaterialIcons name="event-note" size={20} color={COLORS.primary} />
@@ -622,19 +623,18 @@ export default function EventsScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={styles.quickActionButton}
-            onPress={() => navigation.navigate('EventPreferences')}
-          >
-            <MaterialIcons name="tune" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>Personalize</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.quickActionButton}
+            style={[styles.quickActionButton, styles.quickActionTextButton]}
             onPress={() => navigation.navigate('CreateEvent')}
           >
             <MaterialIcons name="add" size={20} color={COLORS.primary} />
             <Text style={styles.quickActionText}>New Event</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.quickActionButton, styles.quickActionGearButton]}
+            onPress={() => navigation.navigate('EventPreferences')}
+          >
+            <MaterialCommunityIcons name="cog" size={20} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -831,16 +831,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     backgroundColor: COLORS.background,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    minWidth: 100,
-    flex: 1,
-    maxWidth: '32%',
     gap: 4,
+  },
+  quickActionTextButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flex: 1,
+    minWidth: 100,
+    maxWidth: '35%',
+  },
+  quickActionGearButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    width: 52,
   },
   quickActionText: {
     fontSize: 14,

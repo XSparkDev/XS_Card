@@ -140,6 +140,7 @@ try {
     console.error('Failed to initialize Firebase Firestore in fallback mode:', firestoreError);
     
     // Create empty db object as last resort
+    const emptySnapshot = { empty: true, docs: [] };
     db = {
       collection: () => {
         console.warn('[MOCK] Attempted to access Firestore collection without credentials');
@@ -148,6 +149,12 @@ try {
             get: async () => ({ exists: false, data: () => ({}) }),
             set: async () => {},
             update: async () => {}
+          }),
+          where: () => ({
+            limit: () => ({
+              get: async () => emptySnapshot
+            }),
+            get: async () => emptySnapshot
           })
         };
       }

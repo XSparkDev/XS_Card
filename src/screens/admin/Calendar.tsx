@@ -2290,7 +2290,7 @@ const renderEventDate = (dateStr: string) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Share and Filter Buttons */}
+        {/* Share, Filter & Preferences Buttons */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={styles.shareButton}
@@ -2317,6 +2317,16 @@ const renderEventDate = (dateStr: string) => {
             <Text style={[styles.filterButtonText, showOnlyPublic && styles.filterButtonTextActive]}>
               {showOnlyPublic ? 'All' : 'Public Only'}
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.preferencesButton}
+            onPress={() => navigation.navigate('CalendarPreferences')}
+          >
+            <MaterialCommunityIcons 
+              name="cog" 
+              size={18} 
+              color="#007AFF" 
+            />
           </TouchableOpacity>
         </View>
 
@@ -2678,6 +2688,16 @@ const styles = StyleSheet.create({
   },
   filterButtonTextActive: {
     color: '#FFFFFF',
+  },
+  preferencesButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   eventCard: {
     backgroundColor: 'white',

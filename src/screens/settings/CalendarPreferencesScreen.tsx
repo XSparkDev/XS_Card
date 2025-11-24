@@ -98,6 +98,11 @@ export default function CalendarPreferencesScreen() {
   const workingHoursAnimation = useRef(new Animated.Value(1)).current;
   const [emailDropdownPosition, setEmailDropdownPosition] = useState({ x: 0, y: 0, width: 0 });
   const scrollViewRef = useRef<ScrollView>(null);
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
+  };
   const [showBlockedDatesModal, setShowBlockedDatesModal] = useState(false);
   const [selectedRangeStart, setSelectedRangeStart] = useState<string | null>(null);
   const [selectedRangeEnd, setSelectedRangeEnd] = useState<string | null>(null);
@@ -1289,6 +1294,7 @@ export default function CalendarPreferencesScreen() {
                 onChangeText={(value) => setPreferences({ ...preferences, bufferTime: parseInt(value) || 0 })}
                 keyboardType="number-pad"
                 placeholder="15"
+                onFocus={scrollToBottom}
               />
             </View>
 
@@ -1307,6 +1313,7 @@ export default function CalendarPreferencesScreen() {
                 onChangeText={(value) => setPreferences({ ...preferences, advanceBookingDays: parseInt(value) || 30 })}
                 keyboardType="number-pad"
                 placeholder="30"
+                onFocus={scrollToBottom}
               />
             </View>
 
