@@ -5,6 +5,7 @@ const { sendMailWithStatus } = require('../public/Utils/emailService');
 require('dotenv').config();
 const { AUTH_ENDPOINTS, EMAIL_TEMPLATES, AUTH_CONSTANTS } = require('../constants/auth');
 const { formatDate } = require('../utils/dateFormatter');
+const { normalizePhone, ensurePhoneAvailable, PHONE_ERROR_CODE } = require('../utils/phoneUtils');
 
 const sendVerificationEmail = async (userData, req) => {
     const now = Date.now();
@@ -791,11 +792,18 @@ exports.uploadUserImages = async (req, res) => {
         // Extract additional fields from the request
         const { phone, alternatePhone, occupation, company } = req.body;
         console.log('Profile completion data:', { phone, alternatePhone, occupation, company });
+
+        const normalizedPhone = normalizePhone(phone);
+        const normalizedAlternatePhone = normalizePhone(alternatePhone);
+
+        await ensurePhoneAvailable(db, normalizedPhone, userId);
         
         // Update user with additional profile information
         await userRef.update({
-            phone: phone ?? '',
-            alternatePhone: alternatePhone ?? '',
+            phone: normalizedPhone ?? '',
+            phoneNormalized: normalizedPhone || '',
+            alternatePhone: normalizedAlternatePhone ?? '',
+            alternatePhoneNormalized: normalizedAlternatePhone || '',
             occupation: occupation ?? '',
             company: company ?? ''
         });
@@ -807,8 +815,10 @@ exports.uploadUserImages = async (req, res) => {
                 name: userData.name ?? '',
                 surname: userData.surname ?? '',
                 email: userData.email ?? '',
-                phone: phone ?? '',
-                alternatePhone: alternatePhone ?? '',
+                phone: normalizedPhone ?? '',
+                phoneNormalized: normalizedPhone || '',
+                alternatePhone: normalizedAlternatePhone ?? '',
+                alternatePhoneNormalized: normalizedAlternatePhone || '',
                 occupation: occupation ?? '',
                 company: company ?? '',
                 profileImage: req.firebaseStorageUrls?.profileImage ?? null,
@@ -832,6 +842,15 @@ exports.uploadUserImages = async (req, res) => {
         });
     } catch (error) {
         console.error('Error creating card with images:', error);
+
+        if (error.code === PHONE_ERROR_CODE) {
+            return res.status(error.status || 409).send({
+                message: error.message,
+                code: error.code,
+                conflictUserId: error.conflictUserId || null
+            });
+        }
+
         res.status(500).send({ message: 'Failed to create card', error: error.message });
     }
 };

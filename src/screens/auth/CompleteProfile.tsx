@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Linking, Modal, FlatList } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
-import { ENDPOINTS, buildUrl } from '../../utils/api';
+import { ENDPOINTS, buildUrl, useToast } from '../../utils/api';
 import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth } from '../../config/firebaseConfig';
 
 type CompleteProfileRouteProp = RouteProp<AuthStackParamList, 'CompleteProfile'>;
 type CompleteProfileNavigationProp = StackNavigationProp<AuthStackParamList>;
@@ -81,6 +82,7 @@ const COUNTRIES = [
 export default function CompleteProfile() {
   const navigation = useNavigation<CompleteProfileNavigationProp>();
   const route = useRoute<CompleteProfileRouteProp>();
+  const toast = useToast();
   const [userId, setUserId] = useState<string | null>(route.params?.userId || null);
   const [idError, setIdError] = useState<string | null>(null);
   
@@ -108,6 +110,7 @@ export default function CompleteProfile() {
   const [isAlternateExpanded, setIsAlternateExpanded] = useState(false);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
+  const [isOAuthFlow, setIsOAuthFlow] = useState(false);
   const [errors, setErrors] = useState({
     phone: '',
     alternatePhone: '',
@@ -160,6 +163,55 @@ export default function CompleteProfile() {
     }
   };
 
+  const completionStorageKeys = ['tempUserId', 'tempUserEmail', 'tempUserImages', 'oauthPrefillData'];
+
+  const clearTempSignupData = async () => {
+    try {
+      await AsyncStorage.multiRemove(completionStorageKeys);
+    } catch (storageError) {
+      console.error('Error clearing temp signup data:', storageError);
+    }
+  };
+
+  const navigateAfterCompletion = () => {
+    const hasOAuthSession = isOAuthFlow && !!auth.currentUser;
+
+    if (hasOAuthSession) {
+      toast.success('Profile Complete', 'Loading your cards...');
+      const rootNavigation = navigation.getParent();
+
+      if (rootNavigation) {
+        rootNavigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'MainApp',
+                params: {
+                  screen: 'MainTabs',
+                  params: { screen: 'Cards' },
+                },
+              },
+            ],
+          })
+        );
+      } else {
+        navigation.navigate('SignIn');
+      }
+    } else {
+      Alert.alert(
+        'Profile Complete',
+        'Your business card has been created successfully!',
+        [{ text: 'Get Started', onPress: () => navigation.navigate('SignIn') }]
+      );
+    }
+  };
+
+  const handleCompletionSuccess = async () => {
+    await clearTempSignupData();
+    navigateAfterCompletion();
+  };
+
   // Ensure we have a userId, first from route params, then from AsyncStorage
   // Also load user data (name, email) from AsyncStorage
   useEffect(() => {
@@ -188,6 +240,10 @@ export default function CompleteProfile() {
           if (userDataString) {
             const userData = JSON.parse(userDataString);
             console.log('Loaded user data from AsyncStorage:', userData);
+            const providerId = userData.authProvider || userData.provider || userData.providerId;
+            if (providerId && providerId !== 'password') {
+              setIsOAuthFlow(true);
+            }
             
             // Set user name and email for display
             if (userData.name) {
@@ -222,6 +278,7 @@ export default function CompleteProfile() {
           if (oauthPrefillDataString) {
             const oauthPrefillData = JSON.parse(oauthPrefillDataString);
             console.log('Loaded OAuth prefill data from AsyncStorage:', oauthPrefillData);
+            setIsOAuthFlow(true);
             
             // Prefill name fields if available and not already set
             if (oauthPrefillData.givenName && !userName) {
@@ -253,6 +310,13 @@ export default function CompleteProfile() {
 
     getUserIdAndUserData();
   }, [userId]);
+
+  useEffect(() => {
+    const providers = auth.currentUser?.providerData || [];
+    if (providers.some(provider => provider.providerId && provider.providerId !== 'password')) {
+      setIsOAuthFlow(true);
+    }
+  }, []);
 
   useEffect(() => {
     // Load stored image URIs if they exist
@@ -572,30 +636,33 @@ export default function CompleteProfile() {
           console.error('Could not parse error response as JSON');
           errorData = { message: 'Unknown server error' };
         }
-        throw new Error(errorData.message || 'Failed to create your card');
+        const serverError = new Error(errorData.message || 'Failed to create your card');
+        (serverError as any).code = errorData?.code;
+        throw serverError;
       }
 
       // Handle success
       console.log('UPLOAD SUCCESS!');
       
-      // Clean up temporary storage
-      await AsyncStorage.removeItem('tempUserId');
-      await AsyncStorage.removeItem('tempUserEmail');
-      await AsyncStorage.removeItem('tempUserImages');
-      await AsyncStorage.removeItem('oauthPrefillData'); // Clean up OAuth prefill data
-
-      // Navigate to main app
-      Alert.alert(
-        'Profile Complete',
-        'Your business card has been created successfully!',
-        [{ text: 'Get Started', onPress: () => navigation.navigate('SignIn') }]
-      );
+      await handleCompletionSuccess();
     } catch (error) {
       console.error('UPLOAD ERROR:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Failed to create your business card'
-      );
+
+      if ((error as any)?.code === 'PHONE_ALREADY_IN_USE') {
+        setErrors(prev => ({
+          ...prev,
+          phone: 'This phone number is already registered with another XSCard account',
+        }));
+        Alert.alert(
+          'Duplicate Phone Number',
+          'This phone number is already registered with another XSCard account. Please use a different number.'
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          error instanceof Error ? error.message : 'Failed to create your business card'
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -651,30 +718,33 @@ export default function CompleteProfile() {
       if (!response.ok) {
         const errorData = await response.json();
         console.error('SERVER ERROR:', JSON.stringify(errorData));
-        throw new Error(errorData.message || 'Failed to create your card');
+        const serverError = new Error(errorData.message || 'Failed to create your card');
+        (serverError as any).code = errorData?.code;
+        throw serverError;
       }
       
       // Handle success
       console.log('SKIP UPLOAD SUCCESS!');
 
-      // Clean up temporary storage
-      await AsyncStorage.removeItem('tempUserId');
-      await AsyncStorage.removeItem('tempUserEmail');
-      await AsyncStorage.removeItem('tempUserImages');
-      await AsyncStorage.removeItem('oauthPrefillData'); // Clean up OAuth prefill data
-      
-      // Navigate to main app
-      Alert.alert(
-        'Profile Complete',
-        'Your business card has been created successfully!',
-        [{ text: 'Get Started', onPress: () => navigation.navigate('SignIn') }]
-      );
+      await handleCompletionSuccess();
     } catch (error) {
       console.error('SKIP ERROR:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Failed to create your business card'
-      );
+
+      if ((error as any)?.code === 'PHONE_ALREADY_IN_USE') {
+        setErrors(prev => ({
+          ...prev,
+          phone: 'This phone number is already registered with another XSCard account',
+        }));
+        Alert.alert(
+          'Duplicate Phone Number',
+          'This phone number is already registered with another XSCard account. Please use a different number.'
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          error instanceof Error ? error.message : 'Failed to create your business card'
+        );
+      }
     } finally {
       setIsSkipping(false);
     }
@@ -744,7 +814,7 @@ export default function CompleteProfile() {
             <View style={styles.userInfoContainer}>
               {(userName || userSurname) ? (
                 <Text style={styles.userName}>
-                  Welcome back, {userName}{userSurname ? ` ${userSurname}` : ''}!
+                  Welcome, {userName}{userSurname ? ` ${userSurname}` : ''}!
                 </Text>
               ) : null}
               {userEmail ? (

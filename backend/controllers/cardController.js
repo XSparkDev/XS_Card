@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const config = require('../config/config');
 const { formatDate } = require('../utils/dateFormatter');
+const { normalizePhone, ensurePhoneAvailable, PHONE_ERROR_CODE } = require('../utils/phoneUtils');
 
 // Configure storage
 const storage = multer.diskStorage({
@@ -180,6 +181,9 @@ exports.addCard = async (req, res) => {
             });
         }
 
+        const normalizedPhone = normalizePhone(phone);
+        await ensurePhoneAvailable(db, normalizedPhone, userId);
+
         const cardRef = db.collection('cards').doc(userId);
         const cardDoc = await cardRef.get();
 
@@ -195,7 +199,8 @@ exports.addCard = async (req, res) => {
         const newCard = {
             company,
             email,
-            phone,
+            phone: normalizedPhone,
+            phoneNormalized: normalizedPhone,
             occupation: title,
             name: name || '',
             surname: surname || '',
@@ -231,6 +236,16 @@ exports.addCard = async (req, res) => {
         });
     } catch (error) {
         console.error('Error in addCard:', error); // Debug log
+
+        if (error.code === PHONE_ERROR_CODE) {
+            return res.status(error.status || 409).json({
+                success: false,
+                message: error.message,
+                code: error.code,
+                conflictUserId: error.conflictUserId || null
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Error adding card',
@@ -271,6 +286,13 @@ exports.updateCard = async (req, res) => {
             updateData = JSON.parse(JSON.stringify(req.body));
         }
 
+        if (updateData.phone) {
+            const normalizedPhone = normalizePhone(updateData.phone);
+            await ensurePhoneAvailable(db, normalizedPhone, userId);
+            updateData.phone = normalizedPhone;
+            updateData.phoneNormalized = normalizedPhone;
+        }
+
         // Update the specific card in the array
         const updatedCards = [...cardsData.cards];
         updatedCards[cardIndex] = {
@@ -289,6 +311,15 @@ exports.updateCard = async (req, res) => {
         });
     } catch (error) {
         console.error('Update card error:', error);
+
+        if (error.code === PHONE_ERROR_CODE) {
+            return res.status(error.status || 409).send({
+                message: error.message,
+                code: error.code,
+                conflictUserId: error.conflictUserId || null
+            });
+        }
+
         res.status(500).send({
             message: 'Failed to update card',
             error: error.message
