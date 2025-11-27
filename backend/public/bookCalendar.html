@@ -1178,6 +1178,7 @@
         let availabilityData = {};
         let userData = {};
         let allowedDurations = [];
+        let bufferTime = 0;
         let advanceBookingDays = 90;
         let timezone = 'UTC';
         let currentMonth = new Date();
@@ -1329,6 +1330,7 @@
             allowedDurations = data.data.allowedDurations;
             timezone = data.data.timezone || 'UTC';
             advanceBookingDays = data.data.advanceBookingDays || 90;
+            bufferTime = data.data.bufferTime || 0;
             
             availableDatesArray = Object.keys(availabilityData)
                 .filter(date => availabilityData[date] && availabilityData[date].length > 0)
@@ -1360,13 +1362,19 @@
             
             if (allowedDurations.length > 0) {
                 const primaryDuration = allowedDurations[0];
+                const displayPrimary = primaryDuration + bufferTime;
                 if (allowedDurations.length === 1) {
-                    meetingTitle.textContent = `${primaryDuration} Minute Meeting`;
-                    meetingDuration.textContent = `${primaryDuration} min appointments`;
+                    meetingTitle.textContent = `${displayPrimary} Minute Meeting`;
+                    meetingDuration.textContent = bufferTime
+                        ? `${primaryDuration} min session + ${bufferTime} min buffer`
+                        : `${primaryDuration} min appointments`;
                 } else {
-                    const durationRange = `${Math.min(...allowedDurations)}-${Math.max(...allowedDurations)} min`;
-                    meetingTitle.textContent = `${Math.max(...allowedDurations)} Minute Meeting`;
-                    meetingDuration.textContent = `${durationRange} appointments`;
+                    const minDisplay = Math.min(...allowedDurations) + bufferTime;
+                    const maxDisplay = Math.max(...allowedDurations) + bufferTime;
+                    meetingTitle.textContent = `${maxDisplay} Minute Meeting`;
+                    meetingDuration.textContent = bufferTime
+                        ? `${minDisplay}-${maxDisplay} min (incl. ${bufferTime} min buffer)`
+                        : `${Math.min(...allowedDurations)}-${Math.max(...allowedDurations)} min appointments`;
                 }
             }
         }
@@ -1745,7 +1753,8 @@
                 availableDurations.forEach(duration => {
                     const pill = document.createElement('div');
                     pill.className = 'duration-pill';
-                    pill.textContent = `${duration} min`;
+                    const displayDuration = duration + bufferTime;
+                    pill.textContent = bufferTime ? `${displayDuration} min (incl. buffer)` : `${duration} min`;
                     pill.onclick = () => selectDuration(duration);
                     container.appendChild(pill);
                 });
@@ -1787,7 +1796,10 @@
             });
             
             const formattedTime = formatTime12Hour(selectedTime);
-            subtitle.textContent = `${dateStr} at ${formattedTime} (${selectedDuration} minutes)`;
+            const totalDuration = selectedDuration + bufferTime;
+            subtitle.textContent = bufferTime
+                ? `${dateStr} at ${formattedTime} (${totalDuration} minutes total)`
+                : `${dateStr} at ${formattedTime} (${selectedDuration} minutes)`;
             modal.classList.add('active');
         }
 

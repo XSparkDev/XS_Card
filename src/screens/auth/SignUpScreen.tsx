@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Modal, TouchableWithoutFeedback } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -391,42 +391,48 @@ export default function SignUpScreen() {
         visible={isPrivacyModalVisible}
         onRequestClose={() => setIsPrivacyModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Privacy Policy</Text>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => setIsPrivacyModalVisible(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close Privacy Policy"
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsPrivacyModalVisible(false)}
+        >
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Privacy Policy</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setIsPrivacyModalVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close Privacy Policy"
+                >
+                  <MaterialIcons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.modalScrollView}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator={false}
               >
-                <MaterialIcons name="close" size={24} color="#333" />
-              </TouchableOpacity>
+                {PRIVACY_POLICY_SECTIONS.map(section => (
+                  <View key={section.heading} style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>{section.heading}</Text>
+                    {section.body.map((paragraph, index) => (
+                      <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
+                        {paragraph}
+                      </Text>
+                    ))}
+                    {section.bullets?.map((bullet, index) => (
+                      <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
+                        - {bullet}
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
             </View>
-            <ScrollView
-              style={styles.modalScrollView}
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {PRIVACY_POLICY_SECTIONS.map(section => (
-                <View key={section.heading} style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>{section.heading}</Text>
-                  {section.body.map((paragraph, index) => (
-                    <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
-                      {paragraph}
-                    </Text>
-                  ))}
-                  {section.bullets?.map((bullet, index) => (
-                    <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
-                      - {bullet}
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
       </Modal>
 
       <Modal
@@ -435,42 +441,48 @@ export default function SignUpScreen() {
         visible={isTermsModalVisible}
         onRequestClose={() => setIsTermsModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Terms of Use</Text>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => setIsTermsModalVisible(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close Terms of Use"
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsTermsModalVisible(false)}
+        >
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Terms of Use</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setIsTermsModalVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close Terms of Use"
+                >
+                  <MaterialIcons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.modalScrollView}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator={false}
               >
-                <MaterialIcons name="close" size={24} color="#333" />
-              </TouchableOpacity>
+                {TERMS_OF_USE_SECTIONS.map(section => (
+                  <View key={section.heading} style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>{section.heading}</Text>
+                    {section.body.map((paragraph, index) => (
+                      <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
+                        {paragraph}
+                      </Text>
+                    ))}
+                    {section.bullets?.map((bullet, index) => (
+                      <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
+                        - {bullet}
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
             </View>
-            <ScrollView
-              style={styles.modalScrollView}
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {TERMS_OF_USE_SECTIONS.map(section => (
-                <View key={section.heading} style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>{section.heading}</Text>
-                  {section.body.map((paragraph, index) => (
-                    <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
-                      {paragraph}
-                    </Text>
-                  ))}
-                  {section.bullets?.map((bullet, index) => (
-                    <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
-                      - {bullet}
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -744,59 +756,59 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
   },
   modalContainer: {
-    flex: 1,
     backgroundColor: COLORS.white,
-    borderRadius: 16,
-    paddingVertical: 20,
-    paddingHorizontal: 20,
+    borderRadius: 20,
+    width: '100%',
+    maxHeight: '85%',
+    padding: 20,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 10,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: COLORS.primary,
     flex: 1,
     marginRight: 12,
   },
   modalCloseButton: {
-    padding: 4,
+    padding: 5,
   },
   modalScrollView: {
-    flex: 1,
+    marginTop: 10,
   },
   modalScrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
   modalSection: {
     marginBottom: 16,
   },
   modalSectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1F1F1F',
+    fontWeight: '600',
+    color: '#111',
     marginBottom: 6,
   },
   modalParagraph: {
     fontSize: 14,
-    color: '#444',
+    color: '#333',
     lineHeight: 20,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   modalBullet: {
     fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
-    marginLeft: 10,
+    color: '#333',
+    marginLeft: 12,
     marginBottom: 4,
   },
 });

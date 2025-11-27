@@ -20,7 +20,7 @@ type CalendarScreenNavigationProp = StackNavigationProp<AuthStackParamList>;
 interface ShareOption {
   id: string;
   name: string;
-  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
+  icon: 'whatsapp' | 'send' | 'email' | 'linkedin' | 'content-copy';
   color: string;
   action: () => void;
 }
@@ -207,7 +207,7 @@ const buildNotificationSummaries = async (
         convertFirestoreTimestampToMs((event as any).timestamp);
       const referenceTime = createdAtMs ?? meetingDate?.getTime();
       if (referenceTime && referenceTime <= now && now - referenceTime <= UPCOMING_WINDOW_MS) {
-        recentBookings.push(formatNotificationSummary(event, eventId, meetingDate));
+        recentBookings.push(formatNotificationSummary(event, eventId, meetingDate || undefined));
       }
     }
   });
@@ -1562,26 +1562,12 @@ export default function Calendar() {
       }
     },
     {
-      id: 'more',
-      name: 'More',
-      icon: 'more-horiz',
+      id: 'copy',
+      name: 'Copy link',
+      icon: 'content-copy',
       color: '#6B7280',
       action: async () => {
-        const link = getCalendarLink();
-        if (!link) {
-          Alert.alert('Error', 'Unable to generate calendar link');
-          return;
-        }
-        const message = `Schedule a meeting with me!`;
-        try {
-          await Share.share({
-            message: `${message}\n\n${link}`,
-            url: link,
-            title: 'My Calendar Booking Link'
-          });
-        } catch (error) {
-          Alert.alert('Error', 'Could not open share options');
-        }
+        await copyCalendarLink();
       }
     }
   ];
@@ -2683,7 +2669,11 @@ const renderEventDate = (dateStr: string) => {
                     ) : option.id === 'linkedin' ? (
                       <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
                     ) : (
-                      <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
+                      <MaterialIcons
+                        name={option.icon as 'send' | 'email' | 'content-copy'}
+                        size={22}
+                        color={COLORS.white}
+                      />
                     )}
                   </View>
                   <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>

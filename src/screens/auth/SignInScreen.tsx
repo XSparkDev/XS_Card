@@ -21,6 +21,7 @@ import { signInWithGoogle, handleGoogleCallback } from '../../services/oauth/goo
 import { signInWithLinkedIn, handleLinkedInCallback } from '../../services/oauth/linkedinProvider';
 // Phase 3: Microsoft OAuth imports (POOP)
 import { signInWithMicrosoft, handleMicrosoftCallback } from '../../services/oauth/microsoftProvider';
+import { PRIVACY_POLICY_SECTIONS, TERMS_OF_USE_SECTIONS } from '../../constants/legal';
 
 type SignInScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'SignIn'>;
 
@@ -53,6 +54,8 @@ export default function SignInScreen() {
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [showRetryModal, setShowRetryModal] = useState(false);
+  const [isPrivacyModalVisible, setIsPrivacyModalVisible] = useState(false);
+  const [isTermsModalVisible, setIsTermsModalVisible] = useState(false);
   // Error popup removed - no popups on signin page
 
 
@@ -736,6 +739,26 @@ export default function SignInScreen() {
         </Text>
       </TouchableOpacity>
 
+  <View style={styles.legalContainer}>
+    <Text style={styles.legalText}>
+      By signing in, you agree to our{' '}
+      <Text
+        style={styles.legalLink}
+        onPress={() => setIsPrivacyModalVisible(true)}
+      >
+        Privacy Policy
+      </Text>
+      {' '}and{' '}
+      <Text
+        style={styles.legalLink}
+        onPress={() => setIsTermsModalVisible(true)}
+      >
+        Terms of Use
+      </Text>
+      .
+    </Text>
+  </View>
+
       {/* NEW: OAuth divider (POOP) */}
       <View style={styles.oauthDivider}>
         <View style={styles.oauthDividerLine} />
@@ -873,6 +896,106 @@ export default function SignInScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isPrivacyModalVisible}
+        onRequestClose={() => setIsPrivacyModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsPrivacyModalVisible(false)}
+        >
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Privacy Policy</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setIsPrivacyModalVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close Privacy Policy"
+                >
+                  <MaterialIcons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.modalScrollView}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {PRIVACY_POLICY_SECTIONS.map(section => (
+                  <View key={section.heading} style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>{section.heading}</Text>
+                    {section.body.map((paragraph, index) => (
+                      <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
+                        {paragraph}
+                      </Text>
+                    ))}
+                    {section.bullets?.map((bullet, index) => (
+                      <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
+                        - {bullet}
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isTermsModalVisible}
+        onRequestClose={() => setIsTermsModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsTermsModalVisible(false)}
+        >
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Terms of Use</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setIsTermsModalVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close Terms of Use"
+                >
+                  <MaterialIcons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.modalScrollView}
+                contentContainerStyle={styles.modalScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {TERMS_OF_USE_SECTIONS.map(section => (
+                  <View key={section.heading} style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>{section.heading}</Text>
+                    {section.body.map((paragraph, index) => (
+                      <Text key={`${section.heading}-body-${index}`} style={styles.modalParagraph}>
+                        {paragraph}
+                      </Text>
+                    ))}
+                    {section.bullets?.map((bullet, index) => (
+                      <Text key={`${section.heading}-bullet-${index}`} style={styles.modalBullet}>
+                        - {bullet}
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -908,6 +1031,20 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  legalContainer: {
+    marginTop: 12,
+    paddingHorizontal: 10,
+  },
+  legalText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  legalLink: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
 
   signUpContainer: {
@@ -1122,5 +1259,60 @@ const styles = StyleSheet.create({
   },
   oauthIconDisabled: {
     opacity: 0.6,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    width: '100%',
+    maxHeight: '85%',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  modalCloseButton: {
+    padding: 5,
+  },
+  modalScrollView: {
+    marginTop: 10,
+  },
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  modalSection: {
+    marginBottom: 16,
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111',
+    marginBottom: 6,
+  },
+  modalParagraph: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  modalBullet: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 12,
+    marginBottom: 4,
   },
 });

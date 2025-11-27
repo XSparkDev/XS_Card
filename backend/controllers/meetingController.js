@@ -831,7 +831,8 @@ exports.getPublicCalendarAvailability = async (req, res) => {
                 availability,
                 allowedDurations: preferences.allowedDurations || [30, 60],
                 timezone: preferences.timezone || 'UTC',
-                advanceBookingDays: preferences.advanceBookingDays || 30
+                advanceBookingDays: preferences.advanceBookingDays || 30,
+                bufferTime: preferences.bufferTime || 0
             }
         });
     } catch (error) {

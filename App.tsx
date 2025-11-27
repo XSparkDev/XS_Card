@@ -102,15 +102,15 @@ function AppContent() {
       <EventNotificationProvider>
         <ColorSchemeProvider>
           <MeetingNotificationProvider>
-            <ToastProvider>
-              <NavigationContainer ref={navigationRef}>
-                <ExpoStatusBar style="auto" translucent={true} />
-                <Stack.Navigator screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="Auth" component={AuthNavigator} />
-                  <Stack.Screen name="MainApp" component={TabNavigator} />
-                </Stack.Navigator>
-              </NavigationContainer>
-            </ToastProvider>
+          <ToastProvider>
+            <NavigationContainer ref={navigationRef}>
+              <ExpoStatusBar style="auto" translucent={true} />
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Auth" component={AuthNavigator} />
+                <Stack.Screen name="MainApp" component={TabNavigator} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </ToastProvider>
           </MeetingNotificationProvider>
         </ColorSchemeProvider>
       </EventNotificationProvider>
