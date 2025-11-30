@@ -61,8 +61,10 @@ export type RootStackParamList = {
   CheckInDashboard: { event: any };
   EventAnalytics: { event: any };
   OrganiserRegistration: undefined;
+  RecurringSeriesManagement: { eventId: string; event?: any };
   Settings: undefined;
   UserProfile: undefined;
+  ChangePassword: undefined;
   AdminDashboard: { screen?: 'Analytics' | 'Calendar' } | undefined;
   CalendarPreferences: undefined;
 };

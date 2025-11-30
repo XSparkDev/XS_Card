@@ -1,4 +1,4 @@
-import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
 import { Platform, PermissionsAndroid } from 'react-native';
 
 export const checkPermissions = async () => {
@@ -46,7 +46,7 @@ export const requestPermissions = async () => {
           PermissionsAndroid.PERMISSIONS.CAMERA,
           {
             title: 'Camera Permission',
-            message: 'XSCard needs camera access to take profile pictures and company logos.',
+            message: 'XS Card needs camera access to take profile pictures and company logos.',
             buttonNeutral: 'Ask Me Later',
             buttonNegative: 'Cancel',
             buttonPositive: 'OK',
@@ -61,7 +61,7 @@ export const requestPermissions = async () => {
           PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
           {
             title: 'Photo Library Permission',
-            message: 'XSCard needs photo library access to select profile pictures and company logos.',
+            message: 'XS Card needs photo library access to select profile pictures and company logos.',
             buttonNeutral: 'Ask Me Later',
             buttonNegative: 'Cancel',
             buttonPositive: 'OK',
@@ -97,7 +97,7 @@ export const pickImage = async (useCamera: boolean): Promise<string | null> => {
       includeBase64: false,
       maxHeight: 2000,
       maxWidth: 2000,
-      quality: 0.7,
+      quality: 0.7 as PhotoQuality,
       allowsEditing: true,
       aspect: [1, 1] as [number, number], // Square aspect ratio
     };

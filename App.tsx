@@ -13,6 +13,7 @@ import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
 import { useSystemUI } from './src/hooks/useSystemUI';
+import { MeetingNotificationProvider } from './src/context/MeetingNotificationContext';
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
@@ -100,6 +101,7 @@ function AppContent() {
     <AuthProvider>
       <EventNotificationProvider>
         <ColorSchemeProvider>
+          <MeetingNotificationProvider>
           <ToastProvider>
             <NavigationContainer ref={navigationRef}>
               <ExpoStatusBar style="auto" translucent={true} />
@@ -109,6 +111,7 @@ function AppContent() {
               </Stack.Navigator>
             </NavigationContainer>
           </ToastProvider>
+          </MeetingNotificationProvider>
         </ColorSchemeProvider>
       </EventNotificationProvider>
     </AuthProvider>

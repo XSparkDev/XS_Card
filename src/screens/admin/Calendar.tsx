@@ -1,25 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Linking, Share, Clipboard } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Linking, Share, Clipboard, RefreshControl } from 'react-native';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { AdminTabParamList, AuthStackParamList } from '../../types';
-import { API_BASE_URL, ENDPOINTS, getUserId, buildUrl, authenticatedFetchWithRefresh, forceLogoutExpiredToken } from '../../utils/api';
+import { API_BASE_URL, ENDPOINTS, getUserId, buildUrl, authenticatedFetchWithRefresh, forceLogoutExpiredToken, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useMeetingNotifications, MeetingNotificationSummary } from '../../context/MeetingNotificationContext';
+import { RootStackParamList } from '../../types';
 
 type CalendarNavigationProp = BottomTabNavigationProp<AdminTabParamList, 'Calendar'>;
-type CalendarScreenNavigationProp = StackNavigationProp<AuthStackParamList>;
+type CalendarScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface ShareOption {
   id: string;
   name: string;
-  icon: 'whatsapp' | 'send' | 'email' | 'more-horiz' | 'linkedin';
+  icon: 'whatsapp' | 'send' | 'email' | 'linkedin' | 'content-copy';
   color: string;
   action: () => void;
 }
@@ -78,6 +81,150 @@ interface MeetingDetails {
   endTime: string;
 }
 
+const MONTH_MAP: { [key: string]: string } = {
+  January: '01',
+  February: '02',
+  March: '03',
+  April: '04',
+  May: '05',
+  June: '06',
+  July: '07',
+  August: '08',
+  September: '09',
+  October: '10',
+  November: '11',
+  December: '12',
+};
+
+const MEETING_NOTIFICATION_SEEN_KEY = 'meetingNotificationSeenIds';
+const UPCOMING_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const getEventIdentifier = (event: Event, fallbackIndex: number): string | null => {
+  if (event.id) {
+    return event.id;
+  }
+  if ((event as any).uid) {
+    return (event as any).uid;
+  }
+  if (event.meetingWhen || event.meetingWith) {
+    return `${event.meetingWhen ?? ''}-${event.meetingWith ?? ''}-${fallbackIndex}`;
+  }
+  return null;
+};
+
+const parseMeetingDateFromString = (meetingWhen?: string): Date | null => {
+  if (!meetingWhen) {
+    return null;
+  }
+  try {
+    const fixedDateStr = meetingWhen.replace(' at at ', ' at ');
+    const [datePart, timePart] = fixedDateStr.split(' at ');
+    if (!datePart) return null;
+    const dateSegments = datePart.trim().split(' ');
+    if (dateSegments.length !== 3) return null;
+    const [monthStr, day, year] = dateSegments;
+    const month = MONTH_MAP[monthStr];
+    if (!month) return null;
+    const isoString = `${year}-${month}-${day.padStart(2, '0')}T${timePart ? timePart.trim() : '00:00'}`;
+    const parsed = new Date(isoString);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  } catch (error) {
+    console.error('Failed to parse meeting date:', meetingWhen, error);
+    return null;
+  }
+};
+
+const convertFirestoreTimestampToMs = (value: any): number | null => {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  if (value._seconds) {
+    return value._seconds * 1000 + Math.floor((value._nanoseconds || 0) / 1_000_000);
+  }
+  if (value.seconds) {
+    return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1_000_000);
+  }
+  return null;
+};
+
+const formatNotificationSummary = (
+  event: Event,
+  eventId: string,
+  meetingDate?: Date
+): MeetingNotificationSummary => ({
+  id: eventId,
+  title: event.title || event.description || event.meetingWith || 'Meeting',
+  meetingWhen: event.meetingWhen,
+  meetingWith: event.meetingWith,
+  location: event.location,
+  formattedTime: meetingDate
+    ? `${meetingDate.toLocaleDateString()} • ${meetingDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : event.meetingWhen,
+});
+
+const buildNotificationSummaries = async (
+  events: Event[]
+): Promise<{ startingSoon: MeetingNotificationSummary[]; recentBookings: MeetingNotificationSummary[] }> => {
+  const now = Date.now();
+  let storedIdsRaw: string | null = null;
+  try {
+    storedIdsRaw = await AsyncStorage.getItem(MEETING_NOTIFICATION_SEEN_KEY);
+  } catch (error) {
+    console.error('Unable to read meeting notification cache:', error);
+  }
+
+  const hasStoredIds = !!storedIdsRaw;
+  const seenIds = new Set<string>(storedIdsRaw ? JSON.parse(storedIdsRaw) : []);
+  const updatedIds = new Set<string>(seenIds);
+
+  const startingSoon: MeetingNotificationSummary[] = [];
+  const recentBookings: MeetingNotificationSummary[] = [];
+
+  events.forEach((event, index) => {
+    const eventId = getEventIdentifier(event, index);
+    if (!eventId) {
+      return;
+    }
+
+    updatedIds.add(eventId);
+
+    const meetingDate = parseMeetingDateFromString(event.meetingWhen);
+    if (meetingDate) {
+      const diff = meetingDate.getTime() - now;
+      if (diff >= 0 && diff <= UPCOMING_WINDOW_MS) {
+        startingSoon.push(formatNotificationSummary(event, eventId, meetingDate));
+      }
+    }
+
+    if (!seenIds.has(eventId)) {
+      const createdAtMs =
+        convertFirestoreTimestampToMs((event as any).createdAt) ??
+        convertFirestoreTimestampToMs((event as any).timestamp);
+      const referenceTime = createdAtMs ?? meetingDate?.getTime();
+      if (referenceTime && referenceTime <= now && now - referenceTime <= UPCOMING_WINDOW_MS) {
+        recentBookings.push(formatNotificationSummary(event, eventId, meetingDate || undefined));
+      }
+    }
+  });
+
+  try {
+    await AsyncStorage.setItem(MEETING_NOTIFICATION_SEEN_KEY, JSON.stringify(Array.from(updatedIds)));
+  } catch (error) {
+    console.error('Unable to persist meeting notification cache:', error);
+  }
+
+  return {
+    startingSoon,
+    recentBookings: hasStoredIds ? recentBookings : [],
+  };
+};
 // Utility functions for time formatting
 const calculateEndTime = (startTime: string, duration: number) => {
   try {
@@ -1176,21 +1323,6 @@ const ContactsModal = ({ visible, onClose, contacts, onSelectContacts }: Contact
   );
 };
 
-const MONTH_MAP: { [key: string]: string } = {
-  'January': '01',
-  'February': '02',
-  'March': '03',
-  'April': '04',
-  'May': '05',
-  'June': '06',
-  'July': '07',
-  'August': '08',
-  'September': '09',
-  'October': '10',
-  'November': '11',
-  'December': '12'
-};
-
 // Add helper function to get today's date in YYYY-MM-DD format
 const getTodayDateString = () => {
   const today = new Date();
@@ -1242,10 +1374,10 @@ export default function Calendar() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isModalTransitioning, setIsModalTransitioning] = useState(false);
   const [selectedEventIndex, setSelectedEventIndex] = useState<number | null>(null);
-  const [userPlan, setUserPlan] = useState<string>('free');
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
   const [meetingToDelete, setMeetingToDelete] = useState<number | null>(null);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionMessage, setTransitionMessage] = useState('Loading...');
@@ -1258,6 +1390,8 @@ export default function Calendar() {
   const [isDeletingMeeting, setIsDeletingMeeting] = useState(false);
   const [expandedMenuIndex, setExpandedMenuIndex] = useState<number | null>(null);
   const navigation = useNavigation<CalendarScreenNavigationProp>();
+  const { updateNotifications } = useMeetingNotifications();
+  const toast = useToast();
   const [userInfo, setUserInfo] = useState<{ name: string; surname: string; email: string } | null>(null);
   const [userId, setUserId] = useState<string>('');
   const [isShareModalVisible, setIsShareModalVisible] = useState(false);
@@ -1431,26 +1565,12 @@ export default function Calendar() {
       }
     },
     {
-      id: 'more',
-      name: 'More',
-      icon: 'more-horiz',
+      id: 'copy',
+      name: 'Copy link',
+      icon: 'content-copy',
       color: '#6B7280',
       action: async () => {
-        const link = getCalendarLink();
-        if (!link) {
-          Alert.alert('Error', 'Unable to generate calendar link');
-          return;
-        }
-        const message = `Schedule a meeting with me!`;
-        try {
-          await Share.share({
-            message: `${message}\n\n${link}`,
-            url: link,
-            title: 'My Calendar Booking Link'
-          });
-        } catch (error) {
-          Alert.alert('Error', 'Could not open share options');
-        }
+        await copyCalendarLink();
       }
     }
   ];
@@ -1606,6 +1726,13 @@ export default function Calendar() {
           }
         });
         setMarkedDates(marks);
+
+        try {
+          const notificationSummary = await buildNotificationSummaries(data.data.meetings);
+          updateNotifications(notificationSummary);
+        } catch (notificationError) {
+          console.error('Error deriving meeting notifications:', notificationError);
+        }
       }
     } catch (error) {
       console.error('Error loading events:', error);
@@ -1615,6 +1742,11 @@ export default function Calendar() {
     }
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadEvents().finally(() => setRefreshing(false));
+  }, []);
+
   useEffect(() => {
     fetchUserInfo();
     loadEvents();
@@ -1623,33 +1755,6 @@ export default function Calendar() {
 
 
 
-  useEffect(() => {
-    const checkUserPlan = async () => {
-      try {
-        const userData = await AsyncStorage.getItem('userData');
-        if (userData) {
-          const { plan } = JSON.parse(userData);
-          setUserPlan(plan);
-          
-          // Redirect if user is on free plan
-          if (plan === 'free') {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'MainApp', params: undefined }],
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error checking user plan:', error);
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'MainApp', params: undefined }],
-        });
-      }
-    };
-
-    checkUserPlan();
-  }, [navigation]);
 
   const fetchUserInfo = async () => {
     try {
@@ -1922,7 +2027,7 @@ export default function Calendar() {
       setSelectedEventIndex(null);
       setExpandedMenuIndex(null);
 
-      Alert.alert('Success', 'Meeting deleted successfully');
+      toast.success('Meeting deleted', 'The meeting has been removed.');
 
     } catch (error) {
       console.error('Error deleting meeting:', error);
@@ -2243,6 +2348,14 @@ const renderEventDate = (dateStr: string) => {
         style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
       >
         <RNCalendar
           style={styles.calendar}
@@ -2290,7 +2403,7 @@ const renderEventDate = (dateStr: string) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Share and Filter Buttons */}
+        {/* Share, Filter, and Settings Buttons */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={styles.shareButton}
@@ -2306,16 +2419,34 @@ const renderEventDate = (dateStr: string) => {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.filterButton, showOnlyPublic && styles.filterButtonActive]}
+            style={styles.filterButton}
             onPress={() => setShowOnlyPublic(!showOnlyPublic)}
           >
             <MaterialCommunityIcons 
               name="filter" 
               size={18} 
-              color={showOnlyPublic ? '#FFFFFF' : '#007AFF'} 
+              color={COLORS.primary} 
             />
-            <Text style={[styles.filterButtonText, showOnlyPublic && styles.filterButtonTextActive]}>
+            <Text style={styles.filterButtonText}>
               {showOnlyPublic ? 'All' : 'Public Only'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.shareButton}
+            onPress={() => {
+              const parentNav = navigation.getParent();
+              if (parentNav) {
+                (parentNav as any).navigate('CalendarPreferences');
+              }
+            }}
+          >
+            <Ionicons 
+              name="settings" 
+              size={18} 
+              color={COLORS.primary} 
+            />
+            <Text style={styles.shareButtonText}>
+              Settings
             </Text>
           </TouchableOpacity>
         </View>
@@ -2572,7 +2703,11 @@ const renderEventDate = (dateStr: string) => {
                     ) : option.id === 'linkedin' ? (
                       <MaterialCommunityIcons name="linkedin" size={22} color={COLORS.white} />
                     ) : (
-                      <MaterialIcons name={option.icon as 'send' | 'email' | 'more-horiz'} size={22} color={COLORS.white} />
+                      <MaterialIcons
+                        name={option.icon as 'send' | 'email' | 'content-copy'}
+                        size={22}
+                        color={COLORS.white}
+                      />
                     )}
                   </View>
                   <Text style={styles.shareOptionText} numberOfLines={1}>{option.name}</Text>
@@ -2664,20 +2799,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#F0F8FF',
     borderWidth: 1,
-    borderColor: '#007AFF',
+    borderColor: COLORS.primary,
     gap: 4,
   },
-  filterButtonActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
   filterButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  filterButtonTextActive: {
-    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.primary,
   },
   eventCard: {
     backgroundColor: 'white',

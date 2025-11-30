@@ -24,8 +24,8 @@ const STORAGE_KEYS = {
 /**
  * Default widget configuration values
  */
-export const DEFAULT_WIDGET_CONFIG: Omit<WidgetConfig, 'id' | 'cardIndex' | 'createdAt' | 'updatedAt'> = {
-  size: WidgetSize.MEDIUM,
+export const DEFAULT_WIDGET_CONFIG: Omit<WidgetConfig, 'id' | 'cardIndex' | 'createdAt' | 'updatedAt' | 'version'> = {
+  size: WidgetSize.LARGE,
   displayMode: WidgetDisplayMode.HYBRID,
   theme: WidgetTheme.CUSTOM,
   updateFrequency: WidgetUpdateFrequency.DAILY,
@@ -88,6 +88,7 @@ export class WidgetConfigManager {
       cardIndex,
       createdAt: now,
       updatedAt: now,
+      version: '1.0.0', // Schema version for migration support
       ...overrides
     };
 
@@ -124,6 +125,10 @@ export class WidgetConfigManager {
         const configs = JSON.parse(configsJson);
         const config = configs[id];
         if (config && isWidgetConfig(config)) {
+          // Ensure version is set for backward compatibility
+          if (!config.version) {
+            config.version = '1.0.0';
+          }
           this.configs.set(id, config);
           return config;
         }
@@ -147,7 +152,8 @@ export class WidgetConfigManager {
     const updatedConfig: WidgetConfig = {
       ...existingConfig,
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      version: updates.version || existingConfig.version || '1.0.0' // Preserve or set version
     };
 
     // Validate the updated configuration
@@ -285,6 +291,10 @@ export class WidgetConfigManager {
         
         Object.values(configs).forEach((config: any) => {
           if (isWidgetConfig(config)) {
+            // Ensure version is set for backward compatibility
+            if (!config.version) {
+              config.version = '1.0.0';
+            }
             this.configs.set(config.id, config);
           }
         });
@@ -315,6 +325,7 @@ export class WidgetConfigManager {
     return {
       ...DEFAULT_WIDGET_CONFIG,
       cardIndex,
+      version: '1.0.0',
       borderColor: cardColorScheme,
       backgroundColor: cardColorScheme ? `${cardColorScheme}20` : undefined
     };
@@ -403,7 +414,7 @@ export const widgetConfigUtils = {
   /**
    * Create a minimal configuration for quick setup
    */
-  createMinimalConfig: (cardIndex: number, cardColorScheme?: string): Omit<WidgetConfig, 'id' | 'createdAt' | 'updatedAt'> => ({
+  createMinimalConfig: (cardIndex: number, cardColorScheme?: string): Omit<WidgetConfig, 'id' | 'createdAt' | 'updatedAt' | 'version'> => ({
     ...DEFAULT_WIDGET_CONFIG,
     cardIndex,
     size: WidgetSize.SMALL,
@@ -418,7 +429,7 @@ export const widgetConfigUtils = {
   /**
    * Create a full-featured configuration
    */
-  createFullConfig: (cardIndex: number, cardColorScheme?: string): Omit<WidgetConfig, 'id' | 'createdAt' | 'updatedAt'> => ({
+  createFullConfig: (cardIndex: number, cardColorScheme?: string): Omit<WidgetConfig, 'id' | 'createdAt' | 'updatedAt' | 'version'> => ({
     ...DEFAULT_WIDGET_CONFIG,
     cardIndex,
     size: WidgetSize.LARGE,
@@ -434,7 +445,7 @@ export const widgetConfigUtils = {
   /**
    * Get recommended configuration based on card data
    */
-  getRecommendedConfig: (cardIndex: number, hasProfileImage: boolean, hasCompanyLogo: boolean, hasSocials: boolean): Omit<WidgetConfig, 'id' | 'createdAt' | 'updatedAt'> => {
+  getRecommendedConfig: (cardIndex: number, hasProfileImage: boolean, hasCompanyLogo: boolean, hasSocials: boolean): Omit<WidgetConfig, 'id' | 'createdAt' | 'updatedAt' | 'version'> => {
     const hasVisualElements = hasProfileImage || hasCompanyLogo;
     const hasSocialLinks = hasSocials && Object.values(hasSocials).some(Boolean);
     

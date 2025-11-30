@@ -1,4 +1,4 @@
-// Event type definitions for XSCard Events feature
+// Event type definitions for XS Card Events feature
 
 export interface EventLocation {
   venue: string;
@@ -54,17 +54,20 @@ export interface Event {
   isRecurring?: boolean;
   recurrencePattern?: RecurrencePattern;
   nextOccurrence?: string; // For search/list results
-  displayText?: string; // "Every Monday at 10:00 AM SAST"
+  recurrenceDisplayText?: string; // Human-readable recurrence text (e.g., "Every Monday, Wednesday at 10:00 AM SAST")
+  displayText?: string; // Legacy alias for recurrenceDisplayText
 }
 
 // Recurrence Pattern for recurring events
 export interface RecurrencePattern {
-  type: 'weekly'; // MVP: weekly only
-  daysOfWeek: number[]; // [0-6] where 0=Sunday, 6=Saturday
+  type: 'daily' | 'weekly' | 'monthly';
+  daysOfWeek?: number[]; // [0-6] where 0=Sunday, 6=Saturday (required for weekly)
   timezone: string; // IANA timezone (e.g., "Africa/Johannesburg")
   startDate: string; // First occurrence ISO date
   startTime: string; // "HH:mm" format (e.g., "10:00")
-  endDate: string; // Required: Series end date (no "no end date" in MVP)
+  endDate?: string; // Optional: Series end date (null/undefined for "never ends")
+  frequency?: number; // For daily/weekly: every N days/weeks (default: 1)
+  dayOfMonth?: number; // For monthly: day of month (1-31)
   excludedDates?: string[]; // Array of YYYY-MM-DD dates to skip
   eventId?: string; // Parent event template ID
 }

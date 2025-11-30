@@ -339,13 +339,13 @@ const sendBulkRegistrationEmail = async (userId, bulkRegistrationId, eventData, 
             </div>
             
             <div style="background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666;">
-              <p>&copy; ${new Date().getFullYear()} XSCard. All Rights Reserved.</p>
+              <p>&copy; ${new Date().getFullYear()} XS Card. All Rights Reserved.</p>
             </div>
           </div>
         `;
 
         const mailOptions = {
-          from: `"XSCard Events" <${process.env.EMAIL_USER}>`,
+          from: `"XS Card Events" <${process.env.EMAIL_USER}>`,
           to: attendeeEmail,
           subject: `Event Registration Confirmation - ${eventData.title}`,
           html: emailContent

@@ -26,6 +26,7 @@ import CheckInDashboard from '../screens/events/CheckInDashboard';
 import EventAnalyticsScreen from '../screens/events/EventAnalyticsScreen';
 import OrganiserRegistrationScreen from '../screens/events/OrganiserRegistrationScreen';
 import PaymentPendingScreen from '../screens/events/PaymentPendingScreen';
+import RecurringSeriesManagementScreen from '../screens/events/RecurringSeriesManagementScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import DashboardNavigator from './DashboardNavigator';
 import SubscriptionManagementScreen from '../screens/SubscriptionManagementScreen';
@@ -173,6 +174,7 @@ export default function AppNavigator() {
       <Stack.Screen name="CheckInDashboard" component={CheckInDashboard} />
       <Stack.Screen name="EventAnalytics" component={EventAnalyticsScreen} />
       <Stack.Screen name="OrganiserRegistration" component={OrganiserRegistrationScreen} />
+      <Stack.Screen name="RecurringSeriesManagement" component={RecurringSeriesManagementScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="CalendarPreferences" component={CalendarPreferencesScreen} />

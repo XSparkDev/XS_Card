@@ -228,17 +228,38 @@ export default function EventCard({ event, onPress }: EventCardProps) {
           {/* Title and Category */}
           <View style={styles.titleRow}>
             <Text style={styles.title} numberOfLines={2}>{event.title}</Text>
-            <View style={styles.categoryBadge}>
-              <Text style={styles.categoryText}>
-                {event.category.charAt(0).toUpperCase() + event.category.slice(1)}
-              </Text>
+            <View style={styles.badgesContainer}>
+              {event.isRecurring && (
+                <View style={styles.recurringBadge}>
+                  <MaterialIcons name="repeat" size={12} color={COLORS.white} />
+                  <Text style={styles.recurringBadgeText}>Recurring</Text>
+                </View>
+              )}
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryText}>
+                  {event.category.charAt(0).toUpperCase() + event.category.slice(1)}
+                </Text>
+              </View>
             </View>
           </View>
 
           {/* Date and Time */}
           <View style={styles.dateRow}>
             <MaterialIcons name="schedule" size={16} color={COLORS.gray} />
-            <Text style={styles.dateText}>{formatDate(event.eventDate, event.eventDateISO)}</Text>
+            <View style={styles.dateContainer}>
+              {event.isRecurring ? (
+                <>
+                  <Text style={styles.dateText}>
+                    Next: {event.nextOccurrence ? formatDate(event.nextOccurrence) : formatDate(event.eventDate, event.eventDateISO)}
+                  </Text>
+                  {event.recurrenceDisplayText && (
+                    <Text style={styles.recurrenceText}>{event.recurrenceDisplayText}</Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.dateText}>{formatDate(event.eventDate, event.eventDateISO)}</Text>
+              )}
+            </View>
           </View>
 
           {/* Location */}
@@ -338,6 +359,25 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     marginRight: 8,
   },
+  badgesContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  recurringBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6C5CE7', // Purple/blue accent
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  recurringBadgeText: {
+    fontSize: 11,
+    color: COLORS.white,
+    fontWeight: '600',
+  },
   categoryBadge: {
     backgroundColor: COLORS.background,
     paddingHorizontal: 8,
@@ -351,14 +391,23 @@ const styles = StyleSheet.create({
   },
   dateRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 6,
     gap: 6,
+  },
+  dateContainer: {
+    flex: 1,
   },
   dateText: {
     fontSize: 14,
     color: COLORS.black,
     fontWeight: '500',
+  },
+  recurrenceText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   locationRow: {
     flexDirection: 'row',

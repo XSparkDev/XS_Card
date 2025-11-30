@@ -27,8 +27,10 @@ import {
   EventCategory,
   EventLocation,
   Event,
+  RecurrencePattern,
 } from '../../types/events';
 import { getUserPlan, getPlanLimits } from '../../utils/userPlan';
+import RecurrenceConfig from '../../components/events/RecurrenceConfig';
 
 type RootStackParamList = {
   EditEvent: { eventId: string; event?: Event };
@@ -43,14 +45,16 @@ const STEPS = {
   BASIC_INFO: 0,
   DETAILS: 1,
   LOCATION: 2,
-  MEDIA: 3,
-  REVIEW: 4,
+  RECURRENCE: 3,
+  MEDIA: 4,
+  REVIEW: 5,
 } as const;
 
 const STEP_TITLES = [
   'Basic Information',
   'Event Details', 
   'Location & Venue',
+  'Recurrence',
   'Images & Media',
   'Review & Publish',
 ];
@@ -91,7 +95,11 @@ export default function EditEventScreen() {
     },
     images: [],
     tags: [],
+    isRecurring: false,
+    recurrencePattern: undefined,
   });
+  const [neverEnds, setNeverEnds] = useState(false);
+  const [originalEvent, setOriginalEvent] = useState<Event | null>(null);
 
   // Load event data if editing existing event
   useEffect(() => {
@@ -131,6 +139,7 @@ export default function EditEventScreen() {
   };
 
   const populateFormFromEvent = (event: Event) => {
+    setOriginalEvent(event);
     setEventData({
       title: event.title,
       description: event.description,
@@ -144,7 +153,12 @@ export default function EditEventScreen() {
       location: event.location,
       images: event.images || [],
       tags: event.tags || [],
+      isRecurring: event.isRecurring || false,
+      recurrencePattern: event.recurrencePattern,
     });
+    if (event.recurrencePattern) {
+      setNeverEnds(!event.recurrencePattern.endDate);
+    }
 
     // Set existing images for display
     // Use the images array from the event, which should contain all images including banner
@@ -233,6 +247,27 @@ export default function EditEventScreen() {
         return;
       }
 
+      // Warning for recurring events
+      if (originalEvent?.isRecurring && eventData.isRecurring) {
+        const patternChanged = JSON.stringify(originalEvent.recurrencePattern) !== JSON.stringify(eventData.recurrencePattern);
+        if (patternChanged) {
+          const shouldContinue = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Edit Recurring Series',
+              'Changing the recurrence pattern will affect all future instances. This action cannot be undone. Continue?',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Continue', style: 'destructive', onPress: () => resolve(true) },
+              ]
+            );
+          });
+          if (!shouldContinue) {
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
       // Separate new images (local files) from existing images (URLs)
       const newImages: string[] = [];
       const existingImages: string[] = [];
@@ -274,6 +309,14 @@ export default function EditEventScreen() {
       // Location & tags as JSON strings for backend parsing
       payload.append('location', JSON.stringify(eventData.location));
       payload.append('tags', JSON.stringify(eventData.tags || []));
+
+      // Recurring events
+      if (eventData.isRecurring && eventData.recurrencePattern) {
+        payload.append('isRecurring', 'true');
+        payload.append('recurrencePattern', JSON.stringify(eventData.recurrencePattern));
+      } else {
+        payload.append('isRecurring', 'false');
+      }
 
       // Send existing images as URLs (not files)
       if (existingImages.length > 0) {
@@ -518,6 +561,32 @@ export default function EditEventScreen() {
     </View>
   );
 
+  const renderRecurrenceStep = () => (
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Recurring Event</Text>
+      {originalEvent?.isRecurring && (
+        <View style={styles.warningContainer}>
+          <MaterialIcons name="warning" size={20} color={COLORS.error} />
+          <Text style={styles.warningText}>
+            Changing recurrence affects all future instances
+          </Text>
+        </View>
+      )}
+      <RecurrenceConfig
+        value={eventData.recurrencePattern || null}
+        onChange={(pattern) => {
+          setEventData(prev => ({
+            ...prev,
+            isRecurring: !!pattern,
+            recurrencePattern: pattern || undefined,
+          }));
+          setNeverEnds(!pattern?.endDate);
+        }}
+        startDate={eventData.eventDate || new Date().toISOString()}
+      />
+    </View>
+  );
+
   const renderMediaStep = () => (
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>Add some visuals</Text>
@@ -635,6 +704,46 @@ export default function EditEventScreen() {
           </ScrollView>
         </View>
       )}
+
+      {eventData.isRecurring && eventData.recurrencePattern && (
+        <View style={styles.reviewSection}>
+          <Text style={styles.reviewSectionTitle}>Recurrence Pattern</Text>
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>Type:</Text>
+            <Text style={styles.reviewValue}>
+              {eventData.recurrencePattern.type.charAt(0).toUpperCase() + eventData.recurrencePattern.type.slice(1)}
+            </Text>
+          </View>
+          {eventData.recurrencePattern.type === 'weekly' && eventData.recurrencePattern.daysOfWeek && (
+            <View style={styles.reviewItem}>
+              <Text style={styles.reviewLabel}>Days:</Text>
+              <Text style={styles.reviewValue}>
+                {eventData.recurrencePattern.daysOfWeek
+                  .map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d])
+                  .join(', ')}
+              </Text>
+            </View>
+          )}
+          {eventData.recurrencePattern.type === 'monthly' && eventData.recurrencePattern.dayOfMonth && (
+            <View style={styles.reviewItem}>
+              <Text style={styles.reviewLabel}>Day of Month:</Text>
+              <Text style={styles.reviewValue}>{eventData.recurrencePattern.dayOfMonth}</Text>
+            </View>
+          )}
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>Time:</Text>
+            <Text style={styles.reviewValue}>
+              {eventData.recurrencePattern.startTime} {eventData.recurrencePattern.timezone}
+            </Text>
+          </View>
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>End Date:</Text>
+            <Text style={styles.reviewValue}>
+              {eventData.recurrencePattern.endDate || 'Never ends'}
+            </Text>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 
@@ -679,6 +788,7 @@ export default function EditEventScreen() {
         {currentStep === STEPS.BASIC_INFO && renderBasicInfo()}
         {currentStep === STEPS.DETAILS && renderDetails()}
         {currentStep === STEPS.LOCATION && renderLocation()}
+        {currentStep === STEPS.RECURRENCE && renderRecurrenceStep()}
         {currentStep === STEPS.MEDIA && renderMediaStep()}
         {currentStep === STEPS.REVIEW && renderReviewStep()}
         
@@ -1006,5 +1116,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 10,
     resizeMode: 'cover',
+  },
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.error + '15',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.error,
   },
 });

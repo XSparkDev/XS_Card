@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { AdminTabParamList } from '../types';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL, performServerLogout } from '../utils/api';
+import { performServerLogout } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { useMeetingNotifications } from '../context/MeetingNotificationContext';
 
 type AdminHeaderNavigationProp = BottomTabNavigationProp<AdminTabParamList>;
 
@@ -18,7 +18,37 @@ type AdminHeaderProps = {
 export default function AdminHeader({ title }: AdminHeaderProps) {
   const navigation = useNavigation<any>();
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [isNotificationsVisible, setIsNotificationsVisible] = useState(false);
   const { logout } = useAuth(); // Use our centralized auth context
+  const { startingSoon, recentBookings } = useMeetingNotifications();
+  const notificationCount = startingSoon.length + recentBookings.length;
+
+  const resetToSignIn = () => {
+    let currentNav: any = navigation;
+
+    while (currentNav?.getParent && currentNav.getParent()) {
+      currentNav = currentNav.getParent();
+    }
+
+    if (currentNav?.dispatch) {
+      currentNav.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'Auth',
+              state: {
+                index: 0,
+                routes: [{ name: 'SignIn' }],
+              },
+            },
+          ],
+        })
+      );
+    } else {
+      navigation.navigate('SignIn');
+    }
+  };
 
   const handleNavigate = (screen: string) => {
     setIsMenuVisible(false);
@@ -56,11 +86,7 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
       
       console.log('AdminHeader: Logout completed, navigating to SignIn');
       
-      // Navigate to SignIn
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'SignIn' as keyof AdminTabParamList }],
-      });
+      resetToSignIn();
       
     } catch (error) {
       console.error('AdminHeader: Error during logout:', error);
@@ -99,8 +125,19 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
         </View>
 
         <View style={styles.iconContainer}>
-          <TouchableOpacity style={styles.icon}>
+          <TouchableOpacity 
+            style={[styles.icon, styles.notificationIcon]}
+            onPress={() => setIsNotificationsVisible(true)}
+            disabled={notificationCount === 0 && startingSoon.length === 0 && recentBookings.length === 0}
+          >
             <MaterialIcons name="notifications" size={24} color={COLORS.white} />
+            {notificationCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -177,6 +214,93 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <Modal
+        visible={isNotificationsVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsNotificationsVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsNotificationsVisible(false)}
+        >
+          <View style={styles.notificationContainer}>
+            <View style={styles.notificationHeader}>
+              <Text style={styles.notificationTitleText}>Notifications</Text>
+              <TouchableOpacity onPress={() => setIsNotificationsVisible(false)}>
+                <MaterialIcons name="close" size={20} color={COLORS.gray} />
+              </TouchableOpacity>
+            </View>
+
+            {notificationCount === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="event-available" size={40} color={COLORS.secondary} />
+                <Text style={styles.emptyStateText}>You’re all caught up</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.notificationList}>
+                {startingSoon.length > 0 && (
+                  <View style={styles.notificationSection}>
+                    <Text style={styles.sectionTitle}>Starting soon</Text>
+                    {startingSoon.map(item => (
+                      <View key={`soon-${item.id}`} style={styles.notificationItem}>
+                        <View style={styles.notificationTextGroup}>
+                          <Text style={styles.notificationItemTitle}>{item.title}</Text>
+                          {item.formattedTime ? (
+                            <Text style={styles.notificationItemSubtitle}>{item.formattedTime}</Text>
+                          ) : null}
+                          {item.meetingWith ? (
+                            <Text style={styles.notificationItemSubtitle}>With {item.meetingWith}</Text>
+                          ) : null}
+                        </View>
+                        <TouchableOpacity
+                          style={styles.viewButton}
+                          onPress={() => {
+                            setIsNotificationsVisible(false);
+                            handleNavigate('Calendar');
+                          }}
+                        >
+                          <Text style={styles.viewButtonText}>View</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {recentBookings.length > 0 && (
+                  <View style={styles.notificationSection}>
+                    <Text style={styles.sectionTitle}>New bookings</Text>
+                    {recentBookings.map(item => (
+                      <View key={`recent-${item.id}`} style={styles.notificationItem}>
+                        <View style={styles.notificationTextGroup}>
+                          <Text style={styles.notificationItemTitle}>{item.title}</Text>
+                          {item.formattedTime ? (
+                            <Text style={styles.notificationItemSubtitle}>{item.formattedTime}</Text>
+                          ) : null}
+                          {item.meetingWith ? (
+                            <Text style={styles.notificationItemSubtitle}>With {item.meetingWith}</Text>
+                          ) : null}
+                        </View>
+                        <TouchableOpacity
+                          style={styles.viewButton}
+                          onPress={() => {
+                            setIsNotificationsVisible(false);
+                            handleNavigate('Calendar');
+                          }}
+                        >
+                          <Text style={styles.viewButtonText}>Review</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </>
   );
 }
@@ -214,6 +338,26 @@ const styles = StyleSheet.create({
   iconContainer: {
     flexDirection: 'row',
   },
+  notificationIcon: {
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: COLORS.error,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationBadgeText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -245,5 +389,88 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.black,
     fontWeight: '500',
+  },
+  notificationContainer: {
+    position: 'absolute',
+    top: 90,
+    right: 20,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    width: '85%',
+    maxHeight: '60%',
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  notificationTitleText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.black,
+  },
+  notificationList: {
+    maxHeight: '100%',
+  },
+  notificationSection: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.gray,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5EA',
+  },
+  notificationTextGroup: {
+    flex: 1,
+    marginRight: 12,
+  },
+  notificationItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.black,
+  },
+  notificationItemSubtitle: {
+    fontSize: 13,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  viewButton: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  viewButtonText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  emptyStateText: {
+    fontSize: 15,
+    color: COLORS.gray,
   },
 });

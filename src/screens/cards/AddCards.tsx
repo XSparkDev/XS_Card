@@ -12,7 +12,6 @@ import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
-import { saveAltNumber } from '../../utils/tempAltNumber';
 
 type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -120,7 +119,7 @@ export default function AddCards() {
         // Show permission request modal for iOS only
       Alert.alert(
         'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+        'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
         [
           { text: 'Cancel', style: 'cancel' },
           { 
@@ -169,7 +168,7 @@ export default function AddCards() {
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Camera');
+                  Alert.alert('Open Settings', 'Please go to Settings > XS Card > Camera');
               }}
         ]
       );
@@ -183,7 +182,7 @@ export default function AddCards() {
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Photos');
+                  Alert.alert('Open Settings', 'Please go to Settings > XS Card > Photos');
               }}
             ]
           );
@@ -412,6 +411,10 @@ export default function AddCards() {
       form.append('colorScheme', selectedColor);
       // Add template
       form.append('template', String(template));
+      // Add alt number fields
+      form.append('altNumber', altNumber);
+      form.append('altCountryCode', altCountryCode);
+      form.append('showAltNumber', String(showAltNumber));
 
       if (profileImage) {
         const imageName = profileImage.split('/').pop() || 'profile.jpg';
@@ -444,24 +447,7 @@ export default function AddCards() {
         throw new Error(responseData.message || 'Failed to create card');
       }
 
-      // Get the new card index (it should be the last card in the array)
-      // Fetch updated cards list to get the correct index
-      try {
-        const cardsResponse = await authenticatedFetchWithRefresh(ENDPOINTS.GET_CARD + `/${userId}`);
-        const cardsData = await cardsResponse.json();
-        const cardsArray = cardsData.cards || (Array.isArray(cardsData) ? cardsData : []);
-        const newCardIndex = cardsArray.length > 0 ? cardsArray.length - 1 : 0;
-        
-        // Save alt number to temp file
-        await saveAltNumber(newCardIndex, {
-          altNumber,
-          altCountryCode,
-          showAltNumber,
-        });
-      } catch (altError) {
-        console.error('Error saving alt number:', altError);
-        // Don't fail the whole operation if alt number save fails
-      }
+      // Alt number is now saved to backend, no need for AsyncStorage
 
       Alert.alert('Success', 'Card created successfully', [
         {

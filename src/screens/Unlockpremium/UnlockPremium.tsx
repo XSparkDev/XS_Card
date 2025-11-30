@@ -751,7 +751,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
               <View style={styles.featureRow}>
                 <View style={styles.featureColumn}>
                   <Text style={styles.featureTitle}>Maximum number of cards</Text>
-                  <Text style={styles.featureSubtitle}>Create up to 5 cards with XSCard</Text>
+                  <Text style={styles.featureSubtitle}>Create up to 5 cards with XS Card</Text>
                 </View>
                 <View style={styles.valueColumn}>
                   <Text style={styles.freeValue}>1</Text>
@@ -843,7 +843,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
 
           <TouchableOpacity>
             <Text style={styles.alreadyPaidText}>
-              I have already paid for XSCard Premium.{' '}
+              I have already paid for XS Card Premium.{' '}
               <Text style={styles.tapHereText}>Tap here</Text>
             </Text>
           </TouchableOpacity>

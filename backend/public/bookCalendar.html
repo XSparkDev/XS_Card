@@ -6,9 +6,9 @@
     <title>Book a Meeting</title>
     <style>
         :root {
-            --primary-blue: #1a73e8;
-            --hover-blue: #1557b0;
-            --light-blue: #e8f0fe;
+            --primary-blue: #FF4B6E; /* XSCard primary */
+            --hover-blue: #E63E60;
+            --light-blue: #FFE6EE;
             --gray-50: #f8f9fa;
             --gray-100: #f1f3f4;
             --gray-200: #e8eaed;
@@ -52,7 +52,7 @@
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #92278F 0%, #BE1E2D 100%);
+            background: linear-gradient(135deg, #FF4B6E 0%, #1B2B5B 100%);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1178,6 +1178,7 @@
         let availabilityData = {};
         let userData = {};
         let allowedDurations = [];
+        let bufferTime = 0;
         let advanceBookingDays = 90;
         let timezone = 'UTC';
         let currentMonth = new Date();
@@ -1329,6 +1330,7 @@
             allowedDurations = data.data.allowedDurations;
             timezone = data.data.timezone || 'UTC';
             advanceBookingDays = data.data.advanceBookingDays || 90;
+            bufferTime = data.data.bufferTime || 0;
             
             availableDatesArray = Object.keys(availabilityData)
                 .filter(date => availabilityData[date] && availabilityData[date].length > 0)
@@ -1364,9 +1366,10 @@
                     meetingTitle.textContent = `${primaryDuration} Minute Meeting`;
                     meetingDuration.textContent = `${primaryDuration} min appointments`;
                 } else {
-                    const durationRange = `${Math.min(...allowedDurations)}-${Math.max(...allowedDurations)} min`;
-                    meetingTitle.textContent = `${Math.max(...allowedDurations)} Minute Meeting`;
-                    meetingDuration.textContent = `${durationRange} appointments`;
+                    const minDisplay = Math.min(...allowedDurations);
+                    const maxDisplay = Math.max(...allowedDurations);
+                    meetingTitle.textContent = `${maxDisplay} Minute Meeting`;
+                    meetingDuration.textContent = `${minDisplay}-${maxDisplay} min appointments`;
                 }
             }
         }

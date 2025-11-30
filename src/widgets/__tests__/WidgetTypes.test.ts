@@ -15,9 +15,7 @@ describe('Widget Types', () => {
   describe('Enums', () => {
     it('should have valid WidgetSize values', () => {
       expect(WidgetSize.SMALL).toBe('small');
-      expect(WidgetSize.MEDIUM).toBe('medium');
       expect(WidgetSize.LARGE).toBe('large');
-      expect(WidgetSize.EXTRA_LARGE).toBe('xl');
     });
 
     it('should have valid WidgetDisplayMode values', () => {
@@ -46,9 +44,9 @@ describe('Widget Types', () => {
   describe('Type Guards', () => {
     it('should validate WidgetSize correctly', () => {
       expect(isWidgetSize('small')).toBe(true);
-      expect(isWidgetSize('medium')).toBe(true);
       expect(isWidgetSize('large')).toBe(true);
-      expect(isWidgetSize('xl')).toBe(true);
+      expect(isWidgetSize('medium')).toBe(false); // Removed
+      expect(isWidgetSize('xl')).toBe(false); // Removed
       expect(isWidgetSize('invalid')).toBe(false);
       expect(isWidgetSize(123)).toBe(false);
       expect(isWidgetSize(null)).toBe(false);
@@ -86,7 +84,7 @@ describe('Widget Types', () => {
       const validConfig = {
         id: 'test-id',
         cardIndex: 0,
-        size: WidgetSize.MEDIUM,
+        size: WidgetSize.LARGE,
         displayMode: WidgetDisplayMode.HYBRID,
         theme: WidgetTheme.CUSTOM,
         updateFrequency: WidgetUpdateFrequency.DAILY,
@@ -99,7 +97,8 @@ describe('Widget Types', () => {
         longPressToEdit: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        isActive: true
+        isActive: true,
+        version: '1.0.0'
       };
 
       expect(isWidgetConfig(validConfig)).toBe(true);
@@ -122,7 +121,8 @@ describe('Widget Types', () => {
         colorScheme: '#1B2B5B',
         socials: {},
         createdAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        version: '1.0.0'
       };
 
       expect(isWidgetData(validData)).toBe(true);
