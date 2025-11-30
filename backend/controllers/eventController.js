@@ -122,6 +122,37 @@ exports.createEvent = async (req, res) => {
       };
     }
     
+    // Handle recurrence pattern for recurring events
+    let recurrencePattern = null;
+    let isRecurring = false;
+    
+    if (req.body.isRecurring === 'true' || req.body.isRecurring === true) {
+      isRecurring = true;
+      
+      // Parse recurrence pattern
+      if (req.body.recurrencePattern) {
+        if (typeof req.body.recurrencePattern === 'string') {
+          try {
+            recurrencePattern = JSON.parse(req.body.recurrencePattern);
+          } catch (recurrenceErr) {
+            console.warn('Error parsing recurrencePattern JSON string:', recurrenceErr);
+          }
+        } else if (typeof req.body.recurrencePattern === 'object') {
+          recurrencePattern = req.body.recurrencePattern;
+        }
+      }
+      
+      // Validate recurrence pattern
+      if (recurrencePattern) {
+        const validation = require('../utils/recurrenceCalculator').validatePattern(recurrencePattern);
+        if (!validation.valid) {
+          return sendError(res, 400, `Invalid recurrence pattern: ${validation.errors.join(', ')}`);
+        }
+      } else {
+        return sendError(res, 400, 'Recurrence pattern is required for recurring events');
+      }
+    }
+    
     // Get organizer info from users collection with fallback to cards
     const organizerInfo = await getUserInfo(userId);
     
@@ -142,7 +173,7 @@ exports.createEvent = async (req, res) => {
       currentAttendees: 0,
       attendeesList: [],
       status: 'draft',
-      // Bulk registration support
+      // Bulk registration support (will be coerced below by capacity rule)
       allowBulkRegistrations: req.body.allowBulkRegistrations === 'true' || req.body.allowBulkRegistrations === true,
       // Image data from Firebase Storage
       bannerImage: bannerImageUrl,
@@ -158,6 +189,9 @@ exports.createEvent = async (req, res) => {
       listingFee: null,
       creditApplied: null,
       paymentReference: null,
+      // Recurring events fields
+      isRecurring: isRecurring,
+      recurrencePattern: recurrencePattern,
       createdAt: admin.firestore.Timestamp.now(),
       updatedAt: admin.firestore.Timestamp.now()
     };
@@ -170,6 +204,16 @@ exports.createEvent = async (req, res) => {
     // Validate required location fields
     if (!eventData.location.venue || !eventData.location.city) {
       return sendError(res, 400, 'Missing required location fields: venue, city');
+    }
+
+    // Validate maximum attendees (required and >= 1)
+    if (!Number.isFinite(eventData.maxAttendees) || eventData.maxAttendees < 1) {
+      return sendError(res, 400, 'Invalid maximum attendees: value is required and must be at least 1');
+    }
+
+    // Enforce bulk registration capacity rule: only when maxAttendees > 10
+    if (eventData.maxAttendees <= 10) {
+      eventData.allowBulkRegistrations = false;
     }
 
     // Validate organiser permissions for paid events
@@ -290,6 +334,17 @@ exports.publishEvent = async (req, res) => {
     if (eventData.status === 'published') {
       return sendError(res, 400, 'Event is already published');
     }
+
+  // Enforce bulk registration capacity rule before publishing
+  if (eventData.maxAttendees <= 10 && eventData.allowBulkRegistrations === true) {
+    await eventRef.update({
+      allowBulkRegistrations: false,
+      updatedAt: admin.firestore.Timestamp.now()
+    });
+    // Refresh eventData after coercion
+    const refreshed = await eventRef.get();
+    Object.assign(eventData, refreshed.data());
+  }
 
     // Check if event is pending payment
     if (eventData.status === 'pending_payment') {
@@ -601,7 +656,7 @@ exports.getAllEvents = async (req, res) => {
     // IMPORTANT: No visibility filtering in the Firestore query to avoid index requirement
     let query = db.collection('events')
       .where('status', '==', 'published')
-      .orderBy('eventDate', 'asc');
+      .orderBy('eventDate', 'desc');
 
     // Apply filters
     if (category) {
@@ -735,11 +790,12 @@ exports.registerForEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
     const userId = req.user.uid;
-    const { specialRequests = '' } = req.body;
+    const { specialRequests = '', instanceId = null } = req.body;
 
     console.log('================ REGISTER FOR EVENT DEBUG ================');
     console.log('Event ID:', eventId);
     console.log('User ID:', userId);
+    console.log('Instance ID:', instanceId);
     console.log('Request body:', req.body);
 
     // Get event details
@@ -761,11 +817,16 @@ exports.registerForEvent = async (req, res) => {
     }
 
     // Check if user is already registered or has a pending registration
-    const existingRegistration = await db.collection('event_registrations')
+    // For recurring events, check for the specific instance
+    let registrationQuery = db.collection('event_registrations')
       .where('eventId', '==', eventId)
-      .where('userId', '==', userId)
-      .limit(1)
-      .get();
+      .where('userId', '==', userId);
+    
+    if (instanceId) {
+      registrationQuery = registrationQuery.where('instanceId', '==', instanceId);
+    }
+    
+    const existingRegistration = await registrationQuery.limit(1).get();
 
     if (!existingRegistration.empty) {
       const regData = existingRegistration.docs[0].data();
@@ -806,8 +867,26 @@ exports.registerForEvent = async (req, res) => {
       }
     }
 
+    // Check capacity
+    let currentCapacity = eventData.currentAttendees;
+    
+    // For recurring events, check instance-specific capacity
+    if (instanceId) {
+      currentCapacity = await getInstanceAttendeeCount(instanceId);
+      console.log(`Instance ${instanceId} has ${currentCapacity}/${eventData.maxAttendees} attendees`);
+      
+      // Validate instance exists and isn't cancelled
+      if (eventData.isRecurring && eventData.recurrencePattern) {
+        const dateStr = instanceId.split('_')[1];
+        if (eventData.recurrencePattern.excludedDates && 
+            eventData.recurrencePattern.excludedDates.includes(dateStr)) {
+          return sendError(res, 400, 'This event instance has been cancelled');
+        }
+      }
+    }
+
     // Check capacity (0 means unlimited)
-    if (eventData.maxAttendees > 0 && eventData.currentAttendees >= eventData.maxAttendees) {
+    if (eventData.maxAttendees > 0 && currentCapacity >= eventData.maxAttendees) {
       console.log('Event at full capacity');
       return sendError(res, 400, 'Event is at full capacity');
     }
@@ -858,6 +937,7 @@ exports.registerForEvent = async (req, res) => {
     const registrationData = {
       id: registrationId,
       eventId,
+      instanceId: instanceId || null, // For recurring events
       userId,
       userInfo: {
         name: userInfo.name,
@@ -1032,6 +1112,12 @@ exports.registerForEvent = async (req, res) => {
       console.log('Processing free event registration');
       await db.collection('tickets').doc(ticketId).set(ticketData);
       await db.collection('event_registrations').doc(registrationId).set(registrationData);
+
+      // Invalidate attendee count cache for this instance
+      if (instanceId) {
+        invalidateAttendeeCountCache(instanceId);
+        console.log(`Invalidated cache for instance ${instanceId}`);
+      }
 
       // Only increment attendee count for free events
       // For paid events, this will happen after payment is confirmed
@@ -1244,6 +1330,22 @@ exports.updateEvent = async (req, res) => {
       updatedAt: admin.firestore.Timestamp.now()
     };
 
+    // Enforce bulk registration capacity rule on update
+    const finalMaxAttendees = Number.isFinite(updates.maxAttendees) && updates.maxAttendees > 0
+      ? updates.maxAttendees
+      : eventData.maxAttendees;
+
+    let desiredAllowBulk = undefined;
+    if (typeof updateData.allowBulkRegistrations !== 'undefined') {
+      desiredAllowBulk = (updateData.allowBulkRegistrations === 'true' || updateData.allowBulkRegistrations === true);
+    }
+
+    const finalAllowBulk = finalMaxAttendees <= 10
+      ? false
+      : (typeof desiredAllowBulk !== 'undefined' ? desiredAllowBulk : !!eventData.allowBulkRegistrations);
+
+    updates.allowBulkRegistrations = finalAllowBulk;
+
     // Convert dates if provided with validation
     if (updateData.eventDate && typeof updateData.eventDate === 'string') {
       try {
@@ -1408,7 +1510,7 @@ exports.searchEvents = async (req, res) => {
     // IMPORTANT: No visibility filtering in the Firestore query to avoid index requirement
     let query = db.collection('events')
       .where('status', '==', 'published')
-      .orderBy('eventDate', 'asc')
+      .orderBy('eventDate', 'desc')
       .limit(parseInt(limit) * 3); // Get extra to account for visibility filtering
 
     const snapshot = await query.get();
@@ -3497,5 +3599,309 @@ exports.resetRegistrationPaymentStatus = async (req, res) => {
     return sendError(res, 500, 'Error resetting registration payment status');
   }
 };
+
+// ========================================
+// RECURRING EVENTS CONTROLLERS
+// ========================================
+
+const recurrenceCalculator = require('../utils/recurrenceCalculator');
+
+/**
+ * Get all instances for a recurring event
+ * GET /events/:eventId/instances
+ */
+exports.getEventInstances = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { startDate, endDate, limit = 12 } = req.query;
+    
+    // Get event template
+    const eventDoc = await db.collection('events').doc(eventId).get();
+    
+    if (!eventDoc.exists) {
+      return sendError(res, 404, 'Event not found');
+    }
+    
+    const eventData = eventDoc.data();
+    
+    if (!eventData.isRecurring || !eventData.recurrencePattern) {
+      return sendError(res, 400, 'Event is not a recurring event');
+    }
+    
+    // Generate instances
+    const pattern = {
+      ...eventData.recurrencePattern,
+      eventId: eventId
+    };
+    
+    const instanceStartDate = startDate ? new Date(startDate) : new Date();
+    const instanceEndDate = endDate ? new Date(endDate) : new Date(pattern.endDate);
+    
+    let instances = recurrenceCalculator.generateInstances(
+      instanceStartDate,
+      instanceEndDate,
+      pattern,
+      { maxInstances: parseInt(limit) }
+    );
+    
+    // Get attendee counts for each instance
+    const instancesWithCounts = await Promise.all(
+      instances.map(async (instance) => {
+        const attendeeCount = await getInstanceAttendeeCountCached(instance.instanceId);
+        return {
+          ...instance,
+          // Merge template fields
+          title: eventData.title,
+          description: eventData.description,
+          location: eventData.location,
+          category: eventData.category,
+          eventType: eventData.eventType,
+          ticketPrice: eventData.ticketPrice,
+          maxAttendees: eventData.maxAttendees,
+          organizerId: eventData.organizerId,
+          organizerInfo: eventData.organizerInfo,
+          images: eventData.images,
+          bannerImage: eventData.bannerImage,
+          tags: eventData.tags,
+          visibility: eventData.visibility,
+          status: eventData.status,
+          attendeeCount
+        };
+      })
+    );
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        eventId,
+        instances: instancesWithCounts,
+        totalInstances: instancesWithCounts.length,
+        hasMore: instancesWithCounts.length >= parseInt(limit)
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error getting event instances:', error);
+    sendError(res, 500, 'Error retrieving event instances', error);
+  }
+};
+
+/**
+ * Get a specific instance of a recurring event
+ * GET /events/:eventId/instances/:instanceId
+ */
+exports.getEventInstance = async (req, res) => {
+  try {
+    const { eventId, instanceId } = req.params;
+    
+    // Get event template
+    const eventDoc = await db.collection('events').doc(eventId).get();
+    
+    if (!eventDoc.exists) {
+      return sendError(res, 404, 'Event not found');
+    }
+    
+    const eventData = eventDoc.data();
+    
+    if (!eventData.isRecurring || !eventData.recurrencePattern) {
+      return sendError(res, 400, 'Event is not a recurring event');
+    }
+    
+    // Extract date from instanceId (format: "eventId_YYYY-MM-DD")
+    const dateStr = instanceId.split('_')[1];
+    if (!dateStr) {
+      return sendError(res, 400, 'Invalid instance ID format');
+    }
+    
+    // Check if instance date is excluded
+    if (eventData.recurrencePattern.excludedDates && 
+        eventData.recurrencePattern.excludedDates.includes(dateStr)) {
+      return sendError(res, 404, 'This instance has been cancelled');
+    }
+    
+    // Generate the specific instance
+    const instanceDate = new Date(dateStr);
+    const pattern = {
+      ...eventData.recurrencePattern,
+      eventId: eventId
+    };
+    
+    const instance = recurrenceCalculator.generateInstanceWithTimezone(instanceDate, pattern);
+    
+    // Get attendee count
+    const attendeeCount = await getInstanceAttendeeCountCached(instanceId);
+    
+    // Merge template fields
+    const fullInstance = {
+      ...instance,
+      title: eventData.title,
+      description: eventData.description,
+      location: eventData.location,
+      category: eventData.category,
+      eventType: eventData.eventType,
+      ticketPrice: eventData.ticketPrice,
+      maxAttendees: eventData.maxAttendees,
+      organizerId: eventData.organizerId,
+      organizerInfo: eventData.organizerInfo,
+      images: eventData.images,
+      bannerImage: eventData.bannerImage,
+      tags: eventData.tags,
+      visibility: eventData.visibility,
+      status: eventData.status,
+      attendeeCount
+    };
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        instance: fullInstance
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error getting event instance:', error);
+    sendError(res, 500, 'Error retrieving event instance', error);
+  }
+};
+
+/**
+ * End a recurring series
+ * POST /events/:eventId/series/end
+ */
+exports.endRecurringSeries = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.uid;
+    
+    const eventRef = db.collection('events').doc(eventId);
+    const eventDoc = await eventRef.get();
+    
+    if (!eventDoc.exists) {
+      return sendError(res, 404, 'Event not found');
+    }
+    
+    const eventData = eventDoc.data();
+    
+    // Check if user owns this event
+    if (eventData.organizerId !== userId) {
+      return sendError(res, 403, 'Not authorized to end this series');
+    }
+    
+    if (!eventData.isRecurring || !eventData.recurrencePattern) {
+      return sendError(res, 400, 'Event is not a recurring event');
+    }
+    
+    // Set end date to today
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // End of today
+    
+    const updatedPattern = {
+      ...eventData.recurrencePattern,
+      endDate: today.toISOString().split('T')[0] // YYYY-MM-DD format
+    };
+    
+    await eventRef.update({
+      recurrencePattern: updatedPattern,
+      updatedAt: admin.firestore.Timestamp.now()
+    });
+    
+    // Get all future registrations to notify users
+    const todayStr = new Date().toISOString().split('T')[0];
+    const futureRegistrations = await db.collection('event_registrations')
+      .where('eventId', '==', eventId)
+      .where('instanceId', '>', `${eventId}_${todayStr}`)
+      .where('status', '==', 'confirmed')
+      .get();
+    
+    // Notify affected users
+    if (!futureRegistrations.empty) {
+      const userIds = [...new Set(futureRegistrations.docs.map(d => d.data().userId))];
+      console.log(`Notifying ${userIds.length} users about series ending`);
+      
+      // Send notifications
+      if (global.socketService) {
+        userIds.forEach(uid => {
+          if (global.socketService.isUserConnected(uid)) {
+            global.socketService.sendToUser(uid, 'series_ended', {
+              type: 'series_ended',
+              eventId,
+              eventTitle: eventData.title,
+              message: 'This recurring event series has ended.',
+              affectedInstances: futureRegistrations.size
+            });
+          }
+        });
+      }
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'Recurring series ended successfully',
+      affectedRegistrations: futureRegistrations.size
+    });
+    
+  } catch (error) {
+    console.error('Error ending recurring series:', error);
+    sendError(res, 500, 'Error ending recurring series', error);
+  }
+};
+
+// In-memory cache for attendee counts (5 minute TTL)
+const attendeeCountCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get attendee count for a specific instance with caching
+ */
+async function getInstanceAttendeeCountCached(instanceId) {
+  if (!instanceId) return 0;
+  
+  const cacheKey = `attendees:${instanceId}`;
+  const cached = attendeeCountCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    return cached.count;
+  }
+  
+  // Fetch from database
+  const count = await getInstanceAttendeeCount(instanceId);
+  
+  // Store in cache
+  attendeeCountCache.set(cacheKey, {
+    count,
+    timestamp: Date.now()
+  });
+  
+  return count;
+}
+
+/**
+ * Get attendee count for a specific instance from database
+ */
+async function getInstanceAttendeeCount(instanceId) {
+  try {
+    const registrations = await db.collection('event_registrations')
+      .where('instanceId', '==', instanceId)
+      .where('status', '==', 'confirmed')
+      .get();
+    
+    return registrations.size;
+  } catch (error) {
+    console.error('Error getting instance attendee count:', error);
+    return 0;
+  }
+}
+
+/**
+ * Invalidate attendee count cache for an instance
+ */
+function invalidateAttendeeCountCache(instanceId) {
+  if (!instanceId) return;
+  const cacheKey = `attendees:${instanceId}`;
+  attendeeCountCache.delete(cacheKey);
+}
+
+// Export cache invalidation function for use in registration handlers
+exports.invalidateAttendeeCountCache = invalidateAttendeeCountCache;
 
 module.exports = exports;

@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     position: 'relative',
-    height: 160,
+    height: 180,
     backgroundColor: COLORS.background, // subtle grey backdrop
   },
   eventImage: {
@@ -322,13 +322,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   content: {
+    height: 180,
     padding: 16,
   },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   title: {
     flex: 1,
@@ -351,7 +352,7 @@ const styles = StyleSheet.create({
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     gap: 6,
   },
   dateText: {
@@ -362,7 +363,7 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     gap: 6,
   },
   locationText: {
@@ -373,7 +374,7 @@ const styles = StyleSheet.create({
   organizerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     gap: 6,
   },
   organizerText: {
@@ -409,7 +410,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderRadius: 6,
     overflow: 'hidden',
-    marginTop: 8,
+    marginTop: 6,
   },
   capacityProgressBackground: {
     flex: 1,

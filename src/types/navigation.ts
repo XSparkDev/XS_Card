@@ -34,6 +34,7 @@ export type RootStackParamList = {
   };
   OrganiserRegistration: undefined;
   Settings: undefined;
+  UserProfile: undefined;
   ChangePassword: undefined;
 };
 

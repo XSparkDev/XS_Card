@@ -83,7 +83,8 @@ export const validateQuantity = (
  * Check if an event allows bulk registrations
  */
 export const checkEventBulkRegistrationSupport = (event: Event): boolean => {
-  return event.allowBulkRegistrations === true;
+  // Enforce simple capacity rule: bulk only if maxAttendees > 10
+  return event.allowBulkRegistrations === true && (event.maxAttendees > 10);
 };
 
 /**

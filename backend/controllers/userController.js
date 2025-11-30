@@ -68,10 +68,80 @@ exports.getUserById = async (req, res) => {
         const userRef = db.collection('users').doc(id);
         const userDoc = await userRef.get();
         
+        // NEW: Auto-provisioning for OAuth users (POOP - Phase 5)
         if (!userDoc.exists) {
+            // Check if this is an OAuth user (req.user comes from auth middleware)
+            const firebaseUser = req.user;
+            
+            if (firebaseUser && firebaseUser.uid === id) {
+                // Get provider data from Firebase user
+                const providerData = firebaseUser.firebase?.sign_in_provider || 
+                                    firebaseUser.firebase?.identities?.['google.com'] ? 'google.com' :
+                                    firebaseUser.firebase?.identities?.['linkedin.com'] ? 'linkedin.com' :
+                                    firebaseUser.firebase?.identities?.['microsoft.com'] ? 'microsoft.com' :
+                                    null;
+                
+                // Auto-provision OAuth users (google.com, linkedin.com, microsoft.com)
+                const oauthProviders = ['google.com', 'linkedin.com', 'microsoft.com'];
+                
+                if (providerData && oauthProviders.includes(providerData)) {
+                    console.log(`[Auto-Provision] Creating ${providerData} user:`, firebaseUser.email);
+                    
+                    // Extract structured name fields from custom claims (set during OAuth callback)
+                    const givenName = firebaseUser.given_name || '';
+                    const familyName = firebaseUser.family_name || '';
+                    
+                    // Use structured names if available, otherwise fall back to display name parsing
+                    let firstName = givenName;
+                    let lastName = familyName;
+                    
+                    if (!firstName && !lastName && firebaseUser.name) {
+                        // Fallback: parse display name if structured names not available
+                        const nameParts = firebaseUser.name.split(' ');
+                        firstName = nameParts[0] || '';
+                        lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+                    }
+                    
+                    if (!firstName) {
+                        firstName = firebaseUser.email?.split('@')[0] || 'User';
+                    }
+                    
+                    console.log(`[Auto-Provision] Structured names - firstName: "${firstName}", lastName: "${lastName}"`);
+                    
+                    // Create user document for OAuth user
+                    const newUserData = {
+                        uid: firebaseUser.uid,
+                        email: firebaseUser.email || '',
+                        name: firstName,
+                        surname: lastName,
+                        authProvider: providerData, // Store provider: google.com, linkedin.com, or microsoft.com
+                        role: 'user',
+                        plan: 'free',
+                        status: 'active',
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        emailVerified: firebaseUser.email_verified || true, // OAuth emails are pre-verified
+                    };
+                    
+                    await userRef.set(newUserData);
+                    
+                    console.log(`[Auto-Provision] ${providerData} user created successfully`);
+                    
+                    // Return newly created user
+                    return res.status(200).send({
+                        id: firebaseUser.uid,
+                        ...newUserData,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    });
+                }
+            }
+            
+            // Not an OAuth user or auto-provisioning failed
             return res.status(404).send({ message: 'User is not found'});
         }
 
+        // CEMENT: Existing user found, return as before
         const userData = {
             id: userDoc.id,
             ...userDoc.data()
@@ -89,11 +159,34 @@ exports.getUserById = async (req, res) => {
 
 exports.addUser = async (req, res) => {
     const { 
-        name, surname, email, password, status = 'active' 
+        name,
+        surname,
+        email,
+        password,
+        status = 'active',
+        termsAccepted = false,
+        privacyAccepted = false,
+        legalAcceptedAt
     } = req.body;
     
     try {
         console.log('Starting user creation process for:', email);
+
+        // TEMPORARILY disabled legal requirement check
+        // if (!termsAccepted || !privacyAccepted) {
+        //     return res.status(400).send({
+        //         message: 'You must accept the Privacy Policy and Terms of Use before creating an account.',
+        //         code: 'LEGAL_NOT_ACCEPTED'
+        //     });
+        // }
+
+        let legalAcceptedTimestamp = admin.firestore.Timestamp.now();
+        if (legalAcceptedAt) {
+            const parsedDate = new Date(legalAcceptedAt);
+            if (!isNaN(parsedDate.getTime())) {
+                legalAcceptedTimestamp = admin.firestore.Timestamp.fromDate(parsedDate);
+            }
+        }
         
         // Create user in Firebase Auth
         const userRecord = await admin.auth().createUser({
@@ -115,12 +208,16 @@ exports.addUser = async (req, res) => {
             plan: 'free', // Default plan
             createdAt: admin.firestore.Timestamp.now(), // Changed to Firestore Timestamp
             isEmailVerified: false,
-            verificationToken
+            verificationToken,
+            termsAccepted: true,
+            privacyAccepted: true,
+            legalAcceptedAt: legalAcceptedTimestamp
         };
 
         const responseData = {
             ...userData,
-            createdAt: formatDate(userData.createdAt) // Format for display
+            createdAt: formatDate(userData.createdAt), // Format for display
+            legalAcceptedAt: formatDate(legalAcceptedTimestamp)
         };
 
         // Store user data in Firestore
@@ -692,12 +789,13 @@ exports.uploadUserImages = async (req, res) => {
         console.log('Retrieved user data:', userData.name, userData.surname, userData.email);
         
         // Extract additional fields from the request
-        const { phone, occupation, company } = req.body;
-        console.log('Profile completion data:', { phone, occupation, company });
+        const { phone, alternatePhone, occupation, company } = req.body;
+        console.log('Profile completion data:', { phone, alternatePhone, occupation, company });
         
         // Update user with additional profile information
         await userRef.update({
             phone: phone ?? '',
+            alternatePhone: alternatePhone ?? '',
             occupation: occupation ?? '',
             company: company ?? ''
         });
@@ -710,13 +808,15 @@ exports.uploadUserImages = async (req, res) => {
                 surname: userData.surname ?? '',
                 email: userData.email ?? '',
                 phone: phone ?? '',
+                alternatePhone: alternatePhone ?? '',
                 occupation: occupation ?? '',
                 company: company ?? '',
                 profileImage: req.firebaseStorageUrls?.profileImage ?? null,
                 companyLogo: req.firebaseStorageUrls?.companyLogo ?? null,
                 socials: {},
                 colorScheme: '#1B2B5B', // Default color
-                createdAt: admin.firestore.Timestamp.now() // Changed to Firestore Timestamp
+                createdAt: admin.firestore.Timestamp.now(), // Changed to Firestore Timestamp
+                template: 1
             }]
         };
         console.log('Creating card with data:', JSON.stringify(cardData.cards[0], null, 2));

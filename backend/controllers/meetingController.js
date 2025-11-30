@@ -3,6 +3,8 @@ const { formatDate } = require('../utils/dateFormatter');
 const { getUserInfo } = require('../utils/userUtils');
 const { sendMailWithStatus } = require('../public/Utils/emailService');
 const { createCalendarEvent } = require('../public/Utils/calendarService');
+const availabilityService = require('../services/availabilityService');
+const crypto = require('crypto');
 
 // Helper function for error responses
 const sendError = (res, status, message, error = null) => {
@@ -526,5 +528,838 @@ const sendInvitesToNewAttendees = async (meetingData) => {
     } catch (error) {
         console.error('Error in sendInvitesToNewAttendees:', error);
         throw error;
+    }
+};
+
+// ============= CALENDAR PREFERENCES API =============
+
+/**
+ * Get user's calendar preferences
+ */
+exports.getCalendarPreferences = async (req, res) => {
+    try {
+        const userId = req.user.uid;
+
+        const userDoc = await db.collection('users').doc(userId).get();
+        
+        if (!userDoc.exists) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const userData = userDoc.data();
+        const preferences = userData.calendarPreferences || availabilityService.getDefaultPreferences();
+
+        // Get available emails from user and cards
+        const availableEmails = [];
+        
+        // First email from users collection (primary) - MUST be first
+        if (userData.email) {
+            availableEmails.push({
+                email: userData.email,
+                source: 'user',
+                label: 'Account Email (Primary)'
+            });
+        }
+
+        // Get emails from cards (additional options)
+        try {
+            const cardDoc = await db.collection('cards').doc(userId).get();
+            if (cardDoc.exists) {
+                const cardData = cardDoc.data();
+                if (cardData.cards && Array.isArray(cardData.cards)) {
+                    cardData.cards.forEach((card, index) => {
+                        if (card.email && card.email.trim() && 
+                            !availableEmails.find(e => e.email.toLowerCase() === card.email.toLowerCase())) {
+                            availableEmails.push({
+                                email: card.email.trim(),
+                                source: 'card',
+                                label: `Card ${index + 1}${card.name ? ` (${card.name})` : ''}`
+                            });
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[Calendar Preferences] Error fetching cards:', error);
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                ...preferences,
+                availableEmails: availableEmails
+            }
+        });
+    } catch (error) {
+        console.error('Error getting calendar preferences:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get calendar preferences',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Update user's calendar preferences
+ */
+exports.updateCalendarPreferences = async (req, res) => {
+    try {
+        const userId = req.user.uid;
+        const preferences = req.body;
+
+        // Validate working hours format
+        if (preferences.workingHours) {
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+            const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+            
+            for (const day of days) {
+                if (preferences.workingHours[day]) {
+                    const { start, end, specificSlots } = preferences.workingHours[day];
+                    
+                    // Validate start/end time format
+                    if (start && !timeRegex.test(start)) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Invalid start time format for ${day}. Use HH:MM format.`
+                        });
+                    }
+                    if (end && !timeRegex.test(end)) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Invalid end time format for ${day}. Use HH:MM format.`
+                        });
+                    }
+                    
+                    // Validate specificSlots if provided
+                    if (specificSlots !== undefined && specificSlots !== null) {
+                        if (!Array.isArray(specificSlots)) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `specificSlots for ${day} must be an array`
+                            });
+                        }
+                        
+                        // Check for duplicate times
+                        const uniqueSlots = new Set(specificSlots);
+                        if (uniqueSlots.size !== specificSlots.length) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Duplicate time slots found for ${day}. Each time must be unique.`
+                            });
+                        }
+                        
+                        // Validate each slot format
+                        for (const slot of specificSlots) {
+                            if (typeof slot !== 'string') {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: `Invalid specificSlots format for ${day}. All slots must be strings in HH:MM format.`
+                                });
+                            }
+                            if (!timeRegex.test(slot)) {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: `Invalid time slot format "${slot}" for ${day}. Use HH:MM format (e.g., "11:30").`
+                                });
+                            }
+                        }
+                        
+                        // Validate time range (00:00 to 23:59)
+                        for (const slot of specificSlots) {
+                            const [hours, minutes] = slot.split(':').map(Number);
+                            if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: `Invalid time slot "${slot}" for ${day}. Hours must be 00-23 and minutes must be 00-59.`
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate defaultTimeRange if provided
+        if (preferences.defaultTimeRange) {
+            const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+            if (preferences.defaultTimeRange.start && !timeRegex.test(preferences.defaultTimeRange.start)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid default start time format. Use HH:MM format (e.g., "09:00").'
+                });
+            }
+            if (preferences.defaultTimeRange.end && !timeRegex.test(preferences.defaultTimeRange.end)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid default end time format. Use HH:MM format (e.g., "17:00").'
+                });
+            }
+        }
+
+        // Validate allowed durations
+        if (preferences.allowedDurations) {
+            if (!Array.isArray(preferences.allowedDurations)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'allowedDurations must be an array'
+                });
+            }
+            if (preferences.allowedDurations.some(d => typeof d !== 'number' || d <= 0)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'All durations must be positive numbers'
+                });
+            }
+        }
+
+        // Update preferences in Firestore
+        await db.collection('users').doc(userId).update({
+            calendarPreferences: preferences,
+            updatedAt: new Date()
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Calendar preferences updated successfully',
+            data: preferences
+        });
+    } catch (error) {
+        console.error('Error updating calendar preferences:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update calendar preferences',
+            error: error.message
+        });
+    }
+};
+
+// ============= PUBLIC CALENDAR API =============
+
+/**
+ * Get public calendar availability (no auth required)
+ */
+exports.getPublicCalendarAvailability = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { startDate, days = 30 } = req.query;
+
+        console.log(`[Public Calendar] Fetching availability for user: ${userId}`);
+        console.log(`[Public Calendar] Full URL params:`, req.params);
+        console.log(`[Public Calendar] Query params:`, req.query);
+
+        // Trim userId in case there's whitespace or .html suffix
+        const cleanUserId = userId?.trim().replace('.html', '');
+
+        if (!cleanUserId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        console.log(`[Public Calendar] Clean userId: ${cleanUserId}`);
+
+        // Get user's calendar preferences
+        const userDoc = await db.collection('users').doc(cleanUserId).get();
+        
+        if (!userDoc.exists) {
+            console.log(`[Public Calendar] User document not found for ID: ${cleanUserId}`);
+            // Try to find user by email as fallback (in case userId format is different)
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+                debug: { receivedUserId: userId, cleanUserId }
+            });
+        }
+
+        const userData = userDoc.data();
+        const preferences = userData.calendarPreferences || availabilityService.getDefaultPreferences();
+
+        // Check if calendar booking is enabled
+        if (!preferences.enabled) {
+            return res.status(403).json({
+                success: false,
+                message: 'Calendar booking is not enabled for this user'
+            });
+        }
+
+        // Get user's existing meetings
+        const meetingRef = db.collection('meetings').doc(cleanUserId);
+        const meetingDoc = await meetingRef.get();
+        const existingMeetings = meetingDoc.exists ? (meetingDoc.data().bookings || []) : [];
+
+        // Calculate availability
+        // Parse startDate to avoid timezone issues - ensure it's treated as local date
+        let start;
+        if (startDate) {
+            // If startDate is a string (YYYY-MM-DD), parse it as local date
+            if (typeof startDate === 'string' && startDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [year, month, day] = startDate.split('-').map(Number);
+                start = new Date(year, month - 1, day, 0, 0, 0, 0); // Local midnight
+            } else {
+                start = new Date(startDate);
+            }
+        } else {
+            start = new Date();
+        }
+        start.setHours(0, 0, 0, 0); // Ensure midnight
+        const daysToCalculate = Math.min(parseInt(days), preferences.advanceBookingDays || 30);
+        
+        const availability = availabilityService.calculateAvailableSlots(
+            cleanUserId,
+            start,
+            daysToCalculate,
+            preferences,
+            existingMeetings
+        );
+
+        // Get user info for display
+        const userInfo = await getUserInfo(cleanUserId);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                user: {
+                    name: userInfo.name,
+                    company: userInfo.company || '',
+                    profileImage: userInfo.profileImage || null
+                },
+                availability,
+                allowedDurations: preferences.allowedDurations || [30, 60],
+                timezone: preferences.timezone || 'UTC',
+                advanceBookingDays: preferences.advanceBookingDays || 30
+            }
+        });
+    } catch (error) {
+        console.error('[Public Calendar] Error getting availability:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get calendar availability',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Create public booking (no auth required)
+ */
+exports.createPublicBooking = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const {
+            name,
+            email,
+            phone,
+            message,
+            location,
+            date,
+            time,
+            duration
+        } = req.body;
+
+        console.log(`[Public Booking] New booking request for user: ${userId}`);
+
+        // Validate required fields
+        if (!name || !email || !phone || !date || !time || !duration) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields',
+                required: ['name', 'email', 'phone', 'date', 'time', 'duration']
+            });
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid email format'
+            });
+        }
+
+        // Get user's calendar preferences
+        const userDoc = await db.collection('users').doc(userId).get();
+        
+        if (!userDoc.exists) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const userData = userDoc.data();
+        const preferences = userData.calendarPreferences || availabilityService.getDefaultPreferences();
+
+        // Check if calendar booking is enabled
+        if (!preferences.enabled) {
+            return res.status(403).json({
+                success: false,
+                message: 'Calendar booking is not enabled for this user'
+            });
+        }
+
+        // Check if duration is allowed
+        const allowedDurations = preferences.allowedDurations || [30, 60];
+        if (!allowedDurations.includes(parseInt(duration))) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid duration selected',
+                allowedDurations
+            });
+        }
+
+        // Parse date and time
+        const [year, month, day] = date.split('-').map(Number);
+        const [hour, minute] = time.split(':').map(Number);
+        const meetingDateTime = new Date(year, month - 1, day, hour, minute);
+
+        // Check if the slot is still available
+        const meetingRef = db.collection('meetings').doc(userId);
+        const meetingDoc = await meetingRef.get();
+        const existingMeetings = meetingDoc.exists ? (meetingDoc.data().bookings || []) : [];
+
+        const isAvailable = availabilityService.isSlotAvailable(
+            time,
+            new Date(year, month - 1, day),
+            parseInt(duration),
+            existingMeetings,
+            preferences.bufferTime || 0,
+            preferences
+        );
+
+        if (!isAvailable) {
+            return res.status(409).json({
+                success: false,
+                message: 'Time slot is no longer available'
+            });
+        }
+
+        // Generate unique cancellation token
+        const cancellationToken = crypto.randomBytes(32).toString('hex');
+        
+        // Create booking
+        const newMeeting = {
+            meetingWith: name,
+            meetingWhen: meetingDateTime,
+            description: message || '',
+            duration: parseInt(duration),
+            location: location || 'Online meeting',
+            source: 'public',
+            bookerInfo: {
+                name,
+                email,
+                phone,
+                message: message || ''
+            },
+            cancellationToken,
+            createdAt: new Date()
+        };
+
+        // Save to database
+        if (meetingDoc.exists) {
+            await meetingRef.update({
+                bookings: [...existingMeetings, newMeeting]
+            });
+        } else {
+            await meetingRef.set({
+                bookings: [newMeeting]
+            });
+        }
+
+        // Get calendar owner info - always use email from users collection
+        const ownerInfo = await getUserInfo(userId);
+        
+        // Get the notification email - use preference or fallback to user email
+        let ownerEmail = userData.email;
+        if (preferences.notificationEmail && preferences.notificationEmail.trim()) {
+            ownerEmail = preferences.notificationEmail.trim();
+            console.log(`[Public Booking] Using preferred notification email: ${ownerEmail}`);
+        } else if (userData.email) {
+            ownerEmail = userData.email;
+            console.log(`[Public Booking] Using user email from users collection: ${ownerEmail}`);
+        } else {
+            console.error(`[Public Booking] No email found for user ${userId} in users collection`);
+            // Still try to send, but log the issue
+        }
+
+        // Send email to booker
+        try {
+            const endDateTime = new Date(meetingDateTime);
+            endDateTime.setMinutes(endDateTime.getMinutes() + parseInt(duration));
+
+            const calendarEvent = await createCalendarEvent({
+                title: `Meeting with ${ownerInfo.name}`,
+                description: message || 'Booked via XSCard Calendar',
+                start: meetingDateTime.toISOString(),
+                end: endDateTime.toISOString(),
+                location: location || 'Online meeting',
+                attendees: [{ name, email }],
+                organizer: {
+                    name: ownerInfo.name,
+                    email: ownerEmail
+                },
+                timezone: preferences.timezone || 'UTC'
+            });
+
+            await sendMailWithStatus({
+                to: email,
+                subject: `Meeting Confirmed with ${ownerInfo.name}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #007AFF;">Meeting Confirmed!</h2>
+                        <p>Hi ${name},</p>
+                        <p>Your meeting with <strong>${ownerInfo.name}</strong> has been confirmed.</p>
+                        
+                        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                            <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                            <p><strong>Duration:</strong> ${duration} minutes</p>
+                            ${location ? `<p><strong>Location:</strong> ${location}</p>` : ''}
+                            ${message ? `<p><strong>Your message:</strong> ${message}</p>` : ''}
+                        </div>
+                        
+                        <p>A calendar event has been attached to this email. Please add it to your calendar.</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="${process.env.API_BASE_URL || 'https://xscard.com'}/public/calendar/${userId}/cancel/${cancellationToken}" 
+                               style="background-color: #FF3B30; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                                Cancel this booking
+                            </a>
+                        </div>
+                        
+                        <p style="font-size: 12px; color: #666;">Need to reschedule? Cancel this booking and book a new time. For questions, contact ${ownerInfo.name} at ${ownerEmail}.</p>
+                    </div>
+                `,
+                attachments: [{
+                    filename: 'meeting.ics',
+                    content: calendarEvent,
+                    contentType: 'text/calendar'
+                }]
+            });
+            console.log(`[Public Booking] Email sent to booker: ${email}`);
+        } catch (emailError) {
+            console.error('[Public Booking] Error sending booker email:', emailError);
+        }
+
+        // Send email to calendar owner
+        if (ownerEmail) {
+            try {
+                await sendMailWithStatus({
+                    to: ownerEmail,
+                    subject: `New Booking: ${name}`,
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #007AFF;">New Meeting Booked</h2>
+                            <p>Hi ${ownerInfo.name},</p>
+                            <p>You have a new meeting booking from <strong>${name}</strong>.</p>
+                            
+                            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                <h3 style="margin-top: 0;">Booking Details</h3>
+                                <p><strong>Name:</strong> ${name}</p>
+                                <p><strong>Email:</strong> ${email}</p>
+                                <p><strong>Phone:</strong> ${phone}</p>
+                                <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                                <p><strong>Duration:</strong> ${duration} minutes</p>
+                                ${location ? `<p><strong>Location:</strong> ${location}</p>` : ''}
+                                ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
+                            </div>
+                            
+                            <p>This meeting has been added to your calendar in the XSCard app.</p>
+                            
+                            <p style="font-size: 12px; color: #666; margin-top: 20px;">
+                                <strong>Note:</strong> The booker can cancel this meeting using the cancellation link sent to their email. You will be notified if they cancel.
+                            </p>
+                        </div>
+                    `
+                });
+                console.log(`[Public Booking] Email sent to calendar owner: ${ownerEmail}`);
+            } catch (emailError) {
+                console.error('[Public Booking] Error sending owner email:', emailError);
+                console.error('[Public Booking] Email error details:', emailError.message);
+            }
+        } else {
+            console.error(`[Public Booking] Cannot send email to owner: no email address found for user ${userId}`);
+        }
+
+        res.status(201).json({
+            success: true,
+            message: 'Booking created successfully',
+            data: {
+                meetingDateTime: meetingDateTime.toISOString(),
+                duration: parseInt(duration),
+                bookerName: name
+            }
+        });
+    } catch (error) {
+        console.error('[Public Booking] Error creating booking:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create booking',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Cancel public booking (no auth required)
+ */
+exports.cancelPublicBooking = async (req, res) => {
+    try {
+        const { userId, token } = req.params;
+        
+        console.log(`[Public Booking] Cancellation request for user: ${userId}, token: ${token}`);
+        
+        // Get all bookings for this user
+        const meetingRef = db.collection('meetings').doc(userId);
+        const meetingDoc = await meetingRef.get();
+        
+        if (!meetingDoc.exists || !meetingDoc.data().bookings) {
+            return res.status(404).json({
+                success: false,
+                message: 'No bookings found'
+            });
+        }
+        
+        const bookings = meetingDoc.data().bookings;
+        
+        // Find booking by cancellation token
+        const bookingIndex = bookings.findIndex(b => b.cancellationToken === token);
+        
+        if (bookingIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Booking not found or invalid cancellation link'
+            });
+        }
+        
+        const booking = bookings[bookingIndex];
+        
+        // Check if booking has already passed
+        const meetingDateTime = booking.meetingWhen.toDate ? booking.meetingWhen.toDate() : new Date(booking.meetingWhen);
+        if (meetingDateTime < new Date()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot cancel a booking that has already passed'
+            });
+        }
+        
+        // Remove booking from array
+        bookings.splice(bookingIndex, 1);
+        await meetingRef.update({ bookings });
+        
+        console.log(`[Public Booking] Booking cancelled successfully`);
+        
+        // Get calendar owner info
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.data();
+        const ownerInfo = await getUserInfo(userId);
+        
+        // Get notification email
+        let ownerEmail = userData.email;
+        const preferences = userData.calendarPreferences || {};
+        if (preferences.notificationEmail && preferences.notificationEmail.trim()) {
+            ownerEmail = preferences.notificationEmail.trim();
+        }
+        
+        // Send cancellation confirmation to booker
+        try {
+            await sendMailWithStatus({
+                to: booking.bookerInfo.email,
+                subject: `Booking Cancelled - ${ownerInfo.name}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #FF3B30;">Booking Cancelled</h2>
+                        <p>Hi ${booking.bookerInfo.name},</p>
+                        <p>Your booking with <strong>${ownerInfo.name}</strong> has been cancelled.</p>
+                        
+                        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                            <h3 style="margin-top: 0;">Cancelled Booking Details</h3>
+                            <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                            <p><strong>Duration:</strong> ${booking.duration} minutes</p>
+                        </div>
+                        
+                        <p>If you need to reschedule, you can book a new meeting at: ${process.env.API_BASE_URL || 'https://xscard.com'}/public/calendar/${userId}.html</p>
+                    </div>
+                `
+            });
+            console.log(`[Public Booking] Cancellation email sent to booker: ${booking.bookerInfo.email}`);
+        } catch (emailError) {
+            console.error('[Public Booking] Error sending booker cancellation email:', emailError);
+        }
+        
+        // Send cancellation notification to owner
+        if (ownerEmail) {
+            try {
+                await sendMailWithStatus({
+                    to: ownerEmail,
+                    subject: `Booking Cancelled: ${booking.bookerInfo.name}`,
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #FF3B30;">Booking Cancelled</h2>
+                            <p>Hi ${ownerInfo.name},</p>
+                            <p>A booking has been cancelled by <strong>${booking.bookerInfo.name}</strong>.</p>
+                            
+                            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                <h3 style="margin-top: 0;">Cancelled Booking Details</h3>
+                                <p><strong>Name:</strong> ${booking.bookerInfo.name}</p>
+                                <p><strong>Email:</strong> ${booking.bookerInfo.email}</p>
+                                <p><strong>Phone:</strong> ${booking.bookerInfo.phone}</p>
+                                <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                                <p><strong>Duration:</strong> ${booking.duration} minutes</p>
+                            </div>
+                            
+                            <p>This time slot is now available for other bookings.</p>
+                        </div>
+                    `
+                });
+                console.log(`[Public Booking] Cancellation email sent to owner: ${ownerEmail}`);
+            } catch (emailError) {
+                console.error('[Public Booking] Error sending owner cancellation email:', emailError);
+            }
+        }
+        
+        // Serve a simple HTML page confirming cancellation
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Booking Cancelled - XSCard</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 12px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+                        max-width: 500px;
+                        text-align: center;
+                    }
+                    .icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    h1 {
+                        color: #FF3B30;
+                        margin-bottom: 10px;
+                    }
+                    p {
+                        color: #666;
+                        line-height: 1.6;
+                        margin-bottom: 20px;
+                    }
+                    .details {
+                        background: #f5f5f5;
+                        padding: 20px;
+                        border-radius: 8px;
+                        margin: 20px 0;
+                        text-align: left;
+                    }
+                    .details p {
+                        margin: 8px 0;
+                        color: #333;
+                    }
+                    .button {
+                        display: inline-block;
+                        padding: 12px 24px;
+                        background: #007AFF;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        margin-top: 20px;
+                    }
+                    .button:hover {
+                        background: #0056b3;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">✓</div>
+                    <h1>Booking Cancelled</h1>
+                    <p>Your booking has been successfully cancelled.</p>
+                    
+                    <div class="details">
+                        <p><strong>Meeting with:</strong> ${ownerInfo.name}</p>
+                        <p><strong>Date:</strong> ${meetingDateTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        <p><strong>Time:</strong> ${meetingDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    
+                    <p>A confirmation email has been sent to ${booking.bookerInfo.email}</p>
+                    <p>If you need to reschedule, you can book a new meeting below.</p>
+                    
+                    <a href="${process.env.API_BASE_URL || 'https://xscard.com'}/public/calendar/${userId}.html" class="button">Book Another Meeting</a>
+                </div>
+            </body>
+            </html>
+        `);
+        
+    } catch (error) {
+        console.error('[Public Booking] Error cancelling booking:', error);
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Error - XSCard</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 12px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+                        max-width: 500px;
+                        text-align: center;
+                    }
+                    .icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    h1 {
+                        color: #FF3B30;
+                        margin-bottom: 10px;
+                    }
+                    p {
+                        color: #666;
+                        line-height: 1.6;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">⚠️</div>
+                    <h1>Error</h1>
+                    <p>Unable to cancel booking. The link may be invalid or the booking may have already been cancelled.</p>
+                    <p>Please contact support if you need assistance.</p>
+                </div>
+            </body>
+            </html>
+        `);
     }
 };

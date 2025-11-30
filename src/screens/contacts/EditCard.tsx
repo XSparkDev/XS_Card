@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking, ActivityIndicator } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -15,6 +15,8 @@ import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import { getAltNumber, saveAltNumber, AltNumberData } from '../../utils/tempAltNumber';
+import GradientAvatar from '../../components/GradientAvatar';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -53,6 +55,7 @@ export default function EditCard() {
   const navigation = useNavigation();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -87,6 +90,13 @@ export default function EditCard() {
   const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
   const [customColor, setCustomColor] = useState('#1B2B5B');
   const [showQuickColors, setShowQuickColors] = useState(false);
+  const [pickerInitialized, setPickerInitialized] = useState(false);
+  const [isHexEditing, setIsHexEditing] = useState(false);
+  const [template, setTemplate] = useState<number>(1);
+  // Alt number state
+  const [altNumber, setAltNumber] = useState('');
+  const [altCountryCode, setAltCountryCode] = useState('+27');
+  const [showAltNumber, setShowAltNumber] = useState(false);
 
   // Helper function to parse phone number and extract country code
   const parsePhoneNumber = (phone: string) => {
@@ -119,7 +129,22 @@ export default function EditCard() {
     loadUserData();
     }
     getUserPlan();
-  }, [cardData]);
+    loadAltNumber();
+  }, [cardData, cardIndex]);
+  
+  // Load alt number from temp file
+  const loadAltNumber = async () => {
+    try {
+      const altData = await getAltNumber(cardIndex);
+      if (altData) {
+        setAltNumber(altData.altNumber || '');
+        setAltCountryCode(altData.altCountryCode || '+27');
+        setShowAltNumber(altData.showAltNumber || false);
+      }
+    } catch (error) {
+      console.error('Error loading alt number:', error);
+    }
+  };
 
   // New function to load data from passed props (no API call)
   const loadCardDataFromProps = () => {
@@ -149,6 +174,11 @@ export default function EditCard() {
         companyLogo: cardData.companyLogo || '',
         logoZoomLevel: cardData.logoZoomLevel || 1.0,
       });
+      if (typeof cardData.template === 'number' && cardData.template >= 1) {
+        setTemplate(cardData.template);
+      } else {
+        setTemplate(1);
+      }
 
       // Set zoom level if it exists in the card data
       if (cardData.logoZoomLevel) {
@@ -216,6 +246,11 @@ export default function EditCard() {
           companyLogo: userData.companyLogo || '',
           logoZoomLevel: userData.logoZoomLevel || 1.0,
         });
+        if (typeof userData.template === 'number' && userData.template >= 1) {
+          setTemplate(userData.template);
+        } else {
+          setTemplate(1);
+        }
 
         // Set zoom level if it exists in the card data
         if (userData.logoZoomLevel) {
@@ -271,7 +306,7 @@ export default function EditCard() {
     { id: 'instagram' as SocialMediaPlatform, icon: 'instagram', label: 'Instagram', color: '#E4405F' },
   ];
 
-  const handleCancel = () => {
+  const handleBack = () => {
     navigation.goBack();
   };
 
@@ -302,9 +337,13 @@ export default function EditCard() {
         return;
       }
 
+      setIsSaving(true);
+      setError(''); // Clear any previous errors
+
       const userId = await getUserId();
       if (!userId) {
         setError('User ID not found');
+        setIsSaving(false);
         return;
       }
 
@@ -329,7 +368,8 @@ export default function EditCard() {
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
         logoZoomLevel: Number(zoomLevel) // Ensure it's a number
-      };
+      } as any;
+      cardData.template = template;
 
       console.log('Saving card with zoom level:', cardData.logoZoomLevel);
       console.log('Full card data:', JSON.stringify(cardData, null, 2));
@@ -350,12 +390,21 @@ export default function EditCard() {
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
       
+      // Save alt number to temp file
+      await saveAltNumber(cardIndex, {
+        altNumber,
+        altCountryCode,
+        showAltNumber,
+      });
+      
       setModalMessage('Card updated');
       setIsSuccessModalVisible(true);
+      setIsSaving(false);
 
     } catch (error) {
       console.error('Error updating card:', error);
       setError('Failed to update card');
+      setIsSaving(false);
     }
   };
 
@@ -814,11 +863,17 @@ export default function EditCard() {
     <View style={styles.container}>
       <Header title="Edit Card" />
       
-      {/* Cancel and Preview buttons */}
+      {/* Back, Preview and Save buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity onPress={handleCancel} style={styles.cancelButtonContainer}>
-          <Text style={styles.cancelButton}>Cancel</Text>
+
+
+        <TouchableOpacity onPress={handleBack}>
+            <View style={styles.previewButton}>
+            <MaterialIcons name="arrow-back" size={16} color="#666" />
+              <Text style={styles.previewButtonText}>Back</Text>
+            </View>
         </TouchableOpacity>
+        
         <View style={styles.rightButtons}>
           <TouchableOpacity onPress={handlePreview}>
             <View style={styles.previewButton}>
@@ -826,8 +881,12 @@ export default function EditCard() {
               <Text style={styles.previewButtonText}>Preview</Text>
             </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer}>
-          <Text style={styles.saveButton}>Save</Text>
+        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer} disabled={isSaving}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveButton}>Save</Text>
+          )}
         </TouchableOpacity>
         </View>
       </View>
@@ -979,14 +1038,17 @@ export default function EditCard() {
             {/* Profile Image Overlaying Logo */}
             <View style={styles.profileOverlayContainer}>
               <View style={styles.profileImageContainer}>
-                <Image
-                  style={styles.profileImage}
-                  source={
-                    formData.profileImage
-                      ? { uri: getImageUrl(formData.profileImage) }
-                      : require('../../../assets/images/profile.png')
-                  }
-                />
+                {formData.profileImage ? (
+                  <Image
+                    style={styles.profileImage}
+                    source={{ uri: getImageUrl(formData.profileImage) || '' }}
+                  />
+                ) : (
+                  <GradientAvatar 
+                    size={110}
+                    style={styles.profileImage}
+                  />
+                )}
                 <TouchableOpacity 
                   style={styles.editProfileButton}
                   onPress={handleProfileImageEdit}
@@ -994,6 +1056,82 @@ export default function EditCard() {
                   <MaterialIcons name="edit" size={24} color={COLORS.white} />
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+
+          {/* Template Selection */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Template</Text>
+            <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+              <TouchableOpacity
+                onPress={() => setTemplate(1)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 1 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 1 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 1</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(2)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 2 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 2 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 2</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(3)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 3 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 3 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 3</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(4)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 4 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 4 ? '#F6F7FF' : '#FFF',
+                  marginRight: 8
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 4</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setTemplate(5)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === 5 ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template 5</Text>
+              </TouchableOpacity>
             </View>
           </View>
           </View>
@@ -1053,6 +1191,24 @@ export default function EditCard() {
               onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
               placeholder="Phone number"
             />
+            
+            <PhoneNumberInput
+              value={altNumber}
+              onChangeText={(text) => setAltNumber(text)}
+              onCountryCodeChange={(code) => setAltCountryCode(code)}
+              placeholder="Alt number"
+            />
+            
+            {/* Toggle to show/hide alt number on card */}
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Show alt number on card</Text>
+              <TouchableOpacity
+                style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
+                onPress={() => setShowAltNumber(!showAltNumber)}
+              >
+                <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
+              </TouchableOpacity>
+            </View>
 
             {/* Social Media URL Inputs */}
             {selectedSocials.map((socialId) => (
@@ -1297,14 +1453,17 @@ export default function EditCard() {
                 {/* Profile Image */}
                 <View style={previewStyles.profileContainer}>
                   <View style={previewStyles.profileImageContainer}>
-                    <Image
-                      style={previewStyles.profileImage}
-                      source={
-                        formData.profileImage
-                          ? { uri: getImageUrl(formData.profileImage) }
-                          : require('../../../assets/images/profile.png')
-                      }
-                    />
+                    {formData.profileImage ? (
+                      <Image
+                        style={previewStyles.profileImage}
+                        source={{ uri: getImageUrl(formData.profileImage) || '' }}
+                      />
+                    ) : (
+                      <GradientAvatar 
+                        size={110}
+                        style={previewStyles.profileImage}
+                      />
+                    )}
                   </View>
                 </View>
               </View>
@@ -1382,6 +1541,13 @@ export default function EditCard() {
         animationOut="fadeOut"
         backdropOpacity={0.5}
         style={{ margin: 20 }}
+        propagateSwipe
+        useNativeDriver={false}
+        onModalShow={() => {
+          // Force ColorPicker to re-initialize when modal opens
+          setPickerInitialized(false);
+          setTimeout(() => setPickerInitialized(true), 100);
+        }}
       >
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>Choose Custom Color</Text>
@@ -1390,14 +1556,20 @@ export default function EditCard() {
           <View style={styles.visualColorPickerContainer}>
             <Text style={styles.colorPickerLabel}>Select your color:</Text>
             <View style={styles.professionalColorPicker}>
-              <ColorPicker
-                onColorChangeComplete={(color: string) => setCustomColor(color)}
-                color={customColor}
-                thumbSize={30}
-                sliderSize={30}
-                gapSize={10}
-                swatches={false}
-              />
+              {pickerInitialized && (
+                <ColorPicker
+                  // Update in real-time for iOS drag gestures
+                  onColorChange={isHexEditing ? undefined : (color: string) => setCustomColor(color)}
+                  onColorChangeComplete={isHexEditing ? undefined : (color: string) => setCustomColor(color)}
+                  color={customColor}
+                  thumbSize={36}
+                  sliderSize={36}
+                  gapSize={10}
+                  swatches={false}
+                  noSnap
+                  discrete={false}
+                />
+              )}
             </View>
           </View>
           
@@ -1414,14 +1586,19 @@ export default function EditCard() {
             <TextInput
               style={styles.colorInput}
               value={customColor}
+              onFocus={() => setIsHexEditing(true)}
+              onBlur={() => setIsHexEditing(false)}
               onChangeText={(text) => {
                 // Ensure it starts with # and is valid hex
                 let cleanText = text.replace(/[^0-9A-Fa-f]/g, '');
                 if (cleanText.length > 6) cleanText = cleanText.substring(0, 6);
-                setCustomColor('#' + cleanText);
+                setCustomColor('#' + cleanText.toUpperCase());
               }}
               placeholder="#000000"
               placeholderTextColor="#999"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              selectTextOnFocus
               maxLength={7}
             />
           </View>
@@ -1567,6 +1744,22 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: '500',
+  },
+  backButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  backButton: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 4,
   },
   previewButton: {
     flexDirection: 'row',
@@ -2036,6 +2229,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1976D2',
     flex: 1,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    paddingHorizontal: 5,
+  },
+  toggleLabel: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  toggleSwitch: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ccc',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleSwitchActive: {
+    backgroundColor: COLORS.secondary,
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    alignSelf: 'flex-start',
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end',
   },
   previewModalContainer: {
     flex: 1,
