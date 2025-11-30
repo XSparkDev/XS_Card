@@ -1362,19 +1362,14 @@
             
             if (allowedDurations.length > 0) {
                 const primaryDuration = allowedDurations[0];
-                const displayPrimary = primaryDuration + bufferTime;
                 if (allowedDurations.length === 1) {
-                    meetingTitle.textContent = `${displayPrimary} Minute Meeting`;
-                    meetingDuration.textContent = bufferTime
-                        ? `${primaryDuration} min session + ${bufferTime} min buffer`
-                        : `${primaryDuration} min appointments`;
+                    meetingTitle.textContent = `${primaryDuration} Minute Meeting`;
+                    meetingDuration.textContent = `${primaryDuration} min appointments`;
                 } else {
-                    const minDisplay = Math.min(...allowedDurations) + bufferTime;
-                    const maxDisplay = Math.max(...allowedDurations) + bufferTime;
+                    const minDisplay = Math.min(...allowedDurations);
+                    const maxDisplay = Math.max(...allowedDurations);
                     meetingTitle.textContent = `${maxDisplay} Minute Meeting`;
-                    meetingDuration.textContent = bufferTime
-                        ? `${minDisplay}-${maxDisplay} min (incl. ${bufferTime} min buffer)`
-                        : `${Math.min(...allowedDurations)}-${Math.max(...allowedDurations)} min appointments`;
+                    meetingDuration.textContent = `${minDisplay}-${maxDisplay} min appointments`;
                 }
             }
         }
@@ -1753,8 +1748,7 @@
                 availableDurations.forEach(duration => {
                     const pill = document.createElement('div');
                     pill.className = 'duration-pill';
-                    const displayDuration = duration + bufferTime;
-                    pill.textContent = bufferTime ? `${displayDuration} min (incl. buffer)` : `${duration} min`;
+                    pill.textContent = `${duration} min`;
                     pill.onclick = () => selectDuration(duration);
                     container.appendChild(pill);
                 });
@@ -1796,10 +1790,7 @@
             });
             
             const formattedTime = formatTime12Hour(selectedTime);
-            const totalDuration = selectedDuration + bufferTime;
-            subtitle.textContent = bufferTime
-                ? `${dateStr} at ${formattedTime} (${totalDuration} minutes total)`
-                : `${dateStr} at ${formattedTime} (${selectedDuration} minutes)`;
+            subtitle.textContent = `${dateStr} at ${formattedTime} (${selectedDuration} minutes)`;
             modal.classList.add('active');
         }
 

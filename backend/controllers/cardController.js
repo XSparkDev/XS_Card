@@ -162,7 +162,10 @@ exports.addCard = async (req, res) => {
             phone, 
             title, 
             name,
-            surname
+            surname,
+            altNumber,
+            altCountryCode,
+            showAltNumber
         } = req.body;
 
         // Validate fields are not only present but also have values
@@ -196,6 +199,9 @@ exports.addCard = async (req, res) => {
             companyLogoUrl = req.firebaseStorageUrls.companyLogo || null;
         }
 
+        // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
+        const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
+        
         const newCard = {
             company,
             email,
@@ -208,7 +214,10 @@ exports.addCard = async (req, res) => {
             colorScheme: '#1B2B5B',
             createdAt: admin.firestore.Timestamp.now(), // Store as Firestore Timestamp
             profileImage: profileImageUrl,
-            companyLogo: companyLogoUrl
+            companyLogo: companyLogoUrl,
+            altNumber: altNumber || '',
+            altCountryCode: altCountryCode || '+27',
+            showAltNumber: parsedShowAltNumber || false
         };
 
         console.log('Creating new card:', newCard); // Debug log

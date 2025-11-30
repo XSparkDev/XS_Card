@@ -5,9 +5,7 @@
  */
 export enum WidgetSize {
   SMALL = 'small',      // 2x2 grid
-  MEDIUM = 'medium',    // 4x2 grid  
-  LARGE = 'large',      // 4x4 grid
-  EXTRA_LARGE = 'xl'    // 6x4 grid
+  LARGE = 'large'       // 4x4 grid
 }
 
 /**
@@ -75,6 +73,7 @@ export interface WidgetData {
   // Metadata
   createdAt: string;
   lastUpdated: string;
+  version: string; // Schema version for migration support
 }
 
 /**
@@ -114,6 +113,7 @@ export interface WidgetConfig {
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
+  version: string; // Schema version for migration support
 }
 
 /**
@@ -269,5 +269,6 @@ export const isWidgetData = (value: any): value is WidgetData => {
          typeof value.phone === 'string' &&
          typeof value.company === 'string' &&
          typeof value.occupation === 'string' &&
-         typeof value.colorScheme === 'string';
+         typeof value.colorScheme === 'string' &&
+         (typeof value.version === 'string' || value.version === undefined); // Version is optional for backward compatibility
 };

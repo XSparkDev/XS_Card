@@ -141,7 +141,7 @@ export function testWidgetTypes() {
   console.log('🧪 Testing Widget Types...\n');
 
   // Test enum values
-  console.log('Widget Sizes:', [WidgetSize.SMALL, WidgetSize.MEDIUM, WidgetSize.LARGE, WidgetSize.EXTRA_LARGE]);
+  console.log('Widget Sizes:', [WidgetSize.SMALL, WidgetSize.LARGE]);
   console.log('Display Modes:', [WidgetDisplayMode.QR_CODE, WidgetDisplayMode.CARD_INFO, WidgetDisplayMode.HYBRID, WidgetDisplayMode.MINIMAL]);
   console.log('Themes:', [WidgetTheme.LIGHT, WidgetTheme.DARK, WidgetTheme.AUTO, WidgetTheme.CUSTOM]);
   console.log('Update Frequencies:', [WidgetUpdateFrequency.NEVER, WidgetUpdateFrequency.HOURLY, WidgetUpdateFrequency.DAILY, WidgetUpdateFrequency.WEEKLY, WidgetUpdateFrequency.ON_CHANGE]);

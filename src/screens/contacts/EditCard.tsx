@@ -15,8 +15,16 @@ import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
-import { getAltNumber, saveAltNumber, AltNumberData } from '../../utils/tempAltNumber';
+import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
+import CardTemplate2 from '../../components/cards/CardTemplate2';
+import CardTemplate3 from '../../components/cards/CardTemplate3';
+import CardTemplate4 from '../../components/cards/CardTemplate4';
+import CardTemplate5 from '../../components/cards/CardTemplate5';
+import WidgetConfigModal from '../../components/widgets/WidgetConfigModal';
+import WidgetCard from '../../components/widgets/WidgetCard';
+import { WidgetManager } from '../../widgets/WidgetManager';
+import { WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -97,6 +105,12 @@ export default function EditCard() {
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
   const [showAltNumber, setShowAltNumber] = useState(false);
+  
+  // Widget state
+  const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
+  const [activeWidgets, setActiveWidgets] = useState<WidgetConfig[]>([]);
+  const [editingWidget, setEditingWidget] = useState<WidgetConfig | undefined>();
+  const widgetManager = WidgetManager.getInstance();
 
   // Helper function to parse phone number and extract country code
   const parsePhoneNumber = (phone: string) => {
@@ -129,7 +143,8 @@ export default function EditCard() {
     loadUserData();
     }
     getUserPlan();
-    loadAltNumber();
+    loadActiveWidgets();
+    // Alt number loading is now handled in loadCardDataFromProps and loadUserData
   }, [cardData, cardIndex]);
   
   // Load alt number from temp file
@@ -187,6 +202,16 @@ export default function EditCard() {
       } else {
         console.log('No saved zoom level found, using default 1.0');
         setZoomLevel(1.0);
+      }
+
+      // Load alt number from card data (backend) with fallback to AsyncStorage
+      if (cardData.altNumber !== undefined || cardData.altCountryCode !== undefined || cardData.showAltNumber !== undefined) {
+        setAltNumber(cardData.altNumber || '');
+        setAltCountryCode(cardData.altCountryCode || '+27');
+        setShowAltNumber(cardData.showAltNumber || false);
+      } else {
+        // Fallback to AsyncStorage for backward compatibility during migration
+        loadAltNumber();
       }
 
       setLoading(false);
@@ -261,6 +286,16 @@ export default function EditCard() {
           setZoomLevel(1.0);
         }
 
+        // Load alt number from card data (backend) with fallback to AsyncStorage
+        if (userData.altNumber !== undefined || userData.altCountryCode !== undefined || userData.showAltNumber !== undefined) {
+          setAltNumber(userData.altNumber || '');
+          setAltCountryCode(userData.altCountryCode || '+27');
+          setShowAltNumber(userData.showAltNumber || false);
+        } else {
+          // Fallback to AsyncStorage for backward compatibility during migration
+          loadAltNumber();
+        }
+
         const existingSocials = Object.entries(userData.socials || {})
           .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
           .map(([key]) => key);
@@ -285,6 +320,82 @@ export default function EditCard() {
     } catch (error) {
       console.error('Error fetching user plan:', error);
     }
+  };
+
+  // Load active widgets for this card
+  const loadActiveWidgets = async () => {
+    try {
+      const widgets = await widgetManager.getWidgetsByCardIndex(cardIndex);
+      setActiveWidgets(widgets);
+    } catch (error) {
+      console.error('Error loading widgets:', error);
+    }
+  };
+
+  // Save widget configuration
+  const handleSaveWidget = async (config: Partial<WidgetConfig>) => {
+    try {
+      const widgetData: Partial<WidgetData> = {
+        cardIndex,
+        cardId: `card_${cardIndex}`,
+        name: formData.firstName,
+        surname: formData.lastName,
+        email: formData.email,
+        phone: `${formData.countryCode}${formData.phoneNumber}`,
+        company: formData.company,
+        occupation: formData.occupation,
+        profileImage: formData.profileImage,
+        companyLogo: formData.companyLogo,
+        colorScheme: selectedColor,
+        socials: {},
+      };
+
+      if (editingWidget) {
+        // Update existing widget
+        await widgetManager.updateWidgetConfig(cardIndex, config);
+      } else {
+        // Create new widget
+        await widgetManager.createWidget(cardIndex, widgetData as WidgetData);
+      }
+
+      await loadActiveWidgets();
+      setEditingWidget(undefined);
+      Alert.alert('Success', 'Widget configured successfully!');
+    } catch (error) {
+      console.error('Error saving widget:', error);
+      throw error;
+    }
+  };
+
+  // Edit widget
+  const handleEditWidget = (widget: WidgetConfig) => {
+    setEditingWidget(widget);
+    setIsWidgetConfigVisible(true);
+  };
+
+  // Delete widget
+  const handleDeleteWidget = async (widget: WidgetConfig) => {
+    Alert.alert(
+      'Delete Widget',
+      'Are you sure you want to delete this widget?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await widgetManager.deleteWidget(widget.cardIndex);
+              await loadActiveWidgets();
+              Alert.alert('Success', 'Widget deleted successfully');
+            } catch (error) {
+              console.error('Error deleting widget:', error);
+              Alert.alert('Error', 'Failed to delete widget');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Add this type for the socials array
@@ -367,7 +478,10 @@ export default function EditCard() {
         colorScheme: selectedColor,
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
-        logoZoomLevel: Number(zoomLevel) // Ensure it's a number
+        logoZoomLevel: Number(zoomLevel), // Ensure it's a number
+        altNumber: altNumber || '',
+        altCountryCode: altCountryCode || '+27',
+        showAltNumber: showAltNumber || false
       } as any;
       cardData.template = template;
 
@@ -390,16 +504,34 @@ export default function EditCard() {
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
       
-      // Save alt number to temp file
-      await saveAltNumber(cardIndex, {
-        altNumber,
-        altCountryCode,
-        showAltNumber,
-      });
+      // Alt number is now saved to backend, no need for AsyncStorage
       
       setModalMessage('Card updated');
       setIsSuccessModalVisible(true);
       setIsSaving(false);
+      
+      // Sync widget data after successful card update
+      try {
+        const widgetData: Partial<WidgetData> = {
+          cardIndex,
+          name: formData.firstName,
+          surname: formData.lastName,
+          email: formData.email,
+          phone: `${formData.countryCode}${formData.phoneNumber}`,
+          company: formData.company,
+          occupation: formData.occupation,
+          profileImage: formData.profileImage,
+          companyLogo: formData.companyLogo,
+          colorScheme: selectedColor,
+          socials: {},
+        };
+        
+        await widgetManager.updateWidgetData(cardIndex, widgetData as any);
+        console.log('Widget data synced successfully');
+      } catch (widgetError) {
+        console.error('Error syncing widget data:', widgetError);
+        // Don't fail the whole save operation if widget sync fails
+      }
 
     } catch (error) {
       console.error('Error updating card:', error);
@@ -462,7 +594,7 @@ export default function EditCard() {
         // Show permission request modal for iOS only
         Alert.alert(
           'Permission Required', 
-          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
@@ -519,7 +651,7 @@ export default function EditCard() {
         // Show permission request modal for iOS only
         Alert.alert(
           'Permission Required', 
-          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
@@ -859,6 +991,38 @@ export default function EditCard() {
     setIsPreviewModalVisible(true);
   };
 
+  // Handler for template selection - auto-opens preview
+  const handleTemplateSelect = (templateNumber: number) => {
+    setTemplate(templateNumber);
+    // Auto-open preview when template is selected
+    setIsPreviewModalVisible(true);
+  };
+
+  // Helper function to build card object for preview
+  const buildCardObject = () => {
+    const socialFields: { [key: string]: string } = {};
+    selectedSocials.forEach(socialId => {
+      if (formData[socialId]) {
+        socialFields[socialId] = formData[socialId] as string;
+      }
+    });
+
+    return {
+      name: formData.firstName || '',
+      surname: formData.lastName || '',
+      occupation: formData.occupation || '',
+      company: formData.company || '',
+      email: formData.email || '',
+      phone: `${formData.countryCode}${formData.phoneNumber}`,
+      socials: socialFields,
+      colorScheme: selectedColor,
+      profileImage: formData.profileImage || null,
+      companyLogo: formData.companyLogo || null,
+      logoZoomLevel: zoomLevel,
+      template: template,
+    };
+  };
+
   return (
     <View style={styles.container}>
       <Header title="Edit Card" />
@@ -1064,7 +1228,7 @@ export default function EditCard() {
             <Text style={styles.sectionTitle}>Template</Text>
             <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
               <TouchableOpacity
-                onPress={() => setTemplate(1)}
+                onPress={() => handleTemplateSelect(1)}
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 14,
@@ -1078,7 +1242,7 @@ export default function EditCard() {
                 <Text style={{ color: COLORS.black }}>Template 1</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setTemplate(2)}
+                onPress={() => handleTemplateSelect(2)}
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 14,
@@ -1092,7 +1256,7 @@ export default function EditCard() {
                 <Text style={{ color: COLORS.black }}>Template 2</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setTemplate(3)}
+                onPress={() => handleTemplateSelect(3)}
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 14,
@@ -1106,7 +1270,7 @@ export default function EditCard() {
                 <Text style={{ color: COLORS.black }}>Template 3</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setTemplate(4)}
+                onPress={() => handleTemplateSelect(4)}
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 14,
@@ -1120,7 +1284,7 @@ export default function EditCard() {
                 <Text style={{ color: COLORS.black }}>Template 4</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setTemplate(5)}
+                onPress={() => handleTemplateSelect(5)}
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 14,
@@ -1296,6 +1460,48 @@ export default function EditCard() {
           </View>
           </View>
 
+          {/* Widget Management Section */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Home Screen Widget</Text>
+            <Text style={styles.sectionSubtitle}>
+              Add your card to your home screen for quick access
+            </Text>
+
+            {activeWidgets.length === 0 ? (
+              <TouchableOpacity
+                style={styles.createWidgetButton}
+                onPress={() => {
+                  setEditingWidget(undefined);
+                  setIsWidgetConfigVisible(true);
+                }}
+              >
+                <MaterialIcons name="widgets" size={24} color={COLORS.white} />
+                <Text style={styles.createWidgetButtonText}>Create Widget</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                {activeWidgets.map((widget) => (
+                  <WidgetCard
+                    key={widget.id}
+                    widget={widget}
+                    onEdit={() => handleEditWidget(widget)}
+                    onDelete={() => handleDeleteWidget(widget)}
+                  />
+                ))}
+                <TouchableOpacity
+                  style={styles.addAnotherWidgetButton}
+                  onPress={() => {
+                    setEditingWidget(undefined);
+                    setIsWidgetConfigVisible(true);
+                  }}
+                >
+                  <MaterialIcons name="add" size={20} color={COLORS.primary} />
+                  <Text style={styles.addAnotherWidgetButtonText}>Add Another Widget</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
           {/* Delete Button */}
           {userPlan !== 'free' && (
             <TouchableOpacity 
@@ -1423,92 +1629,153 @@ export default function EditCard() {
           
           <ScrollView style={previewStyles.cardScrollView}>
             <View style={previewStyles.cardContainer}>
-              {/* QR Code Placeholder */}
-              <View style={previewStyles.qrContainer}>
-                <View style={previewStyles.qrPlaceholder}>
-                  <MaterialIcons name="qr-code-2" size={80} color="#ccc" />
-                  <Text style={previewStyles.qrText}>QR Code</Text>
-                </View>
-              </View>
-              
-              {/* Company Logo and Profile Image */}
-              <View style={previewStyles.logoContainer}>
-                <View style={previewStyles.logoFrame}>
-                  <Image 
-                    source={formData.companyLogo ? 
-                      { uri: getImageUrl(formData.companyLogo) } : 
-                      require('../../../assets/images/logoplaceholder.jpg')
-                    }
-                    style={{ 
-                      width: '100%', 
-                      height: '100%',
-                      transform: [{ scale: zoomLevel }],
-                      opacity: 1,
-                    }}
-                    resizeMode="contain"
-                    fadeDuration={300}
-                  />
-                </View>
-                
-                {/* Profile Image */}
-                <View style={previewStyles.profileContainer}>
-                  <View style={previewStyles.profileImageContainer}>
-                    {formData.profileImage ? (
-                      <Image
-                        style={previewStyles.profileImage}
-                        source={{ uri: getImageUrl(formData.profileImage) || '' }}
-                      />
-                    ) : (
-                      <GradientAvatar 
-                        size={110}
-                        style={previewStyles.profileImage}
-                      />
-                    )}
+              {/* Render templates based on selected template */}
+              {template === 1 ? (
+                // Template 1 - Original hardcoded preview
+                <>
+                  {/* QR Code Placeholder */}
+                  <View style={previewStyles.qrContainer}>
+                    <View style={previewStyles.qrPlaceholder}>
+                      <MaterialIcons name="qr-code-2" size={80} color="#ccc" />
+                      <Text style={previewStyles.qrText}>QR Code</Text>
+                    </View>
                   </View>
-                </View>
-              </View>
-              
-              {/* Basic Info - these should NOT use the color scheme as per user's request */}
-              <Text style={previewStyles.name}>
-                {`${formData.firstName} ${formData.lastName}`}
-              </Text>
-              <Text style={previewStyles.position}>
-                {formData.occupation}
-              </Text>
-              <Text style={previewStyles.company}>
-                {formData.company}
-              </Text>
-              
-              {/* Contact Info - SHOULD use the color scheme */}
-              <TouchableOpacity style={previewStyles.contactSection}>
-                <MaterialCommunityIcons name="email-outline" size={24} color={selectedColor} />
-                <Text style={previewStyles.contactText}>{formData.email}</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={previewStyles.contactSection}>
-                <MaterialCommunityIcons name="phone-outline" size={24} color={selectedColor} />
-                <Text style={previewStyles.contactText}>{`${formData.countryCode}${formData.phoneNumber}`}</Text>
-              </TouchableOpacity>
-              
-              {/* Social Links - SHOULD use the color scheme */}
-              {selectedSocials.map(socialId => {
-                const social = socials.find(s => s.id === socialId);
-                if (social && formData[socialId]) {
-                  return (
-                    <TouchableOpacity key={socialId} style={previewStyles.contactSection}>
-                      <MaterialCommunityIcons 
-                        name={social.icon} 
-                        size={24} 
-                        color={selectedColor} 
+                  
+                  {/* Company Logo and Profile Image */}
+                  <View style={previewStyles.logoContainer}>
+                    <View style={previewStyles.logoFrame}>
+                      <Image 
+                        source={formData.companyLogo ? 
+                          { uri: getImageUrl(formData.companyLogo) } : 
+                          require('../../../assets/images/logoplaceholder.jpg')
+                        }
+                        style={{ 
+                          width: '100%', 
+                          height: '100%',
+                          transform: [{ scale: zoomLevel }],
+                          opacity: 1,
+                        }}
+                        resizeMode="contain"
+                        fadeDuration={300}
                       />
-                      <Text style={previewStyles.contactText}>
-                        {formData[socialId]?.toString() || ''}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-                return null;
-              })}
+                    </View>
+                    
+                    {/* Profile Image */}
+                    <View style={previewStyles.profileContainer}>
+                      <View style={previewStyles.profileImageContainer}>
+                        {formData.profileImage ? (
+                          <Image
+                            style={previewStyles.profileImage}
+                            source={{ uri: getImageUrl(formData.profileImage) || '' }}
+                          />
+                        ) : (
+                          <GradientAvatar 
+                            size={110}
+                            style={previewStyles.profileImage}
+                          />
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                  
+                  {/* Basic Info - these should NOT use the color scheme as per user's request */}
+                  <Text style={previewStyles.name}>
+                    {`${formData.firstName} ${formData.lastName}`}
+                  </Text>
+                  <Text style={previewStyles.position}>
+                    {formData.occupation}
+                  </Text>
+                  <Text style={previewStyles.company}>
+                    {formData.company}
+                  </Text>
+                  
+                  {/* Contact Info - SHOULD use the color scheme */}
+                  <TouchableOpacity style={previewStyles.contactSection}>
+                    <MaterialCommunityIcons name="email-outline" size={24} color={selectedColor} />
+                    <Text style={previewStyles.contactText}>{formData.email}</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={previewStyles.contactSection}>
+                    <MaterialCommunityIcons name="phone-outline" size={24} color={selectedColor} />
+                    <Text style={previewStyles.contactText}>{`${formData.countryCode}${formData.phoneNumber}`}</Text>
+                  </TouchableOpacity>
+                  
+                  {/* Social Links - SHOULD use the color scheme */}
+                  {selectedSocials.map(socialId => {
+                    const social = socials.find(s => s.id === socialId);
+                    if (social && formData[socialId]) {
+                      return (
+                        <TouchableOpacity key={socialId} style={previewStyles.contactSection}>
+                          <MaterialCommunityIcons 
+                            name={social.icon} 
+                            size={24} 
+                            color={selectedColor} 
+                          />
+                          <Text style={previewStyles.contactText}>
+                            {formData[socialId]?.toString() || ''}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }
+                    return null;
+                  })}
+                </>
+              ) : template === 2 ? (
+                <CardTemplate2
+                  card={buildCardObject()}
+                  qrUri={undefined}
+                  colorFallback={selectedColor}
+                  isWalletLoading={false}
+                  onPressShare={() => {}}
+                  onPressWallet={() => {}}
+                  onPressEmail={() => {}}
+                  onPressPhone={() => {}}
+                  onPressSocial={() => {}}
+                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+                />
+              ) : template === 3 ? (
+                <CardTemplate3
+                  card={buildCardObject()}
+                  qrUri={undefined}
+                  colorFallback={selectedColor}
+                  isWalletLoading={false}
+                  onPressShare={() => {}}
+                  onPressWallet={() => {}}
+                  onPressEmail={() => {}}
+                  onPressPhone={() => {}}
+                  onPressSocial={() => {}}
+                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+                />
+              ) : template === 4 ? (
+                <CardTemplate4
+                  card={buildCardObject()}
+                  qrUri={undefined}
+                  colorFallback={selectedColor}
+                  isWalletLoading={false}
+                  onPressShare={() => {}}
+                  onPressWallet={() => {}}
+                  onPressEmail={() => {}}
+                  onPressPhone={() => {}}
+                  onPressSocial={() => {}}
+                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+                />
+              ) : template === 5 ? (
+                <CardTemplate5
+                  card={buildCardObject()}
+                  qrUri={undefined}
+                  colorFallback={selectedColor}
+                  isWalletLoading={false}
+                  onPressShare={() => {}}
+                  onPressWallet={() => {}}
+                  onPressEmail={() => {}}
+                  onPressPhone={() => {}}
+                  onPressSocial={() => {}}
+                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+                />
+              ) : (
+                // Fallback to template 1
+                <Text>Template not found</Text>
+              )}
             </View>
           </ScrollView>
           
@@ -1532,6 +1799,31 @@ export default function EditCard() {
           </View>
         </SafeAreaView>
       </RNModal>
+
+      {/* Widget Configuration Modal */}
+      <WidgetConfigModal
+        visible={isWidgetConfigVisible}
+        onClose={() => {
+          setIsWidgetConfigVisible(false);
+          setEditingWidget(undefined);
+        }}
+        onSave={handleSaveWidget}
+        cardData={{
+          cardIndex,
+          cardId: `card_${cardIndex}`,
+          name: formData.firstName,
+          surname: formData.lastName,
+          email: formData.email,
+          phone: `${formData.countryCode}${formData.phoneNumber}`,
+          company: formData.company,
+          occupation: formData.occupation,
+          profileImage: formData.profileImage,
+          companyLogo: formData.companyLogo,
+          colorScheme: selectedColor,
+          socials: {},
+        }}
+        existingConfig={editingWidget}
+      />
 
       {/* Custom Color Picker Modal */}
       <Modal
@@ -2129,6 +2421,40 @@ const styles = StyleSheet.create({
   deleteButtonDisabled: {
     backgroundColor: '#ccc',
     opacity: 0.7,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: COLORS.gray,
+    marginBottom: 16,
+  },
+  createWidgetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  createWidgetButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  addAnotherWidgetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryLight,
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 6,
+  },
+  addAnotherWidgetButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   disabledInput: {
     backgroundColor: '#E8E8E8',

@@ -26,10 +26,13 @@ import {
   EventDetailsResponse,
   EventRegistration,
   EventRegistrationResponse,
+  EventInstance,
 } from '../../types/events';
 import { enhanceEventsWithOrganizerInfo, publishEvent } from '../../services/eventService';
 import { canBulkRegister } from '../../utils/bulkRegistrationUtils';
 import BulkRegistrationModal from '../../components/bulk/BulkRegistrationModal';
+import { getEventInstances } from '../../utils/api';
+import EventInstanceList from '../../components/events/EventInstanceList';
 
 // Navigation types
 type RootStackParamList = {
@@ -42,6 +45,7 @@ type RootStackParamList = {
   EditEvent: { eventId: string; event?: Event };
   EventAnalytics: { event: Event };
   PaymentPending: { eventId: string; paymentUrl?: string; paymentReference?: string; paymentType?: string; registrationId?: string };
+  RecurringSeriesManagement: { eventId: string; event?: Event };
 };
 
 type EventDetailsRouteProp = RouteProp<RootStackParamList, 'EventDetails'>;
@@ -65,6 +69,11 @@ export default function EventDetailsScreen() {
   const [publishing, setPublishing] = useState(false);
   const [checkingPendingPayment, setCheckingPendingPayment] = useState(false);
   const [showBulkRegistration, setShowBulkRegistration] = useState(false);
+  // Recurring events state
+  const [instances, setInstances] = useState<EventInstance[]>([]);
+  const [loadingInstances, setLoadingInstances] = useState(false);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
+  const [hasMoreInstances, setHasMoreInstances] = useState(false);
 
   // Load event details
   useEffect(() => {
@@ -248,6 +257,11 @@ export default function EventDetailsScreen() {
         setUserRegistration(data.data.userRegistration || null);
         setIsOrganizer(data.data.isOrganizer);
         addToRecentEvents(eventData);
+
+        // Load instances if recurring event
+        if (eventData.isRecurring && eventData.recurrencePattern) {
+          loadEventInstances(eventData.id);
+        }
       } else {
         throw new Error('Failed to load event details');
       }
@@ -264,9 +278,42 @@ export default function EventDetailsScreen() {
     }
   };
 
+  // Load event instances for recurring events
+  const loadEventInstances = async (eventId: string, loadMore = false) => {
+    try {
+      setLoadingInstances(true);
+      const limit = 12;
+      const startIndex = loadMore ? instances.length : 0;
+      
+      const fetchedInstances = await getEventInstances(eventId, {
+        limit,
+        startDate: new Date().toISOString().split('T')[0],
+      });
+
+      if (loadMore) {
+        setInstances(prev => [...prev, ...fetchedInstances]);
+      } else {
+        setInstances(fetchedInstances);
+      }
+      
+      setHasMoreInstances(fetchedInstances.length >= limit);
+    } catch (error) {
+      console.error('Error loading event instances:', error);
+      toast.error('Error', 'Failed to load event instances');
+    } finally {
+      setLoadingInstances(false);
+    }
+  };
+
   // Handle event registration
   const handleRegister = async () => {
     if (!event) return;
+
+    // For recurring events, require instance selection
+    if (event.isRecurring && !selectedInstanceId) {
+      toast.warning('Select Instance', 'Please select an instance to register for.');
+      return;
+    }
 
     try {
       setRegistering(true);
@@ -277,6 +324,26 @@ export default function EventDetailsScreen() {
         return;
       }
 
+      // For recurring events, check instance availability
+      if (event.isRecurring && selectedInstanceId) {
+        const selectedInstance = instances.find(i => i.instanceId === selectedInstanceId);
+        if (selectedInstance) {
+          if (selectedInstance.maxAttendees > 0 && selectedInstance.attendeeCount >= selectedInstance.maxAttendees) {
+            toast.warning('Instance Full', 'This instance is at full capacity.');
+            return;
+          }
+        }
+      }
+
+      const requestBody: any = {
+        specialRequests: '',
+      };
+
+      // Include instanceId for recurring events
+      if (event.isRecurring && selectedInstanceId) {
+        requestBody.instanceId = selectedInstanceId;
+      }
+
       const response = await authenticatedFetchWithRefresh(
         ENDPOINTS.REGISTER_EVENT.replace(':eventId', eventId),
         {
@@ -284,9 +351,7 @@ export default function EventDetailsScreen() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            specialRequests: '', // You can add a text input for this later
-          }),
+          body: JSON.stringify(requestBody),
         }
       );
 
@@ -330,10 +395,15 @@ export default function EventDetailsScreen() {
           currentAttendees: prev.currentAttendees + 1
         } : null);
 
-        toast.success(
-          'Registration Successful!',
-          `You've successfully registered for ${event.title}. You should receive a confirmation email shortly.`
-        );
+        const instanceInfo = event.isRecurring && selectedInstanceId
+          ? instances.find(i => i.instanceId === selectedInstanceId)
+          : null;
+        
+        const successMessage = instanceInfo
+          ? `You've successfully registered for ${event.title} on ${instanceInfo.date} at ${instanceInfo.localTimeFormatted}.`
+          : `You've successfully registered for ${event.title}. You should receive a confirmation email shortly.`;
+
+        toast.success('Registration Successful!', successMessage);
       } else {
         throw new Error(data.message || 'Registration failed');
       }
@@ -742,16 +812,78 @@ export default function EventDetailsScreen() {
             <Text style={styles.description}>{event.description}</Text>
           </View>
 
-          {/* Date and Time */}
-          <View style={styles.section}>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="schedule" size={24} color={COLORS.primary} />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoTitle}>Date & Time</Text>
-                <Text style={styles.infoText}>{dateTime.date}</Text>
-                <Text style={styles.infoSubtext}>{dateTime.time}</Text>
+          {/* Recurrence Info */}
+          {event.isRecurring && event.recurrencePattern && (
+            <View style={styles.section}>
+              <View style={styles.infoRow}>
+                <MaterialIcons name="repeat" size={24} color={COLORS.primary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoTitle}>Recurring Event</Text>
+                  <Text style={styles.infoText}>
+                    {event.recurrenceDisplayText || event.displayText || 'Recurring event series'}
+                  </Text>
+                  {isOrganizer && (
+                    <TouchableOpacity
+                      style={styles.manageSeriesButton}
+                      onPress={() => {
+                        navigation.navigate('RecurringSeriesManagement', {
+                          eventId: event.id,
+                          event: event,
+                        });
+                      }}
+                    >
+                      <Text style={styles.manageSeriesText}>Manage Series</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
+          )}
+
+          {/* Date and Time */}
+          <View style={styles.section}>
+            {event.isRecurring ? (
+              <View>
+                <View style={styles.infoRow}>
+                  <MaterialIcons name="schedule" size={24} color={COLORS.primary} />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoTitle}>Select Instance</Text>
+                    <Text style={styles.infoSubtext}>
+                      Choose a date and time to register for
+                    </Text>
+                  </View>
+                </View>
+                <EventInstanceList
+                  eventId={event.id}
+                  instances={instances}
+                  onInstanceSelect={(instance) => setSelectedInstanceId(instance.instanceId)}
+                  onRegister={handleRegister}
+                  isOrganizer={isOrganizer}
+                  userRegistrations={userRegistration?.instanceId ? [userRegistration.instanceId] : []}
+                  loading={loadingInstances}
+                  hasMore={hasMoreInstances}
+                  onLoadMore={() => loadEventInstances(event.id, true)}
+                />
+                {selectedInstanceId && (
+                  <View style={styles.selectedInstanceContainer}>
+                    <MaterialIcons name="check-circle" size={20} color={COLORS.primary} />
+                    <Text style={styles.selectedInstanceText}>
+                      Selected: {instances.find(i => i.instanceId === selectedInstanceId)?.date} at{' '}
+                      {instances.find(i => i.instanceId === selectedInstanceId)?.localTimeFormatted}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.infoRow}>
+                <MaterialIcons name="schedule" size={24} color={COLORS.primary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoTitle}>Date & Time</Text>
+                  <Text style={styles.infoText}>{dateTime.date}</Text>
+                  <Text style={styles.infoSubtext}>{dateTime.time}</Text>
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Location */}
@@ -885,16 +1017,25 @@ export default function EventDetailsScreen() {
         ) : canRegister ? (
           <View style={styles.registrationButtonsContainer}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.primaryButton, { flex: 1, marginRight: 8 }]}
+              style={[
+                styles.actionButton,
+                styles.primaryButton,
+                { flex: 1, marginRight: 8 },
+                event.isRecurring && !selectedInstanceId && styles.actionButtonDisabled,
+              ]}
               onPress={handleRegister}
-              disabled={registering}
+              disabled={registering || (event.isRecurring && !selectedInstanceId)}
             >
               {registering ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <>
                   <MaterialIcons name="event-available" size={20} color={COLORS.white} />
-                  <Text style={styles.actionButtonText}>Register</Text>
+                  <Text style={styles.actionButtonText}>
+                    {event.isRecurring && selectedInstanceId
+                      ? `Register for ${instances.find(i => i.instanceId === selectedInstanceId)?.date}`
+                      : 'Register'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1113,6 +1254,9 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: COLORS.background,
   },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
   actionButtonText: {
     fontSize: 16,
     fontWeight: '600',
@@ -1269,5 +1413,32 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  manageSeriesButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.primary + '20',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  manageSeriesText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  selectedInstanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: COLORS.primary + '10',
+    borderRadius: 8,
+  },
+  selectedInstanceText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.primary,
   },
 }); 

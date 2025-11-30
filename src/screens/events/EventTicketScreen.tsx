@@ -509,7 +509,7 @@ export const EventTicketScreen: React.FC = () => {
           )}
         </View>
 
-          {/* XSCard Branding removed; logo now in header row */}
+          {/* XS Card Branding removed; logo now in header row */}
       </View>
 
       {/* Important Notes */}

@@ -8,20 +8,20 @@ export const PRIVACY_POLICY_SECTIONS: LegalSection[] = [
   {
     heading: "Our Privacy Principles",
     body: [
-      "At the core of XSCard's product is the enablement of sharing your information with those you want to share with. As a result, data privacy is critical to the product we offer. At XSCard, we believe in the importance of being able to control who gets that information.",
+      "At the core of XS Card's product is the enablement of sharing your information with those you want to share with. As a result, data privacy is critical to the product we offer. At XS Card, we believe in the importance of being able to control who gets that information.",
       "To reflect this importance, we've designed our product with several principles in mind:",
     ],
     bullets: [
-      "Your data is yours - We don't sell or provide your data to third parties without your consent. It's just not what we do here at XSCard. Your data is yours to share with your network.",
+      "Your data is yours - We don't sell or provide your data to third parties without your consent. It's just not what we do here at XS Card. Your data is yours to share with your network.",
       "Secure Storage - Your data is protected by Enterprise grade encryption and security.",
-      "Safe Sharing - Every XSCard has a unique code and web address. Those you share your information with will be able to look at your details. If they share your card with others or their company, others may be able to view your details.",
+      "Safe Sharing - Every XS Card has a unique code and web address. Those you share your information with will be able to look at your details. If they share your card with others or their company, others may be able to view your details.",
     ],
   },
   {
     heading: "1. Introduction",
     body: [
-      "This privacy policy (\"Policy\") describes how the personally identifiable information (\"Personal Information\") you may provide in the XSCard software applications (\"Software Applications\" or \"Service\") and any of its related products and services (collectively, \"Services\") is collected, protected and used. It also describes the choices available to you regarding our use of your Personal Information and how you can access and update this information.",
-      "This Policy is a legally binding agreement between you (\"User\", \"you\" or \"your\") and XSCard (\"XSCard\", \"we\", \"us\" or \"our\"). XSCard is a South African-based digital business card service provider. By accessing and using the Software Applications and Services, you acknowledge that you have read, understood, and agree to be bound by the terms of this Agreement. This Policy does not apply to the practices of companies that we do not own or control, or to individuals that we do not employ or manage.",
+      "This privacy policy (\"Policy\") describes how the personally identifiable information (\"Personal Information\") you may provide in the XS Card software applications (\"Software Applications\" or \"Service\") and any of its related products and services (collectively, \"Services\") is collected, protected and used. It also describes the choices available to you regarding our use of your Personal Information and how you can access and update this information.",
+      "This Policy is a legally binding agreement between you (\"User\", \"you\" or \"your\") and XS Card (\"XS Card\", \"we\", \"us\" or \"our\"). XS Card is a South African-based digital business card service provider. By accessing and using the Software Applications and Services, you acknowledge that you have read, understood, and agree to be bound by the terms of this Agreement. This Policy does not apply to the practices of companies that we do not own or control, or to individuals that we do not employ or manage.",
     ],
   },
   {

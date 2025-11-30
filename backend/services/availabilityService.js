@@ -166,7 +166,12 @@ function isSlotConflicting(slotTime, slotDuration, existingMeetings, bufferTime 
         const windowEnd = meetingEnd + bufferAfter;
 
         // Overlap check between slot window and meeting window
-        if (slotEnd > windowStart && slotStart < windowEnd) {
+        // A slot conflicts if it overlaps with the blocked window
+        // - If slot ends exactly at windowStart, it's OK (no overlap, ends when buffer begins)
+        // - If slot starts at or before windowEnd, it should be blocked (can't start during or at end of buffer)
+        // - Any slot that overlaps the window should be blocked
+        // So: slotStart <= windowEnd && slotEnd > windowStart
+        if (slotStart <= windowEnd && slotEnd > windowStart) {
             return true;
         }
     }

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Linking, Share, Clipboard } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, Alert, TextInput, KeyboardAvoidingView, Animated, ActivityIndicator, FlatList, TouchableWithoutFeedback, InteractionManager, Linking, Share, Clipboard, RefreshControl } from 'react-native';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
@@ -10,12 +10,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useMeetingNotifications, MeetingNotificationSummary } from '../../context/MeetingNotificationContext';
+import { RootStackParamList } from '../../types';
 
 type CalendarNavigationProp = BottomTabNavigationProp<AdminTabParamList, 'Calendar'>;
-type CalendarScreenNavigationProp = StackNavigationProp<AuthStackParamList>;
+type CalendarScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface ShareOption {
   id: string;
@@ -1375,6 +1377,7 @@ export default function Calendar() {
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
   const [meetingToDelete, setMeetingToDelete] = useState<number | null>(null);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionMessage, setTransitionMessage] = useState('Loading...');
@@ -1738,6 +1741,11 @@ export default function Calendar() {
       setIsLoadingEvents(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadEvents().finally(() => setRefreshing(false));
+  }, []);
 
   useEffect(() => {
     fetchUserInfo();
@@ -2340,6 +2348,14 @@ const renderEventDate = (dateStr: string) => {
         style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
       >
         <RNCalendar
           style={styles.calendar}
@@ -2387,7 +2403,7 @@ const renderEventDate = (dateStr: string) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Share and Filter Buttons */}
+        {/* Share, Filter, and Settings Buttons */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={styles.shareButton}
@@ -2403,16 +2419,34 @@ const renderEventDate = (dateStr: string) => {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.filterButton, showOnlyPublic && styles.filterButtonActive]}
+            style={styles.filterButton}
             onPress={() => setShowOnlyPublic(!showOnlyPublic)}
           >
             <MaterialCommunityIcons 
               name="filter" 
               size={18} 
-              color={showOnlyPublic ? '#FFFFFF' : '#007AFF'} 
+              color={COLORS.primary} 
             />
-            <Text style={[styles.filterButtonText, showOnlyPublic && styles.filterButtonTextActive]}>
+            <Text style={styles.filterButtonText}>
               {showOnlyPublic ? 'All' : 'Public Only'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.shareButton}
+            onPress={() => {
+              const parentNav = navigation.getParent();
+              if (parentNav) {
+                (parentNav as any).navigate('CalendarPreferences');
+              }
+            }}
+          >
+            <Ionicons 
+              name="settings" 
+              size={18} 
+              color={COLORS.primary} 
+            />
+            <Text style={styles.shareButtonText}>
+              Settings
             </Text>
           </TouchableOpacity>
         </View>
@@ -2765,20 +2799,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#F0F8FF',
     borderWidth: 1,
-    borderColor: '#007AFF',
+    borderColor: COLORS.primary,
     gap: 4,
   },
-  filterButtonActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
   filterButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  filterButtonTextActive: {
-    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.primary,
   },
   eventCard: {
     backgroundColor: 'white',

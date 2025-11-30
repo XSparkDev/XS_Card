@@ -1,4 +1,4 @@
-import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
 import { API_BASE_URL } from './api';
 import { Platform, PermissionsAndroid, Alert } from 'react-native';
 
@@ -61,7 +61,7 @@ export const requestPermissions = async () => {
           PermissionsAndroid.PERMISSIONS.CAMERA,
           {
             title: 'Camera Permission',
-            message: 'XSCard needs camera access to take profile pictures and company logos.',
+            message: 'XS Card needs camera access to take profile pictures and company logos.',
             buttonNeutral: 'Ask Me Later',
             buttonNegative: 'Cancel',
             buttonPositive: 'OK',
@@ -79,7 +79,7 @@ export const requestPermissions = async () => {
             PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
             {
               title: 'Photo Library Permission',
-              message: 'XSCard needs photo library access to select profile pictures and company logos.',
+              message: 'XS Card needs photo library access to select profile pictures and company logos.',
               buttonNeutral: 'Ask Me Later',
               buttonNegative: 'Cancel',
               buttonPositive: 'OK',
@@ -92,7 +92,7 @@ export const requestPermissions = async () => {
               PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
               {
                 title: 'Photo Library Permission',
-                message: 'XSCard needs photo library access to select profile pictures and company logos.',
+                message: 'XS Card needs photo library access to select profile pictures and company logos.',
                 buttonNeutral: 'Ask Me Later',
                 buttonNegative: 'Cancel',
                 buttonPositive: 'OK',
@@ -133,7 +133,7 @@ export const pickImage = async (useCamera: boolean = false): Promise<string | nu
       includeBase64: false,
       maxHeight: 2000,
       maxWidth: 2000,
-      quality: 0.8,
+      quality: 0.8 as PhotoQuality,
       allowsEditing: true,
       aspect: [1, 1] as [number, number], // Square aspect ratio
     };

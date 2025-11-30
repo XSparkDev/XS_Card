@@ -353,7 +353,7 @@ export default function CompleteProfile() {
       if (!cameraGranted || !galleryGranted) {
         Alert.alert(
           'Permission Required', 
-          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
@@ -423,7 +423,7 @@ export default function CompleteProfile() {
       if (!cameraGranted || !galleryGranted) {
         Alert.alert(
           'Permission Required', 
-          'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
@@ -651,11 +651,11 @@ export default function CompleteProfile() {
       if ((error as any)?.code === 'PHONE_ALREADY_IN_USE') {
         setErrors(prev => ({
           ...prev,
-          phone: 'This phone number is already registered with another XSCard account',
+          phone: 'This phone number is already registered with another XS Card account',
         }));
         Alert.alert(
           'Duplicate Phone Number',
-          'This phone number is already registered with another XSCard account. Please use a different number.'
+          'This phone number is already registered with another XS Card account. Please use a different number.'
         );
       } else {
         Alert.alert(
@@ -733,11 +733,11 @@ export default function CompleteProfile() {
       if ((error as any)?.code === 'PHONE_ALREADY_IN_USE') {
         setErrors(prev => ({
           ...prev,
-          phone: 'This phone number is already registered with another XSCard account',
+          phone: 'This phone number is already registered with another XS Card account',
         }));
         Alert.alert(
           'Duplicate Phone Number',
-          'This phone number is already registered with another XSCard account. Please use a different number.'
+          'This phone number is already registered with another XS Card account. Please use a different number.'
         );
       } else {
         Alert.alert(

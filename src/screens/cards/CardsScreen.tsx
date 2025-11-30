@@ -19,7 +19,7 @@ import CardTemplate2 from '../../components/cards/CardTemplate2';
 import CardTemplate3 from '../../components/cards/CardTemplate3';
 import CardTemplate4 from '../../components/cards/CardTemplate4';
 import CardTemplate5 from '../../components/cards/CardTemplate5';
-import { getAltNumber } from '../../utils/tempAltNumber';
+import { getAltNumber, migrateAltNumbersToBackend } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
 
 // Update interfaces to match new data structure
@@ -55,6 +55,9 @@ interface CardData {
   UserId: any;
   logoZoomLevel?: number;
   template?: number;
+  showAltNumber?: boolean;
+  altNumber?: string;
+  altCountryCode?: string;
 }
 
 interface ShareOption {
@@ -142,7 +145,8 @@ export default function CardsScreen() {
     setCurrentPage(page);
   };
 
-  // Function to load alt numbers for all cards
+  // Function to load alt numbers for migration purposes (deprecated - alt numbers now come from backend)
+  // Kept for backward compatibility during migration period
   const loadAltNumbers = async (cardCount: number) => {
     try {
       const altNumbersData: Record<number, { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean }> = {};
@@ -153,9 +157,9 @@ export default function CardsScreen() {
         }
       }
       setAltNumbers(altNumbersData);
-      console.log('Alt numbers loaded:', altNumbersData);
+      console.log('Alt numbers loaded from AsyncStorage (migration fallback):', altNumbersData);
     } catch (error) {
-      console.error('Error loading alt numbers:', error);
+      console.error('Error loading alt numbers from AsyncStorage:', error);
     }
   };
 
@@ -293,8 +297,12 @@ export default function CardsScreen() {
           }
         }
         
-        // Load alt numbers for all cards
-        await loadAltNumbers(cardsArray.length);
+        // Run migration once to sync any existing AsyncStorage alt numbers to backend
+        if (cardsArray && cardsArray.length > 0) {
+          migrateAltNumbersToBackend(userId).catch(err => {
+            console.error('Migration error (non-blocking):', err);
+          });
+        }
       } else {
         // No cards found in response
         console.log('No cards in response array, showing profile completion modal');
@@ -999,7 +1007,11 @@ export default function CardsScreen() {
                     onPressEmail={handleEmailPress}
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
-                    altNumber={altNumbers[index]}
+                    altNumber={card.showAltNumber && card.altNumber ? {
+                      altNumber: card.altNumber,
+                      altCountryCode: card.altCountryCode || '+27',
+                      showAltNumber: card.showAltNumber
+                    } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
@@ -1021,7 +1033,11 @@ export default function CardsScreen() {
                     onPressEmail={handleEmailPress}
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
-                    altNumber={altNumbers[index]}
+                    altNumber={card.showAltNumber && card.altNumber ? {
+                      altNumber: card.altNumber,
+                      altCountryCode: card.altCountryCode || '+27',
+                      showAltNumber: card.showAltNumber
+                    } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
@@ -1043,7 +1059,11 @@ export default function CardsScreen() {
                     onPressEmail={handleEmailPress}
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
-                    altNumber={altNumbers[index]}
+                    altNumber={card.showAltNumber && card.altNumber ? {
+                      altNumber: card.altNumber,
+                      altCountryCode: card.altCountryCode || '+27',
+                      showAltNumber: card.showAltNumber
+                    } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
@@ -1065,7 +1085,11 @@ export default function CardsScreen() {
                     onPressEmail={handleEmailPress}
                     onPressPhone={handlePhonePress}
                     onPressSocial={handleSocialPress}
-                    altNumber={altNumbers[index]}
+                    altNumber={card.showAltNumber && card.altNumber ? {
+                      altNumber: card.altNumber,
+                      altCountryCode: card.altCountryCode || '+27',
+                      showAltNumber: card.showAltNumber
+                    } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                   />
                 </View>
@@ -1284,14 +1308,14 @@ export default function CardsScreen() {
                 </TouchableOpacity>
 
                 {/* Alt Number - only show if toggle is enabled and alt number exists */}
-                {altNumbers[index]?.showAltNumber && altNumbers[index]?.altNumber && (
+                {card.showAltNumber && card.altNumber && (
                   <TouchableOpacity 
                     style={[
                       styles.contactSection,
                       styles.leftAligned,
                       isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }
                     ]}
-                    onPress={() => handlePhonePress(`${altNumbers[index]?.altCountryCode || ''}${altNumbers[index]?.altNumber || ''}`)}
+                    onPress={() => handlePhonePress(`${card.altCountryCode || '+27'}${card.altNumber || ''}`)}
                   >
                     <MaterialCommunityIcons 
                       name="phone-outline" 
@@ -1302,7 +1326,7 @@ export default function CardsScreen() {
                       styles.contactText,
                       isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
                     ]}>
-                      {`${altNumbers[index]?.altCountryCode || ''}${altNumbers[index]?.altNumber || ''}`}
+                      {`${card.altCountryCode || '+27'}${card.altNumber || ''}`}
                     </Text>
                   </TouchableOpacity>
                 )}

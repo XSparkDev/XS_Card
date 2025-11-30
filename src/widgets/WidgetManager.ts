@@ -8,11 +8,13 @@ import {
   WidgetError,
   WidgetAnalytics,
   WidgetExportData,
+  WidgetSize,
   isWidgetData,
   isWidgetConfig
 } from './WidgetTypes';
 import WidgetConfigManager from './WidgetConfig';
 import { getUserId } from '../utils/api';
+import { WidgetPlatformAdapter } from './WidgetPlatformAdapter';
 
 /**
  * Storage keys for widget management
@@ -106,13 +108,21 @@ export class WidgetManager {
         qrCodeUrl: undefined, // Will be fetched separately
         qrCodeData: undefined, // Will be generated separately
         createdAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        version: '1.0.0' // Schema version for migration support
       };
 
       // Create widget configuration
       const config = await this.configManager.createWidgetConfig(cardIndex, {
         ...this.configManager.getDefaultConfigForCard(cardIndex, widgetData.colorScheme)
       });
+
+      // Create native widget through platform adapter
+      const platformResult = await WidgetPlatformAdapter.createWidget(cardIndex, widgetData, config);
+      
+      if (!platformResult.success) {
+        console.warn('Native widget creation failed, continuing with data storage:', platformResult.error);
+      }
 
       // Save widget data
       await this.saveWidgetData(cardIndex, widgetData);
@@ -146,6 +156,10 @@ export class WidgetManager {
       if (dataJson) {
         const data = JSON.parse(dataJson);
         if (isWidgetData(data)) {
+          // Ensure version is set for backward compatibility
+          if (!data.version) {
+            data.version = '1.0.0';
+          }
           this.widgetData.set(cardIndex, data);
           return data;
         }
@@ -169,7 +183,8 @@ export class WidgetManager {
     const updatedData: WidgetData = {
       ...existingData,
       ...updates,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      version: updates.version || existingData.version || '1.0.0' // Preserve or set version
     };
 
     // Validate updated data
@@ -195,6 +210,16 @@ export class WidgetManager {
    */
   public async deleteWidget(cardIndex: number): Promise<boolean> {
     try {
+      // Generate widget ID for deletion
+      const widgetId = this.generateWidgetId(cardIndex);
+      
+      // Delete native widget through platform adapter
+      const platformResult = await WidgetPlatformAdapter.deleteWidget(widgetId);
+      
+      if (!platformResult.success) {
+        console.warn('Native widget deletion failed, continuing with data cleanup:', platformResult.error);
+      }
+
       // Remove from local cache
       this.widgetData.delete(cardIndex);
       
@@ -205,7 +230,6 @@ export class WidgetManager {
       await AsyncStorage.removeItem(`${STORAGE_KEYS.WIDGET_DATA}_${cardIndex}`);
       
       // Remove widget state
-      const widgetId = this.generateWidgetId(cardIndex);
       this.widgetStates.delete(widgetId);
       
       // Remove analytics
@@ -230,6 +254,21 @@ export class WidgetManager {
     }
     
     return allData;
+  }
+
+  /**
+   * Get widget configurations for a specific card
+   */
+  public async getWidgetsByCardIndex(cardIndex: number): Promise<WidgetConfig[]> {
+    const allConfigs = await this.configManager.getAllWidgetConfigs();
+    return allConfigs.filter(config => config.cardIndex === cardIndex);
+  }
+
+  /**
+   * Update widget configuration
+   */
+  public async updateWidgetConfig(cardIndex: number, updates: Partial<WidgetConfig>): Promise<WidgetConfig> {
+    return await this.configManager.updateWidgetConfig(cardIndex, updates);
   }
 
   /**
@@ -405,7 +444,7 @@ export class WidgetManager {
     // Return default preferences
     return {
       globalEnabled: true,
-      defaultSize: 'medium' as any,
+      defaultSize: WidgetSize.LARGE,
       defaultTheme: 'custom' as any,
       defaultDisplayMode: 'hybrid' as any,
       cardWidgets: {},
@@ -514,7 +553,7 @@ export class WidgetManager {
    * Generate widget ID
    */
   private generateWidgetId(cardIndex: number): string {
-    return `widget_${cardIndex}_${Date.now()}`;
+    return `widget_${cardIndex}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
