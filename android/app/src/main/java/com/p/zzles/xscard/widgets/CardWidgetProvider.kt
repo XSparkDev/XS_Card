@@ -56,16 +56,27 @@ class CardWidgetProvider : AppWidgetProvider() {
 
             // Populate widget views with data
             if (widgetData != null) {
-                views.setTextViewText(R.id.widget_name, widgetData.name)
-                views.setTextViewText(R.id.widget_company, widgetData.company)
-                views.setTextViewText(R.id.widget_occupation, widgetData.occupation)
-                
-                // Set colors
-                try {
-                    val color = android.graphics.Color.parseColor(widgetData.colorScheme)
-                    views.setInt(R.id.widget_container, "setBackgroundColor", color)
-                } catch (e: Exception) {
-                    // Use default color if parsing fails
+                if (widgetData.size == "small") {
+                    // Small widget: transparent background, QR with outline
+                    // QR code will be loaded separately (needs image loading implementation)
+                    // Set QR wrapper border color to card color
+                    try {
+                        val color = android.graphics.Color.parseColor(widgetData.colorScheme)
+                        // Note: Border color needs to be set via drawable or programmatically
+                        // For now, the outline will be handled when QR code image is set
+                    } catch (e: Exception) {
+                        // Use default if parsing fails
+                    }
+                } else {
+                    // Large widget: white background, QR left, text right
+                    views.setTextViewText(R.id.widget_name, widgetData.name)
+                    views.setTextViewText(R.id.widget_surname, widgetData.surname ?: "")
+                    views.setTextViewText(R.id.widget_occupation, widgetData.occupation)
+                    views.setTextViewText(R.id.widget_company, widgetData.company)
+                    
+                    // Large widget has white background (set in XML)
+                    // QR wrapper border color will be card color (needs drawable update)
+                    // For now, background is already white in XML
                 }
             }
 
