@@ -62,14 +62,9 @@ export default function WidgetPreview({ size, config, data }: WidgetPreviewProps
 
         {/* Text on Right */}
         <View style={styles.textContainer}>
-          {data.name && (
-            <Text style={styles.name} numberOfLines={1}>
-              {data.name}
-            </Text>
-          )}
-          {data.surname && (
-            <Text style={styles.surname} numberOfLines={1}>
-              {data.surname}
+          {(data.name || data.surname) && (
+            <Text style={styles.fullName} numberOfLines={2}>
+              {[data.name, data.surname].filter(Boolean).join(' ')}
             </Text>
           )}
           {data.occupation && (
@@ -133,17 +128,12 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     justifyContent: 'center',
   },
-  name: {
+  fullName: {
     fontSize: 13,
     fontWeight: '700', // Bold
     color: '#000000',
-    marginBottom: 1,
-  },
-  surname: {
-    fontSize: 13,
-    fontWeight: '700', // Bold
-    color: '#000000',
-    marginBottom: 3,
+    marginBottom: 6,
+    flexWrap: 'wrap',
   },
   occupation: {
     fontSize: 10,

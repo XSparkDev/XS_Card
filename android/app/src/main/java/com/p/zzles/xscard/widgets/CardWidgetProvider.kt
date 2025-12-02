@@ -60,11 +60,11 @@ class CardWidgetProvider : AppWidgetProvider() {
                     // Small widget: transparent background, QR with outline
                     // QR code will be loaded separately (needs image loading implementation)
                     // Set QR wrapper border color to card color
-                    try {
-                        val color = android.graphics.Color.parseColor(widgetData.colorScheme)
+                try {
+                    val color = android.graphics.Color.parseColor(widgetData.colorScheme)
                         // Note: Border color needs to be set via drawable or programmatically
                         // For now, the outline will be handled when QR code image is set
-                    } catch (e: Exception) {
+                } catch (e: Exception) {
                         // Use default if parsing fails
                     }
                 } else {

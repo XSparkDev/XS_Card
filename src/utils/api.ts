@@ -157,6 +157,10 @@ export const ENDPOINTS = {
     // User Management
     DEACTIVATE_USER: '/Users',
     DELETE_ACCOUNT: '/Users/delete-account',
+    
+    // iOS Version Check
+    IOS_VERSION_INFO: '/ios-version-info',
+    IOS_VERSION_CHECK: '/ios-version-check',
 };
 
 export const buildUrl = (endpoint: string) => `${API_BASE_URL}${endpoint}`;

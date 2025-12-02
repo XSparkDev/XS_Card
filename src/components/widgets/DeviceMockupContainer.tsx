@@ -108,17 +108,17 @@ export default function DeviceMockupContainer({
       {/* Device Mockup Preview */}
       <View style={styles.previewContainer}>
         <View style={styles.previewContent}>
-          <DeviceMockup
-            device={selectedDevice}
-            widgetSize={size}
-            widgetContent={
-              <WidgetPreview
-                size={size}
-                config={config}
-                data={data}
-              />
-            }
-          />
+        <DeviceMockup
+          device={selectedDevice}
+          widgetSize={size}
+          widgetContent={
+            <WidgetPreview
+              size={size}
+              config={config}
+              data={data}
+            />
+          }
+        />
         </View>
       </View>
 
