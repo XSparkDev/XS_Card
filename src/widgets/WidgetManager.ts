@@ -105,8 +105,9 @@ export class WidgetManager {
         colorScheme: cardData.colorScheme || '#1B2B5B',
         logoZoomLevel: cardData.logoZoomLevel || 1,
         socials: cardData.socials || {},
-        qrCodeUrl: undefined, // Will be fetched separately
-        qrCodeData: undefined, // Will be generated separately
+        // Prefer explicit QR data from caller (EditCard) if provided
+        qrCodeUrl: cardData.qrCodeUrl || undefined,
+        qrCodeData: cardData.qrCodeData || cardData.qrCodeUrl || undefined,
         createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString(),
         version: '1.0.0' // Schema version for migration support
@@ -200,6 +201,34 @@ export class WidgetManager {
     
     // Notify subscribers
     this.notifyUpdate(cardIndex, updatedData);
+    
+    // Update native widget if it exists
+    try {
+      const config = await this.configManager.getWidgetConfig(cardIndex);
+      if (config?.id) {
+        // Prepare data for native bridge (iOS expects specific format)
+        const nativeData: any = {
+          name: updatedData.name || '',
+          surname: updatedData.surname || '',
+          company: updatedData.company || '',
+          occupation: updatedData.occupation || '',
+          email: updatedData.email || '',
+          phone: updatedData.phone || '',
+          colorScheme: updatedData.colorScheme || '#1B2B5B',
+          qrCodeData: updatedData.qrCodeData || '',
+        };
+        
+        const platformResult = await WidgetPlatformAdapter.updateWidget(config.id, nativeData);
+        if (!platformResult.success) {
+          console.warn('Native widget update failed:', platformResult.error);
+        } else {
+          console.log('Native widget updated successfully');
+        }
+      }
+    } catch (error) {
+      console.error('Error updating native widget:', error);
+      // Don't fail the whole operation if native update fails
+    }
     
     console.log(`Updated widget data for card ${cardIndex}:`, updatedData);
     return updatedData;

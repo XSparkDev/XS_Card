@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { WidgetSize, WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
 import { COLORS } from '../../constants/colors';
 import QRCode from 'react-native-qrcode-svg';
+import { API_BASE_URL } from '../../utils/api';
 
 export interface WidgetPreviewProps {
   size: WidgetSize;
@@ -20,7 +21,8 @@ export default function WidgetPreview({ size, config, data }: WidgetPreviewProps
   const colorScheme = data.colorScheme || COLORS.primary;
 
   // Generate QR code data
-  const qrData = data.qrCodeData || `https://xscard.co.za/card/${data.cardIndex || 0}`;
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  const qrData = data.qrCodeData || `${base}/card/${data.cardIndex || 0}`;
 
   // Small widget: Only QR code with outline, no background
   if (isSmall) {
