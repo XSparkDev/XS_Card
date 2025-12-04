@@ -112,14 +112,10 @@ export class WidgetManager {
         version: '1.0.0' // Schema version for migration support
       };
 
-      // Get existing widget configuration (should already exist from EditCard)
-      let config = await this.configManager.getWidgetConfig(cardIndex);
-      if (!config) {
-        // Only create if it doesn't exist (fallback for backward compatibility)
-        config = await this.configManager.createWidgetConfig(cardIndex, {
-          ...this.configManager.getDefaultConfigForCard(cardIndex, widgetData.colorScheme)
-        });
-      }
+      // Create widget configuration
+      const config = await this.configManager.createWidgetConfig(cardIndex, {
+        ...this.configManager.getDefaultConfigForCard(cardIndex, widgetData.colorScheme)
+      });
 
       // Create native widget through platform adapter
       const platformResult = await WidgetPlatformAdapter.createWidget(cardIndex, widgetData, config);
@@ -214,53 +210,30 @@ export class WidgetManager {
    */
   public async deleteWidget(cardIndex: number): Promise<boolean> {
     try {
-      // Get the actual widget config to find the real widget ID
-      const config = await this.configManager.getWidgetConfig(cardIndex);
-      const widgetId = config?.id || this.generateWidgetId(cardIndex);
+      // Generate widget ID for deletion
+      const widgetId = this.generateWidgetId(cardIndex);
       
-      // Delete native widget through platform adapter if we have a valid ID
-      if (config?.id) {
-        const platformResult = await WidgetPlatformAdapter.deleteWidget(widgetId);
-        
-        if (!platformResult.success) {
-          console.warn('Native widget deletion failed, continuing with data cleanup:', platformResult.error);
-        }
+      // Delete native widget through platform adapter
+      const platformResult = await WidgetPlatformAdapter.deleteWidget(widgetId);
+      
+      if (!platformResult.success) {
+        console.warn('Native widget deletion failed, continuing with data cleanup:', platformResult.error);
       }
 
       // Remove from local cache
       this.widgetData.delete(cardIndex);
       
-      // Remove configuration (this will find and delete the actual config)
+      // Remove configuration
       await this.configManager.deleteWidgetConfig(cardIndex);
       
       // Remove from storage
       await AsyncStorage.removeItem(`${STORAGE_KEYS.WIDGET_DATA}_${cardIndex}`);
       
-      // Remove widget state - need to find all states for this card
-      const statesToDelete: string[] = [];
-      for (const [stateId, state] of this.widgetStates) {
-        if (state.cardIndex === cardIndex) {
-          statesToDelete.push(stateId);
-          this.widgetStates.delete(stateId);
-        }
-      }
+      // Remove widget state
+      this.widgetStates.delete(widgetId);
       
-      // Remove analytics - need to find all analytics for this card
-      const analyticsToDelete: string[] = [];
-      for (const [analyticsId, analytics] of this.analytics) {
-        if (analytics.cardIndex === cardIndex) {
-          analyticsToDelete.push(analyticsId);
-          this.analytics.delete(analyticsId);
-        }
-      }
-      
-      // Clean up from AsyncStorage
-      if (statesToDelete.length > 0) {
-        await this.saveWidgetStates();
-      }
-      if (analyticsToDelete.length > 0) {
-        await this.saveAnalytics();
-      }
+      // Remove analytics
+      this.analytics.delete(widgetId);
       
       console.log(`Deleted widget for card ${cardIndex}`);
       return true;
@@ -281,61 +254,6 @@ export class WidgetManager {
     }
     
     return allData;
-  }
-
-  /**
-   * Check if any widget exists across all cards
-   */
-  public async hasAnyWidget(): Promise<boolean> {
-    try {
-      const allConfigs = await this.configManager.getAllWidgetConfigs();
-      return allConfigs.length > 0;
-    } catch (error) {
-      console.error('Error checking for widgets:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get the card index that has a widget (if any)
-   */
-  public async getWidgetCardIndex(): Promise<number | null> {
-    try {
-      const allConfigs = await this.configManager.getAllWidgetConfigs();
-      if (allConfigs.length > 0) {
-        return allConfigs[0].cardIndex;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error getting widget card index:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Delete ALL widgets across all cards
-   */
-  public async deleteAllWidgets(): Promise<boolean> {
-    try {
-      const allConfigs = await this.configManager.getAllWidgetConfigs();
-      const cardIndexes = new Set(allConfigs.map(config => config.cardIndex));
-      let success = true;
-      
-      // Delete all widgets by cardIndex (each cardIndex can have at most one widget now)
-      for (const cardIndex of cardIndexes) {
-        const deleted = await this.deleteWidget(cardIndex);
-        if (!deleted) {
-          console.warn(`Failed to delete widget for card ${cardIndex}`);
-          success = false;
-        }
-      }
-      
-      console.log(`Deleted widgets from ${cardIndexes.size} card(s)`);
-      return success;
-    } catch (error) {
-      console.error('Error deleting all widgets:', error);
-      return false;
-    }
   }
 
   /**

@@ -24,7 +24,6 @@ import CardTemplate5 from '../../components/cards/CardTemplate5';
 import WidgetConfigModal from '../../components/widgets/WidgetConfigModal';
 import WidgetCard from '../../components/widgets/WidgetCard';
 import { WidgetManager } from '../../widgets/WidgetManager';
-import { WidgetConfigManager } from '../../widgets/WidgetConfig';
 import { WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
 
 // Create a type for social media platforms
@@ -111,7 +110,6 @@ export default function EditCard() {
   const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
   const [activeWidgets, setActiveWidgets] = useState<WidgetConfig[]>([]);
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | undefined>();
-  const [hasAnyWidget, setHasAnyWidget] = useState(false);
   const widgetManager = WidgetManager.getInstance();
 
   // Helper function to parse phone number and extract country code
@@ -329,10 +327,6 @@ export default function EditCard() {
     try {
       const widgets = await widgetManager.getWidgetsByCardIndex(cardIndex);
       setActiveWidgets(widgets);
-      
-      // Also check if any widget exists across all cards
-      const anyWidget = await widgetManager.hasAnyWidget();
-      setHasAnyWidget(anyWidget);
     } catch (error) {
       console.error('Error loading widgets:', error);
     }
@@ -341,12 +335,6 @@ export default function EditCard() {
   // Save widget configuration
   const handleSaveWidget = async (config: Partial<WidgetConfig>) => {
     try {
-      // Generate QR code URL
-      const userId = await getUserId();
-      const qrCodeUrl = userId 
-        ? `https://xscard.co.za/saveContact?userId=${userId}&cardIndex=${cardIndex}`
-        : `https://xscard.co.za/card/${cardIndex}`;
-
       const widgetData: Partial<WidgetData> = {
         cardIndex,
         cardId: `card_${cardIndex}`,
@@ -360,43 +348,13 @@ export default function EditCard() {
         companyLogo: formData.companyLogo,
         colorScheme: selectedColor,
         socials: {},
-        qrCodeData: qrCodeUrl, // Include QR code URL string for widget
-      };
-
-      // Ensure config has all required fields with defaults
-      const configWithDefaults: Partial<WidgetConfig> = {
-        ...config,
-        // These are required by interface but not shown in UI - use defaults
-        showCompanyLogo: false,
-        showSocialLinks: false,
-        showQRCode: true, // Always show QR code
       };
 
       if (editingWidget) {
-        // Update existing widget config
-        await widgetManager.updateWidgetConfig(cardIndex, configWithDefaults);
-        // Also update widget data if needed
-        const existingData = await widgetManager.getWidgetData(cardIndex);
-        if (existingData) {
-          await widgetManager.updateWidgetData(cardIndex, widgetData);
-        }
+        // Update existing widget
+        await widgetManager.updateWidgetConfig(cardIndex, config);
       } else {
-        // Ensure only ONE widget exists TOTAL across all cards - delete ALL existing widgets first
-        await widgetManager.deleteAllWidgets();
-        
-        // Create/update the config first with our settings
-        const widgetConfigManager = WidgetConfigManager.getInstance();
-        const existingConfig = await widgetConfigManager.getWidgetConfig(cardIndex);
-        
-        if (existingConfig) {
-          // Update existing config
-          await widgetConfigManager.updateWidgetConfig(cardIndex, configWithDefaults);
-        } else {
-          // Create new config
-          await widgetConfigManager.createWidgetConfig(cardIndex, configWithDefaults);
-        }
-        
-        // Create widget data - createWidget will use the existing config, not create a new one
+        // Create new widget
         await widgetManager.createWidget(cardIndex, widgetData as WidgetData);
       }
 
@@ -427,13 +385,9 @@ export default function EditCard() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const success = await widgetManager.deleteWidget(widget.cardIndex);
-              if (success) {
-                await loadActiveWidgets();
-                Alert.alert('Success', 'Widget deleted successfully');
-              } else {
-                Alert.alert('Error', 'Failed to delete widget');
-              }
+              await widgetManager.deleteWidget(widget.cardIndex);
+              await loadActiveWidgets();
+              Alert.alert('Success', 'Widget deleted successfully');
             } catch (error) {
               console.error('Error deleting widget:', error);
               Alert.alert('Error', 'Failed to delete widget');
@@ -1522,53 +1476,27 @@ export default function EditCard() {
                 }}
               >
                 <MaterialIcons name="widgets" size={24} color={COLORS.white} />
-                <Text style={styles.createWidgetButtonText}>
-                  {hasAnyWidget ? 'Replace Current Widget' : 'Create Widget'}
-                </Text>
+                <Text style={styles.createWidgetButtonText}>Create Widget</Text>
               </TouchableOpacity>
             ) : (
               <>
-                {activeWidgets.slice(0, 1).map((widget) => (
+                {activeWidgets.map((widget) => (
                   <WidgetCard
                     key={widget.id}
                     widget={widget}
                     onEdit={() => handleEditWidget(widget)}
-                    onDelete={() => {}} // Remove delete functionality - use Remove Widget button instead
-                    showDelete={false}
+                    onDelete={() => handleDeleteWidget(widget)}
                   />
                 ))}
                 <TouchableOpacity
-                  style={styles.removeWidgetButton}
-                  onPress={async () => {
-                    Alert.alert(
-                      'Remove Widget',
-                      'Are you sure you want to remove this widget?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Remove',
-                          style: 'destructive',
-                          onPress: async () => {
-                            try {
-                              const success = await widgetManager.deleteWidget(cardIndex);
-                              if (success) {
-                                await loadActiveWidgets();
-                                Alert.alert('Success', 'Widget removed successfully');
-                              } else {
-                                Alert.alert('Error', 'Failed to remove widget. Please try again.');
-                              }
-                            } catch (error) {
-                              console.error('Error removing widget:', error);
-                              Alert.alert('Error', 'Failed to remove widget');
-                            }
-                          },
-                        },
-                      ]
-                    );
+                  style={styles.addAnotherWidgetButton}
+                  onPress={() => {
+                    setEditingWidget(undefined);
+                    setIsWidgetConfigVisible(true);
                   }}
                 >
-                  <MaterialIcons name="delete-outline" size={20} color={COLORS.danger} />
-                  <Text style={styles.removeWidgetButtonText}>Remove Widget</Text>
+                  <MaterialIcons name="add" size={20} color={COLORS.primary} />
+                  <Text style={styles.addAnotherWidgetButtonText}>Add Another Widget</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -2525,21 +2453,6 @@ const styles = StyleSheet.create({
   },
   addAnotherWidgetButtonText: {
     color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  removeWidgetButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFE5E5',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 6,
-  },
-  removeWidgetButtonText: {
-    color: COLORS.danger,
     fontSize: 14,
     fontWeight: '600',
   },
