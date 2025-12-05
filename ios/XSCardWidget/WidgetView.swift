@@ -68,25 +68,6 @@ struct SmallWidgetView: View {
             let borderColor = Color(hex: cardData?.colorScheme ?? "#1B2B5B")
             
             ZStack {
-<<<<<<< Updated upstream
-            if let data = cardData {
-                    // QR Code with colored outline, scaled to fill most of the widget
-                QRCodeView(
-                    qrData: data.qrCodeData ?? "",
-                        borderColor: borderColor,
-                        size: side,
-                        showBorder: false // We'll draw the border around the whole widget instead
-                )
-            } else {
-                // Placeholder when no data
-                VStack(spacing: 8) {
-                    Image(systemName: "qrcode")
-                            .font(.system(size: side * 0.5))
-                        .foregroundColor(.gray)
-                    Text("No Data")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-=======
                 if let data = cardData {
                     // QR Code with colored outline, scaled to fill most of the widget
                     QRCodeView(
@@ -105,7 +86,6 @@ struct SmallWidgetView: View {
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
->>>>>>> Stashed changes
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -190,110 +170,6 @@ struct MediumWidgetView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .widgetBackground(backgroundView: Color.white)
         }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .widgetBackground(backgroundView: Color.white)
-            // Match system widget corner radius and draw a thicker border along it
-            .clipShape(RoundedRectangle(cornerRadius: 22))
-            .overlay(
-                RoundedRectangle(cornerRadius: 22)
-                    .stroke(borderColor, lineWidth: 10)
-            )
-        }
-    }
-}
-
-// MARK: - Medium Widget View
-struct MediumWidgetView: View {
-    let cardData: CardWidgetData?
-    
-    var body: some View {
-        GeometryReader { geometry in
-<<<<<<< Updated upstream
-        ZStack {
-                // Content
-            if let data = cardData {
-                    HStack(spacing: 12) {
-                        // QR Code on Left
-                    QRCodeView(
-                        qrData: data.qrCodeData ?? "",
-                        borderColor: Color(hex: data.colorScheme),
-                            size: min(geometry.size.width * 0.35, geometry.size.height * 0.8)
-                    )
-                    
-                    // Text container on Right
-                        VStack(alignment: .leading, spacing: 4) {
-                        // Name and Surname combined (bold)
-                        if !data.name.isEmpty || !data.surname.isEmpty {
-                            let fullName = [data.name, data.surname]
-                                .filter { !$0.isEmpty }
-                                .joined(separator: " ")
-                            Text(fullName)
-                                    .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.black)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        
-                        // Occupation (regular, smaller)
-                        if !data.occupation.isEmpty {
-                            Text(data.occupation)
-                                    .font(.system(size: 12, weight: .regular))
-                                .foregroundColor(.black)
-                                .lineLimit(1)
-                        }
-                        
-                        // Company (regular, smaller)
-                        if !data.company.isEmpty {
-                            Text(data.company)
-                                    .font(.system(size: 12, weight: .regular))
-                                .foregroundColor(.black)
-                                .lineLimit(1)
-                        }
-=======
-            ZStack {
-                // Content
-                if let data = cardData {
-                    // QR Code with colored outline - scaled to fill widget
-                    QRCodeView(
-                        qrData: data.qrCodeData ?? "",
-                        borderColor: Color(hex: data.colorScheme),
-                        size: min(geometry.size.width, geometry.size.height) * 0.9,
-                        showBorder: false // Widget border will act as the border
-                    )
-                } else {
-                    // Placeholder when no data
-                    VStack(spacing: 8) {
-                        Image(systemName: "qrcode")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        Text("No Data")
-                            .font(.caption)
-                            .foregroundColor(.gray)
->>>>>>> Stashed changes
-                    }
-                }
-<<<<<<< Updated upstream
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            } else {
-                    // Placeholder when no data
-                VStack(spacing: 8) {
-                    Image(systemName: "qrcode")
-                        .font(.system(size: 40))
-                        .foregroundColor(.gray.opacity(0.5))
-                    Text("No widget data")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("Create widget in app first")
-                        .font(.caption2)
-                        .foregroundColor(.gray.opacity(0.7))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .widgetBackground(backgroundView: Color.white)
-        }
     }
 }
 
@@ -323,44 +199,7 @@ struct LargeWidgetView: View {
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
-            }
-        }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .widgetBackground(backgroundView: Color.white)
-            // Match system widget corner radius and draw a thicker border along it
-            .clipShape(RoundedRectangle(cornerRadius: 22))
-            .overlay(
-                RoundedRectangle(cornerRadius: 22)
-                    .stroke(cardData != nil ? Color(hex: cardData!.colorScheme) : Color.gray, lineWidth: 10)
-            )
-        }
-    }
-}
-
-// MARK: - Lock Screen Widget View
-struct LockScreenWidgetView: View {
-    let cardData: CardWidgetData?
-    
-    var body: some View {
-        if let data = cardData {
-            HStack(spacing: 8) {
-                // Small QR code on left
-                if let qrCodeData = data.qrCodeData, !qrCodeData.isEmpty, let qrImage = QRCodeGenerator.generateQRCode(
-                    from: qrCodeData,
-                    size: 40,
-                    foregroundColor: .black,
-                    backgroundColor: .white
-                ) {
-                    qrImage.asImage
-                        .resizable()
-                        .interpolation(.none)
-                        .frame(width: 40, height: 40)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color(hex: data.colorScheme), lineWidth: 2)
-                        )
                 }
-=======
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .widgetBackground(backgroundView: Color.white)
@@ -397,7 +236,6 @@ struct LockScreenWidgetView: View {
                                 .stroke(Color(hex: data.colorScheme), lineWidth: 2)
                         )
                 }
->>>>>>> Stashed changes
                 
                 // Name and company on right
                 VStack(alignment: .leading, spacing: 2) {
