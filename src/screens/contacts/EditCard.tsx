@@ -335,8 +335,6 @@ export default function EditCard() {
   // Save widget configuration
   const handleSaveWidget = async (config: Partial<WidgetConfig>) => {
     try {
-<<<<<<< Updated upstream
-=======
       // Generate QR code URL
       const userId = await getUserId();
       const base = API_BASE_URL.replace(/\/+$/, '');
@@ -344,7 +342,6 @@ export default function EditCard() {
         ? `${base}/saveContact?userId=${userId}&cardIndex=${cardIndex}`
         : `${base}/card/${cardIndex}`;
 
->>>>>>> Stashed changes
       const widgetData: Partial<WidgetData> = {
         cardIndex,
         cardId: `card_${cardIndex}`,
@@ -357,6 +354,7 @@ export default function EditCard() {
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
         colorScheme: selectedColor,
+        qrCodeData: qrCodeUrl,
         socials: {},
       };
 
