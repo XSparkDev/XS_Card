@@ -1136,11 +1136,9 @@ export default function EditCard() {
             <Text style={styles.sectionTitle}>Images & layout</Text>
             <View style={styles.logoContainer}>
             <View style={styles.logoFrame}>
-            <Image
-              source={formData.companyLogo ? 
-                { uri: getImageUrl(formData.companyLogo) } : 
-                require('../../../assets/images/logoplaceholder.jpg')
-              }
+            {formData.companyLogo && getImageUrl(formData.companyLogo) ? (
+              <Image
+                source={{ uri: getImageUrl(formData.companyLogo) || '' }}
                 style={{ 
                   width: '100%', 
                   height: '100%',
@@ -1149,7 +1147,12 @@ export default function EditCard() {
                 }}
                 resizeMode="contain"
                 fadeDuration={300}
-            />
+              />
+            ) : (
+              <View style={styles.logoPlaceholder}>
+                <Text style={styles.logoPlaceholderText}>LOGO</Text>
+              </View>
+            )}
             </View>
             {userPlan !== 'enterprise' && (
               <TouchableOpacity 
@@ -1659,20 +1662,23 @@ export default function EditCard() {
                   {/* Company Logo and Profile Image */}
                   <View style={previewStyles.logoContainer}>
                     <View style={previewStyles.logoFrame}>
-                      <Image 
-                        source={formData.companyLogo ? 
-                          { uri: getImageUrl(formData.companyLogo) } : 
-                          require('../../../assets/images/logoplaceholder.jpg')
-                        }
-                        style={{ 
-                          width: '100%', 
-                          height: '100%',
-                          transform: [{ scale: zoomLevel }],
-                          opacity: 1,
-                        }}
-                        resizeMode="contain"
-                        fadeDuration={300}
-                      />
+                      {formData.companyLogo && getImageUrl(formData.companyLogo) ? (
+                        <Image 
+                          source={{ uri: getImageUrl(formData.companyLogo) || '' }}
+                          style={{ 
+                            width: '100%', 
+                            height: '100%',
+                            transform: [{ scale: zoomLevel }],
+                            opacity: 1,
+                          }}
+                          resizeMode="contain"
+                          fadeDuration={300}
+                        />
+                      ) : (
+                        <View style={previewStyles.logoPlaceholder}>
+                          <Text style={previewStyles.logoPlaceholderText}>LOGO</Text>
+                        </View>
+                      )}
                     </View>
                     
                     {/* Profile Image */}
@@ -2282,6 +2288,21 @@ const styles = StyleSheet.create({
     padding: 0,
     borderRadius: 12,
   },
+  logoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#d3d3d3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoPlaceholderText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    textShadowColor: 'rgba(255, 255, 255, 0.6)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
   logo: {
     width: '80%', // Use percentage of container
     height: '80%', // Use percentage of container
@@ -2813,6 +2834,21 @@ const previewStyles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
     borderRadius: 12,
+  },
+  logoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#d3d3d3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoPlaceholderText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    textShadowColor: 'rgba(255, 255, 255, 0.6)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
   profileContainer: {
     position: 'absolute',
