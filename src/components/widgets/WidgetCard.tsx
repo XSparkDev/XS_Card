@@ -8,13 +8,14 @@ export interface WidgetCardProps {
   widget: WidgetConfig;
   onEdit: () => void;
   onDelete: () => void;
+  showDelete?: boolean; // Optional prop to hide delete button
 }
 
 /**
  * Widget Card Component
  * Shows an existing widget with edit and delete actions
  */
-export default function WidgetCard({ widget, onEdit, onDelete }: WidgetCardProps) {
+export default function WidgetCard({ widget, onEdit, onDelete, showDelete = true }: WidgetCardProps) {
   const sizeLabel = widget.size === WidgetSize.SMALL ? 'Small (2x2)' : 'Large (4x4)';
   const themeLabel = widget.theme.charAt(0).toUpperCase() + widget.theme.slice(1);
   const lastUpdate = widget.lastUpdate
@@ -43,20 +44,22 @@ export default function WidgetCard({ widget, onEdit, onDelete }: WidgetCardProps
       {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, !showDelete && styles.fullWidthButton]}
           onPress={onEdit}
         >
           <MaterialIcons name="edit" size={20} color={COLORS.primary} />
           <Text style={styles.actionText}>Edit</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionButton, styles.deleteButton]}
-          onPress={onDelete}
-        >
-          <MaterialIcons name="delete" size={20} color={COLORS.danger} />
-          <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-        </TouchableOpacity>
+        {showDelete && (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={onDelete}
+          >
+            <MaterialIcons name="delete" size={20} color={COLORS.danger} />
+            <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -133,6 +136,9 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: COLORS.danger,
+  },
+  fullWidthButton: {
+    flex: 1,
   },
 });
 

@@ -48,6 +48,7 @@ const meetingController = require('./controllers/meetingController');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes'); // Add subscription routes
 const apkRoutes = require('./routes/apkRoutes'); // Add APK routes
+const iosVersionRoutes = require('./routes/iosVersionRoutes'); // Add iOS version routes
 const eventRoutes = require('./routes/eventRoutes'); // Add event routes
 const testRoutes = require('./routes/testRoutes'); // Add test routes for debugging
 const ticketRoutes = require('./routes/ticketRoutes'); // Add ticket routes
@@ -587,6 +588,7 @@ app.use('/', subscriptionRoutes); // Add subscription routes
 app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
 app.use('/api/apple-receipt', appleReceiptRoutes); // Add Apple receipt validation routes
 app.use('/', apkRoutes); // Add APK routes for public download
+app.use('/', iosVersionRoutes); // Add iOS version routes for public version checking
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
 app.use('/', userRoutes); // Move user routes to public section so SignIn works
 app.use('/', contactRoutes); // Move contact routes to public section to keep save contact public

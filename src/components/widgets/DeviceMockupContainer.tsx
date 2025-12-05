@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DeviceMockup from './DeviceMockup';
 import WidgetPreview from './WidgetPreview';
@@ -106,11 +106,8 @@ export default function DeviceMockupContainer({
       )}
 
       {/* Device Mockup Preview */}
-      <ScrollView
-        style={styles.previewContainer}
-        contentContainerStyle={styles.previewContent}
-        showsVerticalScrollIndicator={true}
-      >
+      <View style={styles.previewContainer}>
+        <View style={styles.previewContent}>
         <DeviceMockup
           device={selectedDevice}
           widgetSize={size}
@@ -122,7 +119,8 @@ export default function DeviceMockupContainer({
             />
           }
         />
-      </ScrollView>
+        </View>
+      </View>
 
       {/* Info Text */}
       <Text style={styles.infoText}>
@@ -190,10 +188,13 @@ const styles = StyleSheet.create({
   },
   previewContainer: {
     flex: 1,
+    overflow: 'hidden',
   },
   previewContent: {
+    flex: 1,
     paddingVertical: 20,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   infoText: {
     textAlign: 'center',

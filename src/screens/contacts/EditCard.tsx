@@ -335,6 +335,13 @@ export default function EditCard() {
   // Save widget configuration
   const handleSaveWidget = async (config: Partial<WidgetConfig>) => {
     try {
+      // Generate QR code URL
+      const userId = await getUserId();
+      const base = API_BASE_URL.replace(/\/+$/, '');
+      const qrCodeUrl = userId 
+        ? `${base}/saveContact?userId=${userId}&cardIndex=${cardIndex}`
+        : `${base}/card/${cardIndex}`;
+
       const widgetData: Partial<WidgetData> = {
         cardIndex,
         cardId: `card_${cardIndex}`,
@@ -347,6 +354,7 @@ export default function EditCard() {
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
         colorScheme: selectedColor,
+        qrCodeData: qrCodeUrl,
         socials: {},
       };
 
@@ -512,6 +520,12 @@ export default function EditCard() {
       
       // Sync widget data after successful card update
       try {
+        // Generate QR code URL for widget
+        const base = API_BASE_URL.replace(/\/+$/, '');
+        const qrCodeUrl = userId 
+          ? `${base}/saveContact?userId=${userId}&cardIndex=${cardIndex}`
+          : `${base}/card/${cardIndex}`;
+        
         const widgetData: Partial<WidgetData> = {
           cardIndex,
           name: formData.firstName,
@@ -523,6 +537,7 @@ export default function EditCard() {
           profileImage: formData.profileImage,
           companyLogo: formData.companyLogo,
           colorScheme: selectedColor,
+          qrCodeData: qrCodeUrl,
           socials: {},
         };
         

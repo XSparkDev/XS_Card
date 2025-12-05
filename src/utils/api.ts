@@ -51,13 +51,13 @@ export const setGlobalAuthContextRef = (ref: any) => {
 const getBaseUrl = () => {
   // For production, use the deployed server
   //return 'https://xscard-app-8ign.onrender.com';
-  // return 'https://baseurl.xscard.co.za';
+   return 'https://baseurl.xscard.co.za';
 
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-   return 'http://192.168.3.12:8383';
+   //return 'http://192.168.68.106:8383';
  // return 'https://846084eede03.ngrok-free.app';
   
 };
@@ -157,6 +157,10 @@ export const ENDPOINTS = {
     // User Management
     DEACTIVATE_USER: '/Users',
     DELETE_ACCOUNT: '/Users/delete-account',
+    
+    // iOS Version Check
+    IOS_VERSION_INFO: '/ios-version-info',
+    IOS_VERSION_CHECK: '/ios-version-check',
 };
 
 export const buildUrl = (endpoint: string) => `${API_BASE_URL}${endpoint}`;

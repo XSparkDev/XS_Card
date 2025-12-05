@@ -21,33 +21,33 @@ export const WIDGET_POSITIONS: Record<'iphone-15-pro' | 'samsung-s24-ultra', Dev
   'iphone-15-pro': {
     // Small widget (2x2 grid) - positioned in top-left area below weather widget
     small: {
-      x: 32,
-      y: 520,
-      width: 170,
-      height: 170
+      x: 72,
+      y: 720,
+      width: 130,
+      height: 130
     },
-    // Large widget (4x4 grid) - positioned in top area below weather widget
+    // Large widget (4x4 grid) - positioned in top area below weather widget, compact size
     large: {
-      x: 32,
-      y: 520,
-      width: 350,
-      height: 360
+      x: 88,
+      y: 735,
+      width: 250,
+      height: 110
     }
   },
   'samsung-s24-ultra': {
     // Small widget (2x2 grid) - positioned in top-left area below weather widget
     small: {
-      x: 32,
-      y: 520,
-      width: 180,
-      height: 180
+      x: 80,
+      y: 760,
+      width: 130,
+      height: 130
     },
-    // Large widget (4x4 grid) - positioned in top area below weather widget
+    // Large widget (4x4 grid) - positioned in top area below weather widget, compact size
     large: {
-      x: 32,
-      y: 520,
-      width: 370,
-      height: 370
+      x: 95,
+      y: 770,
+      width: 250,
+      height: 110
     }
   }
 };
@@ -58,7 +58,7 @@ export const WIDGET_POSITIONS: Record<'iphone-15-pro' | 'samsung-s24-ultra', Dev
 export const DEVICE_DIMENSIONS = {
   'iphone-15-pro': {
     width: 428,
-    height: 1338
+    height: 1338 //500
   },
   'samsung-s24-ultra': {
     width: 440,

@@ -22,6 +22,7 @@ class WidgetBridgeModule(reactContext: ReactApplicationContext) :
                 widgetId = widgetId,
                 cardIndex = cardIndex,
                 name = cardData.getString("name") ?: "",
+                surname = cardData.getString("surname") ?: "",
                 company = cardData.getString("company") ?: "",
                 occupation = cardData.getString("occupation") ?: "",
                 email = cardData.getString("email") ?: "",

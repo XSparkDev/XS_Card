@@ -11,6 +11,7 @@ data class WidgetData(
     val widgetId: Int,
     val cardIndex: Int,
     val name: String,
+    val surname: String = "", // Default empty for backward compatibility
     val company: String,
     val occupation: String,
     val email: String,
@@ -43,6 +44,7 @@ object WidgetDataStore {
         json.put("widgetId", data.widgetId)
         json.put("cardIndex", data.cardIndex)
         json.put("name", data.name)
+        json.put("surname", data.surname)
         json.put("company", data.company)
         json.put("occupation", data.occupation)
         json.put("email", data.email)
@@ -74,6 +76,7 @@ object WidgetDataStore {
                 widgetId = json.getInt("widgetId"),
                 cardIndex = json.getInt("cardIndex"),
                 name = json.getString("name"),
+                surname = json.optString("surname", ""), // Backward compatible
                 company = json.getString("company"),
                 occupation = json.getString("occupation"),
                 email = json.getString("email"),

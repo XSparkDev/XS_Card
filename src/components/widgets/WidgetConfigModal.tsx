@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,12 @@ import {
   Switch,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   WidgetSize,
-  WidgetTheme,
-  WidgetDisplayMode,
   WidgetUpdateFrequency,
   WidgetConfig,
   WidgetData,
@@ -41,36 +41,32 @@ export default function WidgetConfigModal({
   cardData,
   existingConfig,
 }: WidgetConfigModalProps) {
+  const insets = useSafeAreaInsets();
   const [config, setConfig] = useState<Partial<WidgetConfig>>({
     size: WidgetSize.LARGE,
-    theme: WidgetTheme.CUSTOM,
-    displayMode: WidgetDisplayMode.HYBRID,
     updateFrequency: WidgetUpdateFrequency.ON_CHANGE,
     showProfileImage: true,
-    showCompanyLogo: true,
-    showQRCode: true,
-    showSocialLinks: true,
     ...existingConfig,
   });
 
   const [saving, setSaving] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const chevronRotation = useRef(new Animated.Value(0)).current;
 
   // Reset config when modal opens
   useEffect(() => {
     if (visible) {
       setConfig({
         size: WidgetSize.LARGE,
-        theme: WidgetTheme.CUSTOM,
-        displayMode: WidgetDisplayMode.HYBRID,
         updateFrequency: WidgetUpdateFrequency.ON_CHANGE,
         showProfileImage: true,
-        showCompanyLogo: true,
-        showQRCode: true,
-        showSocialLinks: true,
         ...existingConfig,
       });
+      // Reset preview state
+      setPreviewExpanded(false);
+      chevronRotation.setValue(0);
     }
-  }, [visible, existingConfig]);
+  }, [visible, existingConfig, chevronRotation]);
 
   const handleSave = async () => {
     try {
@@ -89,6 +85,22 @@ export default function WidgetConfigModal({
     setConfig(prev => ({ ...prev, ...updates }));
   };
 
+  const togglePreview = () => {
+    const toValue = previewExpanded ? 0 : 1;
+    setPreviewExpanded(!previewExpanded);
+    
+    Animated.timing(chevronRotation, {
+      toValue,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const chevronRotate = chevronRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+
   return (
     <Modal
       visible={visible}
@@ -98,7 +110,7 @@ export default function WidgetConfigModal({
     >
       <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <MaterialIcons name="close" size={24} color={COLORS.dark} />
           </TouchableOpacity>
@@ -117,17 +129,35 @@ export default function WidgetConfigModal({
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Preview Section */}
+          {/* Preview Section - Collapsible */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Preview</Text>
-            <View style={styles.previewContainer}>
-              <DeviceMockupContainer
-                config={config}
-                data={cardData}
-                size={config.size || WidgetSize.LARGE}
-                onSizeChange={(size) => updateConfig({ size })}
-              />
-            </View>
+            <TouchableOpacity
+              style={styles.collapsibleHeader}
+              onPress={togglePreview}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sectionTitle}>Preview</Text>
+              <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
+                <MaterialIcons
+                  name="expand-more"
+                  size={24}
+                  color={COLORS.gray}
+                />
+              </Animated.View>
+            </TouchableOpacity>
+            
+            {previewExpanded && (
+              <View style={styles.previewContainerWrapper}>
+                <View style={styles.previewContainer}>
+                  <DeviceMockupContainer
+                    config={config}
+                    data={cardData}
+                    size={config.size || WidgetSize.LARGE}
+                    onSizeChange={(size) => updateConfig({ size })}
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Display Options */}
@@ -147,121 +177,33 @@ export default function WidgetConfigModal({
               />
             </View>
 
-            <View style={styles.optionRow}>
-              <View style={styles.optionLabel}>
-                <MaterialIcons name="business" size={20} color={COLORS.gray} />
-                <Text style={styles.optionText}>Show Company Logo</Text>
-              </View>
-              <Switch
-                value={config.showCompanyLogo}
-                onValueChange={(value) => updateConfig({ showCompanyLogo: value })}
-                trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
-                thumbColor="white"
-              />
-            </View>
-
-            <View style={styles.optionRow}>
-              <View style={styles.optionLabel}>
-                <MaterialIcons name="qr-code" size={20} color={COLORS.gray} />
-                <Text style={styles.optionText}>Show QR Code</Text>
-              </View>
-              <Switch
-                value={config.showQRCode}
-                onValueChange={(value) => updateConfig({ showQRCode: value })}
-                trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
-                thumbColor="white"
-              />
-            </View>
-
-            <View style={styles.optionRow}>
-              <View style={styles.optionLabel}>
-                <MaterialIcons name="link" size={20} color={COLORS.gray} />
-                <Text style={styles.optionText}>Show Social Links</Text>
-              </View>
-              <Switch
-                value={config.showSocialLinks}
-                onValueChange={(value) => updateConfig({ showSocialLinks: value })}
-                trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
-                thumbColor="white"
-              />
-            </View>
-          </View>
-
-          {/* Theme Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Theme</Text>
-            <View style={styles.buttonGroup}>
-              {Object.values(WidgetTheme).map((theme) => (
-                <TouchableOpacity
-                  key={theme}
-                  style={[
-                    styles.button,
-                    config.theme === theme && styles.buttonActive,
-                  ]}
-                  onPress={() => updateConfig({ theme })}
-                >
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      config.theme === theme && styles.buttonTextActive,
-                    ]}
-                  >
-                    {theme.charAt(0).toUpperCase() + theme.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Display Mode */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Display Mode</Text>
-            <View style={styles.buttonGroup}>
-              {Object.values(WidgetDisplayMode).map((mode) => (
-                <TouchableOpacity
-                  key={mode}
-                  style={[
-                    styles.button,
-                    config.displayMode === mode && styles.buttonActive,
-                  ]}
-                  onPress={() => updateConfig({ displayMode: mode })}
-                >
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      config.displayMode === mode && styles.buttonTextActive,
-                    ]}
-                  >
-                    {mode.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
           </View>
 
           {/* Update Frequency */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Update Frequency</Text>
             <View style={styles.buttonGroup}>
-              {Object.values(WidgetUpdateFrequency).map((freq) => (
-                <TouchableOpacity
-                  key={freq}
-                  style={[
-                    styles.button,
-                    config.updateFrequency === freq && styles.buttonActive,
-                  ]}
-                  onPress={() => updateConfig({ updateFrequency: freq })}
-                >
-                  <Text
+              {Object.values(WidgetUpdateFrequency)
+                .filter((freq) => freq !== WidgetUpdateFrequency.HOURLY)
+                .map((freq) => (
+                  <TouchableOpacity
+                    key={freq}
                     style={[
-                      styles.buttonText,
-                      config.updateFrequency === freq && styles.buttonTextActive,
+                      styles.button,
+                      config.updateFrequency === freq && styles.buttonActive,
                     ]}
+                    onPress={() => updateConfig({ updateFrequency: freq })}
                   >
-                    {freq.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        config.updateFrequency === freq && styles.buttonTextActive,
+                      ]}
+                    >
+                      {freq.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
             </View>
           </View>
 
@@ -282,7 +224,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.lightGray,
   },
@@ -315,14 +258,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.lightGray,
   },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.dark,
-    marginBottom: 12,
+  },
+  previewContainerWrapper: {
+    marginTop: 12,
   },
   previewContainer: {
-    height: 500,
+    height: 750,
     backgroundColor: '#F5F5F5',
     borderRadius: 12,
     overflow: 'hidden',
