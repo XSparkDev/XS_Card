@@ -1167,11 +1167,9 @@ export default function CardsScreen() {
                     styles.logoFrame,
                     isTablet() && { height: scale(200) }
                   ]}>
-                  <Image
-                    source={card.companyLogo && getImageUrl(card.companyLogo) ? 
-                      { uri: getImageUrl(card.companyLogo) } : 
-                      require('../../../assets/images/logoplaceholder.jpg')
-                    }
+                  {card.companyLogo && getImageUrl(card.companyLogo) ? (
+                    <Image
+                      source={{ uri: getImageUrl(card.companyLogo) ?? undefined }}
                       style={{ 
                         width: '100%', 
                         height: '100%',
@@ -1190,7 +1188,12 @@ export default function CardsScreen() {
                       onLoad={() => {
                         console.log('Company logo loaded successfully:', card.companyLogo);
                       }}
-                  />
+                    />
+                  ) : (
+                    <View style={styles.logoPlaceholder}>
+                      <Text style={styles.logoPlaceholderText}>LOGO</Text>
+                    </View>
+                  )}
                   </View>
                   <View style={[
                     styles.profileOverlayContainer,
@@ -1707,6 +1710,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
     borderRadius: 12,
+  },
+  logoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#d3d3d3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoPlaceholderText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    textShadowColor: 'rgba(255, 255, 255, 0.6)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
   logo: {
     width: '100%',

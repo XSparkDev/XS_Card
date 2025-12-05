@@ -2415,7 +2415,7 @@ const renderEventDate = (dateStr: string) => {
               color={COLORS.primary} 
             />
             <Text style={styles.shareButtonText}>
-              Share Calendar
+              Share
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
