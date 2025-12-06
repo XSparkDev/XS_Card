@@ -6,7 +6,8 @@ buildscript {
         minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
         compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
         targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '35')
-        ndkVersion = "26.1.10909125"
+        // Commented out to avoid NDK license issue - will use default NDK if needed
+        // ndkVersion = "28.0.12674087"
         kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
 
         if (findProperty('android.kotlinVersion')) {

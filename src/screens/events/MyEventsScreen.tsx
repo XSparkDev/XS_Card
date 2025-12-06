@@ -10,6 +10,7 @@ import {
   Switch,
   Modal,
   Linking,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -18,7 +19,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS } from '../../constants/colors';
 import EventHeader from '../../components/EventHeader';
 import { useEventNotifications } from '../../context/EventNotificationContext';
-import { authenticatedFetchWithRefresh, ENDPOINTS } from '../../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, endRecurringSeries } from '../../utils/api';
 import { useToast } from '../../hooks/useToast';
 import { Event, UserEventsResponse } from '../../types/events';
 import { checkEventPaymentStatus } from '../../services/eventService';
@@ -347,6 +348,79 @@ export default function MyEventsScreen() {
           successMessage = 'Event cancelled successfully';
           break;
 
+        case 'view_instances':
+          const eventForInstances = events.find(e => e.id === eventId);
+          if (eventForInstances?.isRecurring) {
+            navigation.navigate('RecurringSeriesManagement', {
+              eventId: eventForInstances.id,
+              event: eventForInstances,
+            });
+          }
+          setActionModalVisible(false);
+          setSelectedEvent(null);
+          return;
+
+        case 'end_series':
+          const eventToEnd = events.find(e => e.id === eventId);
+          if (!eventToEnd?.isRecurring) {
+            toast.error('Error', 'This event is not a recurring series');
+            setActionModalVisible(false);
+            setSelectedEvent(null);
+            return;
+          }
+          
+          Alert.alert(
+            'End Recurring Series',
+            'This will end all future instances of this recurring event series. Continue?',
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+              {
+                text: 'End Series',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await endRecurringSeries(eventId);
+                    toast.success('Success', 'Recurring series ended successfully');
+                    loadMyEvents();
+                  } catch (error) {
+                    console.error('Error ending series:', error);
+                    toast.error('Error', 'Failed to end series. Please try again.');
+                  }
+                },
+              },
+            ]
+          );
+          setActionModalVisible(false);
+          setSelectedEvent(null);
+          return;
+
+        case 'edit_series':
+          const eventToEditSeries = events.find(e => e.id === eventId);
+          if (eventToEditSeries?.isRecurring) {
+            Alert.alert(
+              'Edit Recurring Series',
+              'Editing this series will affect all future instances. Continue?',
+              [
+                {
+                  text: 'Cancel',
+                  style: 'cancel',
+                },
+                {
+                  text: 'Edit Series',
+                  onPress: () => {
+                    navigation.navigate('EditEvent', { eventId, event: eventToEditSeries });
+                  },
+                },
+              ]
+            );
+          }
+          setActionModalVisible(false);
+          setSelectedEvent(null);
+          return;
+
         default:
           return;
       }
@@ -421,8 +495,16 @@ export default function MyEventsScreen() {
         <View style={styles.eventContent}>
           <View style={styles.eventHeader}>
             <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-              <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+            <View style={styles.badgesContainer}>
+              {item.isRecurring && (
+                <View style={styles.seriesBadge}>
+                  <MaterialIcons name="repeat" size={12} color={COLORS.white} />
+                  <Text style={styles.seriesBadgeText}>Series</Text>
+                </View>
+              )}
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+                <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+              </View>
             </View>
           </View>
 
@@ -612,11 +694,35 @@ function EventActionModal({ visible, event, onClose, onAction }: EventActionModa
   const actions = [
     { 
       key: 'edit', 
-      label: 'Edit Event', 
+      label: event.isRecurring ? 'Edit Series' : 'Edit Event', 
       icon: 'edit', 
       color: COLORS.primary,
       available: event.status !== 'cancelled' && !isEventPast 
     },
+    // Recurring event specific actions
+    ...(event.isRecurring ? [
+      {
+        key: 'view_instances',
+        label: 'View Instances',
+        icon: 'list',
+        color: '#2196F3',
+        available: true,
+      },
+      {
+        key: 'edit_series',
+        label: 'Edit Series',
+        icon: 'edit',
+        color: COLORS.primary,
+        available: event.status !== 'cancelled',
+      },
+      {
+        key: 'end_series',
+        label: 'End Series',
+        icon: 'stop',
+        color: '#F44336',
+        available: event.status === 'published',
+      },
+    ] : []),
     { 
       key: 'publish', 
       label: event.status === 'published' ? 'Republish' : 'Publish Event', 
@@ -646,7 +752,7 @@ function EventActionModal({ visible, event, onClose, onAction }: EventActionModa
       label: event.status === 'published' ? 'Cancel Event' : 'Delete Event', 
       icon: event.status === 'published' ? 'cancel' : 'delete', 
       color: '#F44336',
-      available: event.status !== 'cancelled' 
+      available: event.status !== 'cancelled' && !event.isRecurring // Don't allow delete for recurring, use end_series instead
     },
   ];
 
@@ -771,6 +877,25 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     flex: 1,
     marginRight: 8,
+  },
+  badgesContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  seriesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6C5CE7',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 4,
+    gap: 4,
+  },
+  seriesBadgeText: {
+    fontSize: 10,
+    color: COLORS.white,
+    fontWeight: '600',
   },
   statusBadge: {
     paddingHorizontal: 8,

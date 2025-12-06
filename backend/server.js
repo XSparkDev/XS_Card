@@ -48,6 +48,7 @@ const meetingController = require('./controllers/meetingController');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes'); // Add subscription routes
 const apkRoutes = require('./routes/apkRoutes'); // Add APK routes
+const iosVersionRoutes = require('./routes/iosVersionRoutes'); // Add iOS version routes
 const eventRoutes = require('./routes/eventRoutes'); // Add event routes
 const testRoutes = require('./routes/testRoutes'); // Add test routes for debugging
 const ticketRoutes = require('./routes/ticketRoutes'); // Add ticket routes
@@ -587,6 +588,7 @@ app.use('/', subscriptionRoutes); // Add subscription routes
 app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
 app.use('/api/apple-receipt', appleReceiptRoutes); // Add Apple receipt validation routes
 app.use('/', apkRoutes); // Add APK routes for public download
+app.use('/', iosVersionRoutes); // Add iOS version routes for public version checking
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
 app.use('/', userRoutes); // Move user routes to public section so SignIn works
 app.use('/', contactRoutes); // Move contact routes to public section to keep save contact public
@@ -666,6 +668,78 @@ app.post('/migrate-scans', async (req, res) => {
         res.status(500).send({
             success: false,
             message: 'Migration failed',
+            error: error.message
+        });
+    }
+});
+
+// Data migration endpoint - run once to initialize alt number fields for existing cards
+app.post('/migrate-alt-numbers', async (req, res) => {
+    try {
+        console.log('Starting alt numbers migration for existing cards...');
+        
+        const cardsRef = db.collection('cards');
+        const snapshot = await cardsRef.get();
+        
+        if (snapshot.empty) {
+            return res.status(200).send({
+                success: true,
+                message: 'No cards found to migrate'
+            });
+        }
+
+        let migratedUsers = 0;
+        let migratedCards = 0;
+        const batch = db.batch();
+
+        snapshot.forEach(doc => {
+            const userData = doc.data();
+            if (userData.cards && Array.isArray(userData.cards)) {
+                let needsUpdate = false;
+                const updatedCards = userData.cards.map(card => {
+                    // Check if card is missing any alt number fields
+                    if (card.altNumber === undefined || 
+                        card.altCountryCode === undefined || 
+                        card.showAltNumber === undefined) {
+                        needsUpdate = true;
+                        migratedCards++;
+                        return {
+                            ...card,
+                            altNumber: card.altNumber || '',
+                            altCountryCode: card.altCountryCode || '+27',
+                            showAltNumber: card.showAltNumber !== undefined ? card.showAltNumber : false
+                        };
+                    }
+                    return card;
+                });
+
+                if (needsUpdate) {
+                    batch.update(doc.ref, { cards: updatedCards });
+                    migratedUsers++;
+                }
+            }
+        });
+
+        // Commit all updates
+        await batch.commit();
+
+        console.log(`Alt numbers migration completed: ${migratedUsers} users, ${migratedCards} cards updated`);
+
+        res.status(200).send({
+            success: true,
+            message: 'Alt numbers migration completed successfully',
+            stats: {
+                usersUpdated: migratedUsers,
+                cardsUpdated: migratedCards,
+                totalUsersScanned: snapshot.size
+            }
+        });
+
+    } catch (error) {
+        console.error('Error during alt numbers migration:', error);
+        res.status(500).send({
+            success: false,
+            message: 'Alt numbers migration failed',
             error: error.message
         });
     }

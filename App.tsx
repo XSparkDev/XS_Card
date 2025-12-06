@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useEffect, useRef, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { StyleSheet, Text, View, AppState, Platform, LogBox, TouchableOpacity, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -13,6 +13,9 @@ import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
 import { useSystemUI } from './src/hooks/useSystemUI';
+import { MeetingNotificationProvider } from './src/context/MeetingNotificationContext';
+import { checkForUpdate, VersionInfo } from './src/services/updateCheckService';
+import { UpdateModal } from './src/components/UpdateModal';
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
@@ -67,14 +70,56 @@ class AppErrorBoundary extends Component<{children: ReactNode}, AppErrorBoundary
 function AppContent() {
   const appState = useRef(AppState.currentState);
   const navigationRef = useRef<any>(null);
+  
+  // Update check state
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{ forceUpdate: boolean; versionInfo: VersionInfo | null } | null>(null);
+  const lastUpdateCheckRef = useRef<number>(0);
+  const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes max
 
   // Handle system UI visibility
   useSystemUI();
+
+  // Check for updates
+  const performUpdateCheck = async (showModal: boolean = true) => {
+    try {
+      const now = Date.now();
+      // Throttle update checks to avoid too frequent requests
+      if (now - lastUpdateCheckRef.current < UPDATE_CHECK_INTERVAL && !showModal) {
+        return;
+      }
+      
+      lastUpdateCheckRef.current = now;
+      const result = await checkForUpdate();
+      
+      if (result.needsUpdate && result.versionInfo) {
+        setUpdateInfo({
+          forceUpdate: result.forceUpdate,
+          versionInfo: result.versionInfo,
+        });
+        if (showModal) {
+          setUpdateModalVisible(true);
+        }
+      }
+    } catch (error) {
+      console.error('[App] Error checking for update:', error);
+    }
+  };
 
   useEffect(() => {
     // Set up global navigation reference for automatic logout
     if (navigationRef.current) {
       setGlobalNavigationRef(navigationRef.current);
+    }
+    
+    // Check for updates on app launch (iOS only)
+    if (Platform.OS === 'ios') {
+      // Delay initial check slightly to let app initialize
+      const timer = setTimeout(() => {
+        performUpdateCheck(true);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -85,6 +130,11 @@ function AppContent() {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         console.log('App has come to the foreground!');
         AuthManager.handleAppForeground();
+        
+        // Check for updates when app comes to foreground (iOS only)
+        if (Platform.OS === 'ios') {
+          performUpdateCheck(true);
+        }
       } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
         console.log('App has gone to the background!');
         AuthManager.handleAppBackground();
@@ -100,6 +150,7 @@ function AppContent() {
     <AuthProvider>
       <EventNotificationProvider>
         <ColorSchemeProvider>
+          <MeetingNotificationProvider>
           <ToastProvider>
             <NavigationContainer ref={navigationRef}>
               <ExpoStatusBar style="auto" translucent={true} />
@@ -108,7 +159,18 @@ function AppContent() {
                 <Stack.Screen name="MainApp" component={TabNavigator} />
               </Stack.Navigator>
             </NavigationContainer>
+            
+            {/* Update Modal - shown when update is available */}
+            {updateInfo && (
+              <UpdateModal
+                visible={updateModalVisible}
+                forceUpdate={updateInfo.forceUpdate}
+                versionInfo={updateInfo.versionInfo}
+                onDismiss={() => setUpdateModalVisible(false)}
+              />
+            )}
           </ToastProvider>
+          </MeetingNotificationProvider>
         </ColorSchemeProvider>
       </EventNotificationProvider>
     </AuthProvider>

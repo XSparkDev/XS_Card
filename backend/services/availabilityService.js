@@ -109,7 +109,13 @@ function generateTimeSlotsForDay(date, workingHours, allowedDurations, bufferTim
     // Fallback to range-based generation (current behavior)
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
-    const slotInterval = 30; // 30-minute intervals
+
+    // Use smaller intervals when buffer time is smaller than 30 minutes so buffers are respected more precisely
+    const normalizedBuffer = Math.max(0, bufferTime || 0);
+    let slotInterval = 30;
+    if (normalizedBuffer > 0 && normalizedBuffer < 30) {
+        slotInterval = Math.max(5, Math.min(30, normalizedBuffer));
+    }
 
     // Use the minimum duration for slot generation
     const minDuration = Math.min(...allowedDurations);
@@ -144,6 +150,8 @@ function isSlotConflicting(slotTime, slotDuration, existingMeetings, bufferTime 
     const [slotHour, slotMinute] = slotTime.split(':').map(Number);
     const slotStart = slotHour * 60 + slotMinute;
     const slotEnd = slotStart + slotDuration;
+    const bufferBefore = Math.max(0, bufferTime);
+    const bufferAfter = Math.max(0, bufferTime);
 
     for (const meeting of existingMeetings) {
         if (!meeting.meetingWhen) continue;
@@ -153,11 +161,17 @@ function isSlotConflicting(slotTime, slotDuration, existingMeetings, bufferTime 
         const meetingDuration = meeting.duration || 60;
         const meetingEnd = meetingStart + meetingDuration;
 
-        // Check for overlap (including buffer time)
-        const slotStartWithBuffer = slotStart - bufferTime;
-        const slotEndWithBuffer = slotEnd + bufferTime;
+        // Expand meeting window by buffer on both sides
+        const windowStart = meetingStart - bufferBefore;
+        const windowEnd = meetingEnd + bufferAfter;
 
-        if (slotStartWithBuffer < meetingEnd && slotEndWithBuffer > meetingStart) {
+        // Overlap check between slot window and meeting window
+        // A slot conflicts if it overlaps with the blocked window
+        // - If slot ends exactly at windowStart, it's OK (no overlap, ends when buffer begins)
+        // - If slot starts at or before windowEnd, it should be blocked (can't start during or at end of buffer)
+        // - Any slot that overlaps the window should be blocked
+        // So: slotStart <= windowEnd && slotEnd > windowStart
+        if (slotStart <= windowEnd && slotEnd > windowStart) {
             return true;
         }
     }

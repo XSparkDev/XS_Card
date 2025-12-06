@@ -1,9 +1,10 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar, Platform } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS } from '../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface EventHeaderProps {
   title: string;
@@ -23,6 +24,7 @@ export default function EventHeader({
   backToScreen = 'Events'
 }: EventHeaderProps) {
   const navigation = useNavigation<NavigationProp>();
+  const insets = useSafeAreaInsets();
 
   const handleBackPress = () => {
     if (onBackPress) {
@@ -33,7 +35,7 @@ export default function EventHeader({
   };
 
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <View style={styles.leftContainer}>
         {showBackButton && (
           <TouchableOpacity 
@@ -61,7 +63,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight ? StatusBar.currentHeight + 16 : 40,
     paddingBottom: 16,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,

@@ -68,7 +68,7 @@ class SocketService {
 
     // Send welcome message
     socket.emit('connection_confirmed', {
-      message: 'Successfully connected to XSCard Events',
+      message: 'Successfully connected to XS Card Events',
       userId: userId,
       connectedAt: new Date().toISOString(),
       connectedUsers: this.getConnectedUsersCount()

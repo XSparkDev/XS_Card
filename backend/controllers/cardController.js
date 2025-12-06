@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const config = require('../config/config');
 const { formatDate } = require('../utils/dateFormatter');
+const { normalizePhone, ensurePhoneAvailable, PHONE_ERROR_CODE } = require('../utils/phoneUtils');
 
 // Configure storage
 const storage = multer.diskStorage({
@@ -161,7 +162,10 @@ exports.addCard = async (req, res) => {
             phone, 
             title, 
             name,
-            surname
+            surname,
+            altNumber,
+            altCountryCode,
+            showAltNumber
         } = req.body;
 
         // Validate fields are not only present but also have values
@@ -180,6 +184,9 @@ exports.addCard = async (req, res) => {
             });
         }
 
+        const normalizedPhone = normalizePhone(phone);
+        await ensurePhoneAvailable(db, normalizedPhone, userId);
+
         const cardRef = db.collection('cards').doc(userId);
         const cardDoc = await cardRef.get();
 
@@ -192,10 +199,14 @@ exports.addCard = async (req, res) => {
             companyLogoUrl = req.firebaseStorageUrls.companyLogo || null;
         }
 
+        // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
+        const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
+        
         const newCard = {
             company,
             email,
-            phone,
+            phone: normalizedPhone,
+            phoneNormalized: normalizedPhone,
             occupation: title,
             name: name || '',
             surname: surname || '',
@@ -203,7 +214,10 @@ exports.addCard = async (req, res) => {
             colorScheme: '#1B2B5B',
             createdAt: admin.firestore.Timestamp.now(), // Store as Firestore Timestamp
             profileImage: profileImageUrl,
-            companyLogo: companyLogoUrl
+            companyLogo: companyLogoUrl,
+            altNumber: altNumber || '',
+            altCountryCode: altCountryCode || '+27',
+            showAltNumber: parsedShowAltNumber || false
         };
 
         console.log('Creating new card:', newCard); // Debug log
@@ -231,6 +245,16 @@ exports.addCard = async (req, res) => {
         });
     } catch (error) {
         console.error('Error in addCard:', error); // Debug log
+
+        if (error.code === PHONE_ERROR_CODE) {
+            return res.status(error.status || 409).json({
+                success: false,
+                message: error.message,
+                code: error.code,
+                conflictUserId: error.conflictUserId || null
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Error adding card',
@@ -271,6 +295,13 @@ exports.updateCard = async (req, res) => {
             updateData = JSON.parse(JSON.stringify(req.body));
         }
 
+        if (updateData.phone) {
+            const normalizedPhone = normalizePhone(updateData.phone);
+            await ensurePhoneAvailable(db, normalizedPhone, userId);
+            updateData.phone = normalizedPhone;
+            updateData.phoneNormalized = normalizedPhone;
+        }
+
         // Update the specific card in the array
         const updatedCards = [...cardsData.cards];
         updatedCards[cardIndex] = {
@@ -289,6 +320,15 @@ exports.updateCard = async (req, res) => {
         });
     } catch (error) {
         console.error('Update card error:', error);
+
+        if (error.code === PHONE_ERROR_CODE) {
+            return res.status(error.status || 409).send({
+                message: error.message,
+                code: error.code,
+                conflictUserId: error.conflictUserId || null
+            });
+        }
+
         res.status(500).send({
             message: 'Failed to update card',
             error: error.message

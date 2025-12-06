@@ -51,13 +51,13 @@ export const setGlobalAuthContextRef = (ref: any) => {
 const getBaseUrl = () => {
   // For production, use the deployed server
   //return 'https://xscard-app-8ign.onrender.com';
-  // return 'https://baseurl.xscard.co.za';
+   return 'https://baseurl.xscard.co.za';
 
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
   
   // Common localhost addresses
-   return 'http://192.168.68.111:8383';
+   //return 'http://192.168.68.106:8383';
  // return 'https://846084eede03.ngrok-free.app';
   
 };
@@ -157,6 +157,10 @@ export const ENDPOINTS = {
     // User Management
     DEACTIVATE_USER: '/Users',
     DELETE_ACCOUNT: '/Users/delete-account',
+    
+    // iOS Version Check
+    IOS_VERSION_INFO: '/ios-version-info',
+    IOS_VERSION_CHECK: '/ios-version-check',
 };
 
 export const buildUrl = (endpoint: string) => `${API_BASE_URL}${endpoint}`;
@@ -703,3 +707,112 @@ export const updateCalendarPreferences = async (preferences: any): Promise<any> 
 
 // Re-export toast service and hook for centralized imports
 export { toastService, useToast };
+
+// ============= RECURRING EVENTS API =============
+
+import { EventInstance } from '../types/events';
+
+/**
+ * Get all instances for a recurring event
+ */
+export const getEventInstances = async (
+  eventId: string,
+  options?: { startDate?: string; endDate?: string; limit?: number }
+): Promise<EventInstance[]> => {
+  try {
+    let url = ENDPOINTS.GET_EVENT_INSTANCES.replace(':eventId', eventId);
+    const params = new URLSearchParams();
+    
+    if (options?.startDate) {
+      params.append('startDate', options.startDate);
+    }
+    if (options?.endDate) {
+      params.append('endDate', options.endDate);
+    }
+    if (options?.limit) {
+      params.append('limit', options.limit.toString());
+    }
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+    
+    const response = await authenticatedFetchWithRefresh(url, {
+      method: 'GET',
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to fetch event instances: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (data.success && data.data?.instances) {
+      return data.data.instances;
+    }
+    
+    throw new Error('Invalid response format');
+  } catch (error) {
+    console.error('[getEventInstances] Error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific instance of a recurring event
+ */
+export const getEventInstance = async (
+  eventId: string,
+  instanceId: string
+): Promise<EventInstance> => {
+  try {
+    const url = ENDPOINTS.GET_EVENT_INSTANCE
+      .replace(':eventId', eventId)
+      .replace(':instanceId', instanceId);
+    
+    const response = await authenticatedFetchWithRefresh(url, {
+      method: 'GET',
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to fetch event instance: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (data.success && data.data?.instance) {
+      return data.data.instance;
+    }
+    
+    throw new Error('Invalid response format');
+  } catch (error) {
+    console.error('[getEventInstance] Error:', error);
+    throw error;
+  }
+};
+
+/**
+ * End a recurring event series
+ */
+export const endRecurringSeries = async (eventId: string): Promise<void> => {
+  try {
+    const url = ENDPOINTS.END_RECURRING_SERIES.replace(':eventId', eventId);
+    
+    const response = await authenticatedFetchWithRefresh(url, {
+      method: 'POST',
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to end recurring series: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to end recurring series');
+    }
+  } catch (error) {
+    console.error('[endRecurringSeries] Error:', error);
+    throw error;
+  }
+};

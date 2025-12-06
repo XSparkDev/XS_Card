@@ -28,8 +28,10 @@ import {
   EVENT_CATEGORIES,
   EventCategory,
   EventLocation,
+  RecurrencePattern,
 } from '../../types/events';
 import { getUserPlan, getPlanLimits } from '../../utils/userPlan';
+import RecurrenceConfig from '../../components/events/RecurrenceConfig';
 
 type NavigationProp = NativeStackNavigationProp<any>;
 
@@ -38,14 +40,16 @@ const STEPS = {
   BASIC_INFO: 0,
   DETAILS: 1,
   LOCATION: 2,
-  MEDIA: 3,
-  REVIEW: 4,
+  RECURRENCE: 3,
+  MEDIA: 4,
+  REVIEW: 5,
 } as const;
 
 const STEP_TITLES = [
   'Basic Information',
   'Event Details', 
   'Location & Venue',
+  'Recurrence',
   'Images & Media',
   'Review & Publish',
 ];
@@ -78,6 +82,8 @@ export default function CreateEventScreen() {
     images: [],
     tags: [],
     allowBulkRegistrations: false,
+    isRecurring: false,
+    recurrencePattern: undefined,
   });
 
   // UI state - Updated for Android compatibility
@@ -90,6 +96,7 @@ export default function CreateEventScreen() {
 
   // Form validation
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [neverEnds, setNeverEnds] = useState(false);
 
   // User plan for image limits
   const [userPlan, setUserPlan] = useState<string>('free');
@@ -186,6 +193,28 @@ export default function CreateEventScreen() {
       case STEPS.LOCATION:
         if (!formData.location.venue.trim()) newErrors.venue = 'Venue is required';
         if (!formData.location.city.trim()) newErrors.city = 'City is required';
+        break;
+
+      case STEPS.RECURRENCE:
+        if (formData.isRecurring && formData.recurrencePattern) {
+          const pattern = formData.recurrencePattern;
+          if (!pattern.type) newErrors.type = 'Recurrence type is required';
+          if (!pattern.startDate) newErrors.startDate = 'Start date is required';
+          if (!pattern.startTime) newErrors.startTime = 'Time is required';
+          // End date is optional (can be undefined for "never ends")
+          // No validation needed for endDate as it's optional
+          if (pattern.type === 'weekly' && (!pattern.daysOfWeek || pattern.daysOfWeek.length === 0)) {
+            newErrors.daysOfWeek = 'At least one day of week is required for weekly recurrence';
+          }
+          if (pattern.type === 'monthly' && !pattern.dayOfMonth) {
+            newErrors.dayOfMonth = 'Day of month is required for monthly recurrence';
+          }
+          if (pattern.frequency && pattern.frequency < 1) {
+            newErrors.frequency = 'Frequency must be at least 1';
+          }
+        } else if (formData.isRecurring) {
+          newErrors.pattern = 'Recurrence pattern is required when recurring is enabled';
+        }
         break;
 
       default:
@@ -344,7 +373,7 @@ export default function CreateEventScreen() {
       setLoading(true);
 
       // Final validation
-      if (!validateStep(STEPS.BASIC_INFO) || !validateStep(STEPS.DETAILS) || !validateStep(STEPS.LOCATION)) {
+      if (!validateStep(STEPS.BASIC_INFO) || !validateStep(STEPS.DETAILS) || !validateStep(STEPS.LOCATION) || !validateStep(STEPS.RECURRENCE)) {
         toast.warning('Validation Error', 'Please fix the errors before creating the event.');
         return;
       }
@@ -381,6 +410,25 @@ export default function CreateEventScreen() {
       // Location & tags as JSON strings for backend parsing
       payload.append('location', JSON.stringify(formData.location));
       payload.append('tags', JSON.stringify(formData.tags || []));
+
+      // Recurring events
+      if (formData.isRecurring && formData.recurrencePattern) {
+        payload.append('isRecurring', 'true');
+        // Ensure endDate is set - if "never ends" is selected, use a far future date as workaround
+        // until backend fully supports "never ends"
+        const patternToSend = { ...formData.recurrencePattern };
+        if (!patternToSend.endDate) {
+          // Set to 10 years from start date as "never ends" workaround
+          const start = new Date(patternToSend.startDate);
+          const farFuture = new Date(start);
+          farFuture.setFullYear(farFuture.getFullYear() + 10);
+          patternToSend.endDate = farFuture.toISOString().split('T')[0];
+        }
+        console.log('[CreateEvent] Sending recurrence pattern:', JSON.stringify(patternToSend, null, 2));
+        payload.append('recurrencePattern', JSON.stringify(patternToSend));
+      } else {
+        payload.append('isRecurring', 'false');
+      }
 
       // Images   – first image ➜ bannerImage, rest ➜ eventImages[]
       if (selectedImages.length > 0) {
@@ -472,6 +520,8 @@ export default function CreateEventScreen() {
         return renderDetailsStep();
       case STEPS.LOCATION:
         return renderLocationStep();
+      case STEPS.RECURRENCE:
+        return renderRecurrenceStep();
       case STEPS.MEDIA:
         return renderMediaStep();
       case STEPS.REVIEW:
@@ -863,6 +913,27 @@ export default function CreateEventScreen() {
     </View>
   );
 
+  const renderRecurrenceStep = () => (
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Recurring Event</Text>
+      <Text style={styles.stepSubtitle}>
+        Make this event repeat automatically on a schedule
+      </Text>
+      <RecurrenceConfig
+        value={formData.recurrencePattern || null}
+        onChange={(pattern) => {
+          updateFormData({
+            isRecurring: !!pattern,
+            recurrencePattern: pattern || undefined,
+          });
+          setNeverEnds(!pattern?.endDate);
+        }}
+        startDate={formData.eventDate}
+        errors={errors}
+      />
+    </View>
+  );
+
   const renderMediaStep = () => (
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>Add some visuals</Text>
@@ -980,6 +1051,58 @@ export default function CreateEventScreen() {
               <Image key={index} source={{ uri: image }} style={styles.reviewImage} />
             ))}
           </ScrollView>
+        </View>
+      )}
+
+      {formData.isRecurring && formData.recurrencePattern && (
+        <View style={styles.reviewSection}>
+          <Text style={styles.reviewSectionTitle}>Recurrence Pattern</Text>
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>Type:</Text>
+            <Text style={styles.reviewValue}>
+              {formData.recurrencePattern.type.charAt(0).toUpperCase() + formData.recurrencePattern.type.slice(1)}
+            </Text>
+          </View>
+          {formData.recurrencePattern.type === 'weekly' && formData.recurrencePattern.daysOfWeek && (
+            <View style={styles.reviewItem}>
+              <Text style={styles.reviewLabel}>Days:</Text>
+              <Text style={styles.reviewValue}>
+                {formData.recurrencePattern.daysOfWeek
+                  .map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d])
+                  .join(', ')}
+              </Text>
+            </View>
+          )}
+          {formData.recurrencePattern.type === 'monthly' && formData.recurrencePattern.dayOfMonth && (
+            <View style={styles.reviewItem}>
+              <Text style={styles.reviewLabel}>Day of Month:</Text>
+              <Text style={styles.reviewValue}>{formData.recurrencePattern.dayOfMonth}</Text>
+            </View>
+          )}
+          {formData.recurrencePattern.frequency && formData.recurrencePattern.frequency > 1 && (
+            <View style={styles.reviewItem}>
+              <Text style={styles.reviewLabel}>Frequency:</Text>
+              <Text style={styles.reviewValue}>
+                Every {formData.recurrencePattern.frequency} {formData.recurrencePattern.type === 'daily' ? 'days' : 'weeks'}
+              </Text>
+            </View>
+          )}
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>Time:</Text>
+            <Text style={styles.reviewValue}>
+              {formData.recurrencePattern.startTime} {formData.recurrencePattern.timezone}
+            </Text>
+          </View>
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>Start Date:</Text>
+            <Text style={styles.reviewValue}>{formData.recurrencePattern.startDate}</Text>
+          </View>
+          <View style={styles.reviewItem}>
+            <Text style={styles.reviewLabel}>End Date:</Text>
+            <Text style={styles.reviewValue}>
+              {formData.recurrencePattern.endDate || 'Never ends'}
+            </Text>
+          </View>
         </View>
       )}
     </ScrollView>
