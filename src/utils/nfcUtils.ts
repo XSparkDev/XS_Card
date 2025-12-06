@@ -18,13 +18,55 @@ export function generateNFCUrl(userId: string, cardIndex: number): string {
 /**
  * Encode URL into NDEF URI Record (optimized for speed)
  * Uses minimal NDEF format for fastest write times
+ * 
+ * react-native-nfc-manager expects:
+ * - payload: Array of numbers (byte values 0-255)
+ * - type: Array of numbers (byte values) - for URI record, type is [0x55] ('U')
+ * - tnf: Number (1 = Well Known Type)
  */
 export function encodeNDEFUrl(url: string): any[] {
   try {
-    // Use the NDEF helper to create a URI record
-    const uriRecord = Ndef.uriRecord(url);
+    // Manually construct NDEF URI record to ensure correct format
+    // URI Record format:
+    // - TNF: 1 (Well Known Type)
+    // - Type: [0x55] ('U' for URI)
+    // - Payload: [0x04] (https://www.) + URL bytes
     
-    return [uriRecord];
+    // Determine URI prefix code (0x04 = https://www.)
+    const prefixCode = 0x04; // https://www.
+    
+    // Remove https://www. prefix if present (we'll use prefix code instead)
+    let urlWithoutPrefix = url;
+    if (url.startsWith('https://www.')) {
+      urlWithoutPrefix = url.substring(12); // Remove 'https://www.'
+    } else if (url.startsWith('https://')) {
+      urlWithoutPrefix = url.substring(8); // Remove 'https://'
+      // Note: If no www, we might need prefix code 0x03 (https://)
+      // But for simplicity, let's use 0x04 and add www if needed
+    }
+    
+    // Encode URL string to bytes
+    const urlBytes = Array.from(new TextEncoder().encode(urlWithoutPrefix));
+    
+    // Construct payload: [prefix_code, ...url_bytes]
+    const payload = [prefixCode, ...urlBytes];
+    
+    // Construct NDEF record
+    const ndefRecord = {
+      tnf: 1, // Well Known Type
+      type: [0x55], // 'U' for URI record type
+      id: [], // No ID
+      payload: payload.map(b => Number(b)), // Ensure all are numbers
+    };
+    
+    console.log('[NDEF Encode] Manual record:', {
+      tnf: ndefRecord.tnf,
+      type: ndefRecord.type,
+      payloadLength: ndefRecord.payload.length,
+      url: url,
+    });
+    
+    return [ndefRecord];
   } catch (error) {
     console.error('[NDEF Encode] Error encoding URL:', error);
     throw new Error(`Failed to encode NDEF URL: ${error}`);

@@ -125,16 +125,17 @@ class NFCService {
       console.log('[NFC Write] Generated URL:', url);
       
       // 2. Pre-encode NDEF (reusable)
-      const ndefMessage = encodeNDEFUrl(url);
-      console.log('[NFC Write] Encoded NDEF message');
+      const ndefRecords = encodeNDEFUrl(url);
+      console.log('[NFC Write] Encoded NDEF records:', JSON.stringify(ndefRecords, null, 2));
       
       // 3. Request NFC technology
       console.log('[NFC Write] Requesting NFC technology...');
       await NfcManager.requestTechnology(NfcTech.Ndef);
       
       // 4. Write directly (no validation loops)
+      // writeNdefMessage accepts array of NDEF records
       console.log('[NFC Write] Writing NDEF message...');
-      await NfcManager.ndefHandler.writeNdefMessage(ndefMessage);
+      await NfcManager.ndefHandler.writeNdefMessage(ndefRecords);
       
       // 5. Close connection
       console.log('[NFC Write] Closing connection...');
