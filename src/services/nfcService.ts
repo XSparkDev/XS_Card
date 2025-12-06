@@ -124,18 +124,31 @@ class NFCService {
       const url = generateNFCUrl(userId, cardIndex);
       console.log('[NFC Write] Generated URL:', url);
       
-      // 2. Pre-encode NDEF (reusable)
-      const ndefRecords = encodeNDEFUrl(url);
-      console.log('[NFC Write] Encoded NDEF records:', JSON.stringify(ndefRecords, null, 2));
+      // 2. Create NDEF record using library helper
+      const uriRecord = Ndef.uriRecord(url);
+      console.log('[NFC Write] Created URI record:', {
+        tnf: uriRecord.tnf,
+        type: uriRecord.type,
+        payloadLength: uriRecord.payload?.length,
+      });
       
       // 3. Request NFC technology
       console.log('[NFC Write] Requesting NFC technology...');
       await NfcManager.requestTechnology(NfcTech.Ndef);
       
-      // 4. Write directly (no validation loops)
-      // writeNdefMessage accepts array of NDEF records
+      // 4. Encode message to byte array and write
+      // writeNdefMessage expects byte array for v3.x
+      console.log('[NFC Write] Encoding message to bytes...');
+      const bytes = Ndef.encodeMessage([uriRecord]);
+      console.log('[NFC Write] Encoded bytes length:', bytes?.length);
+      
+      // Convert Uint8Array to plain array if needed (some versions expect this)
+      const byteArray = bytes instanceof Uint8Array 
+        ? Array.from(bytes) 
+        : bytes;
+      
       console.log('[NFC Write] Writing NDEF message...');
-      await NfcManager.ndefHandler.writeNdefMessage(ndefRecords);
+      await NfcManager.ndefHandler.writeNdefMessage(byteArray);
       
       // 5. Close connection
       console.log('[NFC Write] Closing connection...');
