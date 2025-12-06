@@ -53,11 +53,17 @@ export default function NFCWriteProgress({
       {/* Icon */}
       <Animated.View style={[styles.iconContainer, { transform: [{ scale: scaleAnim }] }]}>
         {error ? (
-          <MaterialIcons name="error" size={64} color={COLORS.error} />
+          <View style={[styles.iconCircle, styles.errorCircle]}>
+            <MaterialIcons name="error" size={56} color={COLORS.white} />
+          </View>
         ) : success ? (
-          <MaterialIcons name="check-circle" size={64} color="#4CAF50" />
+          <View style={[styles.iconCircle, styles.successCircle]}>
+            <MaterialIcons name="check-circle" size={56} color={COLORS.white} />
+          </View>
         ) : (
-          <MaterialIcons name="nfc" size={64} color={COLORS.primary} />
+          <View style={[styles.iconCircle, styles.primaryCircle]}>
+            <MaterialIcons name="nfc" size={56} color={COLORS.white} />
+          </View>
         )}
       </Animated.View>
 
@@ -66,16 +72,16 @@ export default function NFCWriteProgress({
         {error
           ? 'Write Failed'
           : success
-          ? 'Card Programmed!'
+          ? 'Card Programmed Successfully!'
           : isWriting
           ? 'Tap Card to Back of Phone'
           : 'Ready to Write'}
       </Text>
 
       {/* Progress Bar */}
-      {isWriting && !error && !success && (
+      {(isWriting || (!success && progress > 0)) && !error && (
         <View style={styles.progressBarContainer}>
-          <View style={[styles.progressBar, { width: `${progress}%` }]} />
+          <View style={[styles.progressBar, { width: `${Math.max(Math.min(progress, 100), 0)}%` }]} />
         </View>
       )}
 
@@ -86,19 +92,33 @@ export default function NFCWriteProgress({
 
       {/* Duration (on success) */}
       {success && duration !== undefined && (
-        <Text style={styles.durationText}>Completed in {duration}ms</Text>
+        <View style={styles.durationContainer}>
+          <MaterialIcons name="timer" size={16} color={COLORS.success} />
+          <Text style={styles.durationText}>Completed in {duration}ms</Text>
+        </View>
       )}
 
       {/* Error Message */}
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && (
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={20} color={COLORS.error} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
 
       {/* Instructions */}
       {!error && !success && (
         <View style={styles.instructionsContainer}>
+          <MaterialIcons 
+            name={isWriting ? "touch-app" : "info-outline"} 
+            size={20} 
+            color={COLORS.primary} 
+            style={styles.instructionIcon}
+          />
           <Text style={styles.instructionText}>
             {isWriting
-              ? 'Hold the card steady against the back of your phone'
-              : 'Place your blank NFC card on the back of your phone and tap "Program Card"'}
+              ? 'Hold the card steady where your NFC module is located until writing completes'
+              : 'Tap the Program NFC Card button to begin'}
           </Text>
         </View>
       )}
@@ -110,58 +130,116 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    padding: 24,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   iconContainer: {
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  iconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  errorCircle: {
+    backgroundColor: COLORS.error,
+  },
+  successCircle: {
+    backgroundColor: COLORS.success,
+  },
+  primaryCircle: {
+    backgroundColor: COLORS.primary,
   },
   statusText: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: 'bold',
     color: COLORS.black,
-    marginBottom: 16,
+    marginBottom: 20,
     textAlign: 'center',
   },
   progressBarContainer: {
     width: '100%',
-    height: 6,
+    height: 8,
     backgroundColor: COLORS.background,
-    borderRadius: 3,
-    marginBottom: 16,
+    borderRadius: 4,
+    marginBottom: 20,
     overflow: 'hidden',
   },
   progressBar: {
     height: '100%',
     backgroundColor: COLORS.primary,
-    borderRadius: 3,
+    borderRadius: 4,
   },
   spinner: {
-    marginVertical: 12,
+    marginVertical: 16,
+  },
+  durationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: COLORS.successLight,
+    borderRadius: 20,
   },
   durationText: {
     fontSize: 14,
-    color: COLORS.gray,
-    marginTop: 8,
+    fontWeight: '600',
+    color: COLORS.success,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: COLORS.errorLight,
+    borderRadius: 12,
+    maxWidth: '90%',
   },
   errorText: {
     fontSize: 14,
     color: COLORS.error,
-    marginTop: 8,
     textAlign: 'center',
-    paddingHorizontal: 20,
+    flex: 1,
+    fontWeight: '500',
   },
   instructionsContainer: {
-    marginTop: 20,
+    marginTop: 24,
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 16,
     backgroundColor: COLORS.background,
-    borderRadius: 8,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    maxWidth: '100%',
+  },
+  instructionIcon: {
+    marginTop: 2,
   },
   instructionText: {
     fontSize: 14,
-    color: COLORS.gray,
-    textAlign: 'center',
+    color: COLORS.textSecondary,
+    textAlign: 'left',
     lineHeight: 20,
+    flex: 1,
   },
 });
 

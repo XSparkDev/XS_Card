@@ -166,6 +166,7 @@ class NFCService {
         await NfcManager.cancelTechnologyRequest();
       } catch {}
       
+      // Return generic error message (will be sanitized by UI layer)
       return { 
         success: false, 
         error: error.message || 'Write failed',

@@ -13,6 +13,9 @@ import {
   ScrollView,
   Alert,
   Platform,
+  Animated,
+  Dimensions,
+  Linking,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -23,6 +26,8 @@ import Header from '../../components/Header';
 import NFCWriteProgress from '../../components/nfc/NFCWriteProgress';
 import NFCService from '../../services/nfcService';
 import { useToast } from '../../hooks/useToast';
+
+const { width } = Dimensions.get('window');
 
 type RootStackParamList = {
   NFCCardProgrammer: { cards: any[]; userId: string };
@@ -51,10 +56,33 @@ export default function NFCCardProgrammerScreen() {
   const [writeSuccess, setWriteSuccess] = useState(false);
   const [writeDuration, setWriteDuration] = useState<number | undefined>(undefined);
   const [nfcAvailable, setNfcAvailable] = useState(false);
+  const [pulseAnim] = useState(new Animated.Value(1));
 
   useEffect(() => {
     checkNFCAvailability();
   }, []);
+
+  useEffect(() => {
+    if (writing) {
+      // Pulse animation during write
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [writing]);
 
   const checkNFCAvailability = async () => {
     const available = await NFCService.isAvailable();
@@ -83,23 +111,50 @@ export default function NFCCardProgrammerScreen() {
     }
 
     setWriting(true);
-    setWriteProgress(0);
+    setWriteProgress(15); // Start at 15%
     setWriteError(null);
     setWriteSuccess(false);
     setWriteDuration(undefined);
 
+    let progressInterval: NodeJS.Timeout | null = null;
+    let successInterval: NodeJS.Timeout | null = null;
+
     try {
-      // Simulate progress
-      setWriteProgress(25);
+      // Animate progress from 15% to 50% while waiting for NFC
+      progressInterval = setInterval(() => {
+        setWriteProgress((prev) => {
+          if (prev < 50) {
+            return prev + 2; // Increment by 2% every interval
+          }
+          return prev;
+        });
+      }, 100);
 
       // Write URL to tag
       console.log('[NFC Programmer] Writing card:', { userId, cardIndex: selectedCardIndex });
       const result = await NFCService.writeUrl(userId, selectedCardIndex);
 
+      // Clear the progress interval
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+
       if (result.success) {
-        setWriteProgress(100);
-        setWriteSuccess(true);
-        setWriteDuration(result.duration);
+        // Animate progress from current to 100%
+        successInterval = setInterval(() => {
+          setWriteProgress((prev) => {
+            if (prev >= 100) {
+              if (successInterval) {
+                clearInterval(successInterval);
+              }
+              setWriteSuccess(true);
+              setWriteDuration(result.duration);
+              return 100;
+            }
+            return Math.min(prev + 5, 100); // Increment by 5% until 100%
+          });
+        }, 50);
 
         toast.success(
           'Card Programmed!',
@@ -111,13 +166,20 @@ export default function NFCCardProgrammerScreen() {
           navigation.goBack();
         }, 2000);
       } else {
-        throw new Error(result.error || 'Write failed');
+        // Create error object with the result error message
+        const error = new Error(result.error || 'Write failed');
+        throw error;
       }
     } catch (error: any) {
       console.error('[NFC Programmer] Write error:', error);
-      setWriteError(error.message || 'Failed to write NFC card');
+      // Clean up intervals
+      if (progressInterval) clearInterval(progressInterval);
+      if (successInterval) clearInterval(successInterval);
+      
+      const friendlyMessage = getFriendlyErrorMessage(error);
+      setWriteError(friendlyMessage);
       setWriteProgress(0);
-      toast.error('Write Failed', error.message || 'Failed to write NFC card');
+      toast.error('Write Failed', friendlyMessage);
     } finally {
       setWriting(false);
     }
@@ -134,61 +196,164 @@ export default function NFCCardProgrammerScreen() {
     }
   };
 
-  const selectedCard = cards[selectedCardIndex];
+  const getFriendlyErrorMessage = (error: any): string => {
+    const errorMessage = error?.message || error?.toString() || 'Unknown error';
+    
+    // Log technical error for debugging
+    console.error('[NFC Programmer] Technical error:', errorMessage);
+    
+    // Convert technical errors to user-friendly messages
+    if (errorMessage.includes('java.io') || 
+        errorMessage.includes('IOException') ||
+        errorMessage.includes('IO error')) {
+      return 'Oops! Your card couldn\'t be written. Please try again.';
+    }
+    
+    if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+      return 'The card wasn\'t detected in time. Please hold it steady and try again.';
+    }
+    
+    if (errorMessage.includes('tag') && errorMessage.includes('size')) {
+      return 'The NFC card is too small for this data. Please use a different card.';
+    }
+    
+    if (errorMessage.includes('not enabled') || errorMessage.includes('disabled')) {
+      return 'NFC is not enabled. Please enable NFC in your device settings.';
+    }
+    
+    if (errorMessage.includes('cancel') || errorMessage.includes('cancelled')) {
+      return 'Write operation was cancelled.';
+    }
+    
+    // Generic friendly message for any other error
+    return 'Oops! Your card couldn\'t be written. Please try again.';
+  };
+
+  const handleInfoPress = async () => {
+    try {
+      // Get device info for better search results
+      let deviceInfo = 'NFC location on phone';
+      
+      if (Platform.OS === 'android') {
+        // Try to get device manufacturer/brand if available
+        const constants = (Platform as any).constants;
+        if (constants) {
+          const manufacturer = constants.Manufacturer || '';
+          const brand = constants.Brand || '';
+          const model = constants.Model || '';
+          if (manufacturer || brand || model) {
+            deviceInfo = `${manufacturer} ${brand} ${model} NFC location`.trim();
+          }
+        }
+      } else {
+        deviceInfo = 'iPhone NFC location';
+      }
+      
+      const searchQuery = encodeURIComponent(deviceInfo);
+      const googleSearchUrl = `https://www.google.com/search?q=${searchQuery}`;
+      
+      const canOpen = await Linking.canOpenURL(googleSearchUrl);
+      if (canOpen) {
+        await Linking.openURL(googleSearchUrl);
+      } else {
+        Alert.alert('Error', 'Unable to open browser');
+      }
+    } catch (error) {
+      console.error('[NFC Info] Error opening search:', error);
+      Alert.alert('Error', 'Unable to open search');
+    }
+  };
 
   return (
     <View style={styles.container}>
       <Header title="Program NFC Card" />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+      >
         {/* Card Selection */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Card to Program</Text>
+          <View style={styles.sectionHeader}>
+            <MaterialIcons name="credit-card" size={24} color={COLORS.primary} />
+            <Text style={styles.sectionTitle}>Select Card to Program</Text>
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.cardSelector}
+            contentContainerStyle={styles.cardSelectorContent}
           >
-            {cards.map((card, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.cardOption,
-                  selectedCardIndex === index && styles.cardOptionSelected,
-                ]}
-                onPress={() => !writing && setSelectedCardIndex(index)}
-                disabled={writing}
-              >
-                <Text style={styles.cardName}>
-                  {card.name} {card.surname}
-                </Text>
-                <Text style={styles.cardCompany}>{card.company || 'No Company'}</Text>
-              </TouchableOpacity>
-            ))}
+            {cards.map((card, index) => {
+              const isSelected = selectedCardIndex === index;
+              const cardColor = card.colorScheme || COLORS.primary;
+              
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.cardOption,
+                    isSelected && styles.cardOptionSelected,
+                    isSelected && { borderColor: cardColor },
+                  ]}
+                  onPress={() => !writing && setSelectedCardIndex(index)}
+                  disabled={writing}
+                  activeOpacity={0.7}
+                >
+                  {isSelected && (
+                    <View style={[styles.selectedIndicator, { backgroundColor: cardColor }]}>
+                      <MaterialIcons name="check-circle" size={20} color={COLORS.white} />
+                    </View>
+                  )}
+                  <View style={styles.cardOptionContent}>
+                    <View style={[styles.cardColorBar, { backgroundColor: cardColor }]} />
+                    <Text style={styles.cardName} numberOfLines={1}>
+                      {card.name} {card.surname}
+                    </Text>
+                    <Text style={styles.cardCompany} numberOfLines={1}>
+                      {card.company || 'No Company'}
+                    </Text>
+                    {card.occupation && (
+                      <Text style={styles.cardOccupation} numberOfLines={1}>
+                        {card.occupation}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
 
-        {/* Selected Card Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Card Information</Text>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardInfoText}>
-              Name: {selectedCard.name} {selectedCard.surname}
-            </Text>
-            <Text style={styles.cardInfoText}>Email: {selectedCard.email}</Text>
-            <Text style={styles.cardInfoText}>Company: {selectedCard.company || 'N/A'}</Text>
-            <Text style={styles.cardInfoText}>Occupation: {selectedCard.occupation || 'N/A'}</Text>
-          </View>
-        </View>
 
         {/* Write Progress */}
-        <NFCWriteProgress
-          progress={writeProgress}
-          isWriting={writing}
-          error={writeError}
-          success={writeSuccess}
-          duration={writeDuration}
-        />
+        <View style={styles.progressSection}>
+          <View style={styles.instructionsHeader}>
+            <Text style={styles.instructionsTitle}>Instructions</Text>
+            <TouchableOpacity 
+              onPress={handleInfoPress}
+              style={styles.infoButton}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="info" size={20} color={COLORS.primary} />
+              <Text style={styles.infoButtonLabel}>Where's my NFC module?</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.instructionsBox}>
+            <Text style={styles.instructionsText}>
+            Place your NFC card against the back of your device.
+            The NFC module is typically located in the centre or upper-back area.
+            </Text>
+          </View>
+          <NFCWriteProgress
+            progress={writeProgress}
+            isWriting={writing}
+            error={writeError}
+            success={writeSuccess}
+            duration={writeDuration}
+          />
+        </View>
       </ScrollView>
 
       {/* Action Buttons */}
@@ -202,20 +367,35 @@ export default function NFCCardProgrammerScreen() {
             ]}
             onPress={handleWrite}
             disabled={!nfcAvailable || writing}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="nfc" size={20} color={COLORS.white} />
-            <Text style={styles.actionButtonText}>
-              {writing ? 'Writing...' : 'Program Card'}
-            </Text>
+            {writing ? (
+              <>
+                <MaterialIcons name="nfc" size={22} color={COLORS.white} />
+                <Text style={styles.actionButtonText}>Writing...</Text>
+              </>
+            ) : (
+              <>
+                <MaterialIcons name="nfc" size={22} color={COLORS.white} />
+                <Text style={styles.actionButtonText}>Program NFC Card</Text>
+              </>
+            )}
           </TouchableOpacity>
         )}
 
+        {writeSuccess && (
+          <View style={styles.successContainer}>
+            <MaterialIcons name="check-circle" size={24} color={COLORS.success} />
+            <Text style={styles.successText}>Card Programmed Successfully!</Text>
+          </View>
+        )}
+
         <TouchableOpacity
-          style={[styles.actionButton, styles.secondaryButton]}
+          style={styles.secondaryButton}
           onPress={handleCancel}
+          activeOpacity={0.7}
         >
-          <MaterialIcons name="close" size={20} color={COLORS.white} />
-          <Text style={styles.actionButtonText}>
+          <Text style={styles.secondaryButtonText}>
             {writing ? 'Cancel' : writeSuccess ? 'Done' : 'Close'}
           </Text>
         </TouchableOpacity>
@@ -227,84 +407,246 @@ export default function NFCCardProgrammerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
   },
   content: {
     flex: 1,
-    padding: 20,
+  },
+  contentContainer: {
+    paddingTop: Platform.OS === 'android' ? 120 : 100,
+    paddingBottom: 20,
+  },
+  heroSection: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.white,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  iconWrapper: {
+    marginBottom: 16,
+  },
+  iconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  heroSubtitle: {
+    fontSize: 14,
+    color: COLORS.gray,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    lineHeight: 20,
   },
   section: {
     marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
   },
   sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.black,
+  },
+  cardSelector: {
+    marginHorizontal: -20,
+  },
+  cardSelectorContent: {
+    paddingHorizontal: 20,
+  },
+  cardOption: {
+    width: width * 0.7,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    marginRight: 12,
+    backgroundColor: COLORS.white,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardOptionSelected: {
+    borderWidth: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  selectedIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  cardColorBar: {
+    height: 4,
+    width: '100%',
+  },
+  cardOptionContent: {
+    padding: 16,
+  },
+  cardName: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.black,
-    marginBottom: 12,
-  },
-  cardSelector: {
-    flexDirection: 'row',
-  },
-  cardOption: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: COLORS.background,
-    marginRight: 12,
-    minWidth: 150,
-  },
-  cardOptionSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: `${COLORS.primary}10`,
-  },
-  cardName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.black,
+    marginTop: 8,
     marginBottom: 4,
   },
   cardCompany: {
     fontSize: 14,
     color: COLORS.gray,
+    marginBottom: 4,
   },
-  cardInfo: {
-    padding: 16,
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
+  cardOccupation: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
   },
-  cardInfoText: {
-    fontSize: 14,
+  progressSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  instructionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  instructionsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: COLORS.black,
-    marginBottom: 8,
+  },
+  infoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: COLORS.primaryLight,
+  },
+  infoButtonLabel: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  instructionsBox: {
+    backgroundColor: COLORS.background,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  instructionsText: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
   },
   actionContainer: {
     padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    backgroundColor: COLORS.white,
     borderTopWidth: 1,
-    borderTopColor: COLORS.background,
+    borderTopColor: COLORS.border,
     gap: 12,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 16,
     paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 25,
-    gap: 8,
+    borderRadius: 16,
+    gap: 10,
+  },
+  primaryButton: {
+    backgroundColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   actionButtonDisabled: {
     opacity: 0.5,
   },
   actionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: COLORS.white,
   },
-  primaryButton: {
-    backgroundColor: COLORS.primary,
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: COLORS.successLight,
+    borderRadius: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  successText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.success,
   },
   secondaryButton: {
-    backgroundColor: COLORS.secondary,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.black,
   },
 });
 
