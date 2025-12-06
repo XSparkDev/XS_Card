@@ -67,6 +67,7 @@ export type RootStackParamList = {
   ChangePassword: undefined;
   AdminDashboard: { screen?: 'Analytics' | 'Calendar' } | undefined;
   CalendarPreferences: undefined;
+  NFCCardProgrammer: { cards: any[]; userId: string };
 };
 
 export type RootTabParamList = {

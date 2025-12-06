@@ -247,6 +247,23 @@ app.get('/saveContact.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
 });
 
+// NFC contact page route - for card-to-phone NFC sharing
+// URL format: /nfc?userId={userId}&cardIndex={cardIndex}
+app.get('/nfc', (req, res) => {
+    const { userId, cardIndex } = req.query;
+    
+    // Validate required parameters
+    if (!userId || cardIndex === undefined) {
+        console.log('[NFC] Missing parameters - userId:', userId, 'cardIndex:', cardIndex);
+        return res.status(400).send('Missing userId or cardIndex');
+    }
+    
+    console.log('[NFC] Serving contact page for userId:', userId, 'cardIndex:', cardIndex);
+    
+    // Serve saveContact.html (reuses existing contact saving logic)
+    res.sendFile(path.join(__dirname, 'public', 'saveContact.html'));
+});
+
 // Public calendar booking routes (NO AUTH REQUIRED)
 // IMPORTANT: .html route MUST come before the API route to avoid route conflicts
 app.get('/public/calendar/:userId.html', (req, res) => {

@@ -484,6 +484,22 @@ export default function SettingsScreen() {
               false
             )
           )}
+
+          {renderSettingItem(
+            'nfc',
+            'Program NFC Card',
+            'Write your card to a physical NFC tag',
+            () => {
+              if (userData?.cards && userData.cards.length > 0 && userData.id) {
+                navigation.navigate('NFCCardProgrammer', {
+                  cards: userData.cards,
+                  userId: userData.id
+                });
+              } else {
+                Alert.alert('No Cards', 'Please create a card first before programming an NFC tag.');
+              }
+            }
+          )}
         </View>
 
         {/* Preferences Section */}

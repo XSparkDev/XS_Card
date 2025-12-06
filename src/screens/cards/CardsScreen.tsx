@@ -1500,7 +1500,7 @@ export default function CardsScreen() {
                       />
                     ) : (
                       <MaterialIcons 
-                        name={option.icon as 'send' | 'email' | 'more-horiz'} 
+                        name={option.icon as 'send' | 'email' | 'more-horiz' | 'nfc'} 
                         size={isTablet() ? scale(22) : 22} 
                         color={COLORS.white} 
                       />

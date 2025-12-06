@@ -34,6 +34,7 @@ import PrivacySecurityScreen from '../screens/PrivacySecurityScreen'; // NEW IMP
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import CalendarPreferencesScreen from '../screens/settings/CalendarPreferencesScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import NFCCardProgrammerScreen from '../screens/nfc/NFCCardProgrammerScreen';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createStackNavigator<RootStackParamList>();
@@ -179,6 +180,7 @@ export default function AppNavigator() {
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="CalendarPreferences" component={CalendarPreferencesScreen} />
       <Stack.Screen name="AdminDashboard" component={DashboardNavigator} />
+      <Stack.Screen name="NFCCardProgrammer" component={NFCCardProgrammerScreen} />
     </Stack.Navigator>
   );
 }
