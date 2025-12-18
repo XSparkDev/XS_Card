@@ -40,6 +40,9 @@ export default {
       ]
     ],
     extra: {
+      "eas": {
+        "projectId": "4235e235-536e-42af-8c32-5fb9508a7ab1"
+      },
       // Disable reanimated completely for Windows builds
       REACT_NATIVE_REANIMATED_DISABLE_AUTOLINK: "1",
       // Firebase configuration for xscard-dev project

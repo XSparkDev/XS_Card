@@ -15,6 +15,8 @@ interface NFCWriteProgressProps {
   error?: string | null;
   success?: boolean;
   duration?: number;
+  status?: string; // Status message
+  attempt?: number; // Current attempt number
 }
 
 export default function NFCWriteProgress({
@@ -23,6 +25,8 @@ export default function NFCWriteProgress({
   error,
   success,
   duration,
+  status,
+  attempt,
 }: NFCWriteProgressProps) {
   const [scaleAnim] = React.useState(new Animated.Value(1));
 
@@ -67,19 +71,15 @@ export default function NFCWriteProgress({
         )}
       </Animated.View>
 
-      {/* Status Text */}
-      <Text style={styles.statusText}>
-        {error
-          ? 'Write Failed'
-          : success
-          ? 'Card Programmed Successfully!'
-          : isWriting
-          ? 'Tap Card to Back of Phone'
-          : 'Ready to Write'}
-      </Text>
+          {/* Status Text */}
+          <Text style={styles.statusText}>
+            {success
+              ? 'Card Programmed Successfully!'
+              : status || (error ? 'Remove card and put it back' : isWriting ? 'Hold card steady' : 'Ready to Write')}
+          </Text>
 
       {/* Progress Bar */}
-      {(isWriting || (!success && progress > 0)) && !error && (
+      {(isWriting || (!success && progress > 0) || error) && (
         <View style={styles.progressBarContainer}>
           <View style={[styles.progressBar, { width: `${Math.max(Math.min(progress, 100), 0)}%` }]} />
         </View>
@@ -98,14 +98,6 @@ export default function NFCWriteProgress({
         </View>
       )}
 
-      {/* Error Message */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={20} color={COLORS.error} />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
       {/* Instructions */}
       {!error && !success && (
         <View style={styles.instructionsContainer}>
@@ -117,8 +109,23 @@ export default function NFCWriteProgress({
           />
           <Text style={styles.instructionText}>
             {isWriting
-              ? 'Hold the card steady where your NFC module is located until writing completes'
+              ? 'Hold the card steady until writing completes'
               : 'Tap the Program NFC Card button to begin'}
+          </Text>
+        </View>
+      )}
+      
+      {/* Simple instruction when error - like biometric setup */}
+      {error && (
+        <View style={styles.instructionsContainer}>
+          <MaterialIcons 
+            name="info-outline" 
+            size={20} 
+            color={COLORS.primary} 
+            style={styles.instructionIcon}
+          />
+          <Text style={styles.instructionText}>
+            Remove the card completely, then tap "Program NFC Card" again
           </Text>
         </View>
       )}
@@ -239,6 +246,27 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'left',
     lineHeight: 20,
+    flex: 1,
+  },
+  attemptText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  retryHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  retryHintText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '500',
     flex: 1,
   },
 });

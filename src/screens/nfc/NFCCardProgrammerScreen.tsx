@@ -26,6 +26,7 @@ import Header from '../../components/Header';
 import NFCWriteProgress from '../../components/nfc/NFCWriteProgress';
 import NFCService from '../../services/nfcService';
 import { useToast } from '../../hooks/useToast';
+import NfcManager, { NfcEvents } from 'react-native-nfc-manager';
 
 const { width } = Dimensions.get('window');
 
@@ -56,7 +57,12 @@ export default function NFCCardProgrammerScreen() {
   const [writeSuccess, setWriteSuccess] = useState(false);
   const [writeDuration, setWriteDuration] = useState<number | undefined>(undefined);
   const [nfcAvailable, setNfcAvailable] = useState(false);
+  const [writeStatus, setWriteStatus] = useState<string>('');
+  const [writeAttempt, setWriteAttempt] = useState<number>(1);
   const [pulseAnim] = useState(new Animated.Value(1));
+  const [cardTapped, setCardTapped] = useState(false);
+  const [lastTapTime, setLastTapTime] = useState<number>(0);
+  const [hasShownInitialPopup, setHasShownInitialPopup] = useState(false);
 
   useEffect(() => {
     checkNFCAvailability();
@@ -110,55 +116,66 @@ export default function NFCCardProgrammerScreen() {
       return;
     }
 
+    // Show initial popup on first attempt
+    if (!hasShownInitialPopup && writeAttempt === 1) {
+      setHasShownInitialPopup(true);
+      Alert.alert(
+        'New Cards Need Setup',
+        'New cards may need a few quick taps to complete setup. Each tap helps prepare the card for writes.\n\nPlace the card on the back of your NFC enabled device when prompted. You’ll feel a vibration or hear a chirp when the device reads it. Lift the card and tap again until the setup is finished.',        
+        [{ text: 'Got it', onPress: () => startWrite() }]
+      );
+      return;
+    }
+
+    startWrite();
+  };
+
+  const startWrite = async () => {
+    // Reset states for new attempt
     setWriting(true);
-    setWriteProgress(15); // Start at 15%
+    setWriteProgress(15);
     setWriteError(null);
     setWriteSuccess(false);
     setWriteDuration(undefined);
+    setCardTapped(false);
+    
+    // Show step number
+    const currentStep = writeAttempt;
+    
+    // Simple, user-friendly status - show instruction based on attempt
+    if (currentStep === 1) {
+      setWriteStatus('Hold card steady');
+    } else {
+      setWriteStatus('Remove card and put it back');
+    }
 
-    let progressInterval: NodeJS.Timeout | null = null;
-    let successInterval: NodeJS.Timeout | null = null;
-
-    try {
-      // Animate progress from 15% to 50% while waiting for NFC
-      progressInterval = setInterval(() => {
-        setWriteProgress((prev) => {
-          if (prev < 50) {
-            return prev + 2; // Increment by 2% every interval
-          }
-          return prev;
-        });
-      }, 100);
-
-      // Write URL to tag
-      console.log('[NFC Programmer] Writing card:', { userId, cardIndex: selectedCardIndex });
-      const result = await NFCService.writeUrl(userId, selectedCardIndex);
-
-      // Clear the progress interval
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
+    // Progress callback - just update progress bar, no detailed messages
+    const progressCallback = (status: { attempt: number; message: string; progress?: number }) => {
+      // Only update progress bar, keep status message simple
+      if (status.progress !== undefined) {
+        setWriteProgress(status.progress);
       }
+      
+      // Update status to show "Remove card and put it back" after first attempt
+      if (currentStep > 1) {
+        setWriteStatus('Remove card and put it back');
+      }
+    };
+    
+    try {
+      // Write URL to tag
+      console.log('[NFC Programmer] Writing card:', { userId, cardIndex: selectedCardIndex, step: currentStep });
+      const result = await NFCService.writeUrl(userId, selectedCardIndex, 0, progressCallback);
 
       if (result.success) {
-        // Animate progress from current to 100%
-        successInterval = setInterval(() => {
-          setWriteProgress((prev) => {
-            if (prev >= 100) {
-              if (successInterval) {
-                clearInterval(successInterval);
-              }
-              setWriteSuccess(true);
-              setWriteDuration(result.duration);
-              return 100;
-            }
-            return Math.min(prev + 5, 100); // Increment by 5% until 100%
-          });
-        }, 50);
-
+        setWriteProgress(100);
+        setWriteSuccess(true);
+        setWriteDuration(result.duration);
+        setWriteStatus('Card programmed successfully!');
+        
         toast.success(
           'Card Programmed!',
-          `NFC card written successfully in ${result.duration}ms`
+          `Your NFC card is ready to use`
         );
 
         // Return to cards screen after delay
@@ -166,20 +183,60 @@ export default function NFCCardProgrammerScreen() {
           navigation.goBack();
         }, 2000);
       } else {
-        // Create error object with the result error message
-        const error = new Error(result.error || 'Write failed');
-        throw error;
+        // Don't show technical errors - just reset and wait for next tap
+        setWriteProgress(0);
+        setWriteError(null);
+        setWriteStatus('Remove card and put it back');
+        
+        // Increment step for next try
+        setWriteAttempt(currentStep + 1);
+        
+        // Keep status visible after writing stops
+        setTimeout(() => {
+          setWriteStatus('Remove card and put it back');
+        }, 100);
+        
+        // Simple toast - no technical details
+        if (currentStep < 4) {
+          toast.info(
+            'Continue',
+            'Remove the card, then tap "Program NFC Card" again'
+          );
+        } else {
+          toast.info(
+            'Keep trying',
+            'Remove the card, then tap "Program NFC Card" again'
+          );
+        }
       }
     } catch (error: any) {
       console.error('[NFC Programmer] Write error:', error);
-      // Clean up intervals
-      if (progressInterval) clearInterval(progressInterval);
-      if (successInterval) clearInterval(successInterval);
       
-      const friendlyMessage = getFriendlyErrorMessage(error);
-      setWriteError(friendlyMessage);
+      // Don't show technical errors - just reset and wait for next tap
       setWriteProgress(0);
-      toast.error('Write Failed', friendlyMessage);
+      setWriteError(null);
+      setWriteStatus('Remove card and put it back');
+      
+      // Increment step for next try
+      setWriteAttempt(currentStep + 1);
+      
+      // Keep status visible after writing stops
+      setTimeout(() => {
+        setWriteStatus('Remove card and put it back');
+      }, 100);
+      
+      // Simple toast - no technical details
+      if (currentStep < 4) {
+        toast.info(
+          'Continue',
+          'Remove the card, then tap "Program NFC Card" again'
+        );
+      } else {
+        toast.info(
+          'Keep trying',
+          'Remove the card, then tap "Program NFC Card" again'
+        );
+      }
     } finally {
       setWriting(false);
     }
@@ -207,6 +264,21 @@ export default function NFCCardProgrammerScreen() {
         errorMessage.includes('IOException') ||
         errorMessage.includes('IO error')) {
       return 'Oops! Your card couldn\'t be written. Please try again.';
+    }
+    
+    if (errorMessage.includes('unsupported tag') || 
+        errorMessage.includes('Unsupported tag') ||
+        errorMessage.includes('unsupported tag api')) {
+      return 'This card type is not supported or needs formatting. The app will try to format it automatically.';
+    }
+    
+    if (errorMessage.includes('unable to format') || 
+        errorMessage.includes('format') && errorMessage.includes('fail')) {
+      return 'The card couldn\'t be formatted. It may be locked or incompatible. Please try a different card.';
+    }
+    
+    if (errorMessage.includes('locked') || errorMessage.includes('Locked')) {
+      return 'This card is locked and cannot be written to. Please use a different card.';
     }
     
     if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
@@ -342,8 +414,9 @@ export default function NFCCardProgrammerScreen() {
           </View>
           <View style={styles.instructionsBox}>
             <Text style={styles.instructionsText}>
-            Place your NFC card against the back of your device.
-            The NFC module is typically located in the centre or upper-back area.
+            {writeError 
+              ? 'Remove the card completely, then tap "Program NFC Card" again'
+              : 'Place your NFC card against the back of your device. Hold it steady until the progress bar completes.'}
             </Text>
           </View>
           <NFCWriteProgress
@@ -352,6 +425,8 @@ export default function NFCCardProgrammerScreen() {
             error={writeError}
             success={writeSuccess}
             duration={writeDuration}
+            status={writeStatus}
+            attempt={writeAttempt}
           />
         </View>
       </ScrollView>
