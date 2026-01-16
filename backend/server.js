@@ -58,6 +58,7 @@ const revenueCatRoutes = require('./routes/revenueCatRoutes'); // Add RevenueCat
 const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple receipt validation routes
 const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 const oauthRoutes = require('./routes/oauthRoutes'); // NEW: Add OAuth routes (POOP)
+const enterpriseRoutes = require('./routes/enterpriseRoutes'); // Enterprise payment routes
 
 app.use(express.json());
 
@@ -599,6 +600,9 @@ app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
 
 // OAuth routes MUST be first (POOP) - No auth required, must match before other routes
 app.use('/oauth', oauthRoutes);
+
+// Enterprise routes (public - no auth required for quote generation)
+app.use('/', enterpriseRoutes);
 
 app.use('/', paymentRoutes); // Add this line before protected routes
 app.use('/', subscriptionRoutes); // Add subscription routes
