@@ -10,6 +10,7 @@
  * Dependencies: Phase 0, Phase 1
  */
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { db, admin } = require('./firebase');
 const { calculateEnterprisePrice, formatPrice } = require('./config/enterprisePricing');
 const { validateEnterpriseQuote } = require('./utils/enterpriseValidation');

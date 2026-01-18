@@ -9,6 +9,7 @@
  * Dependencies: Phase 0 (Foundation Setup)
  */
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { calculateEnterprisePrice, formatPrice, SUPPORTED_CURRENCIES } = require('./config/enterprisePricing');
 const {
   validateCompanyName,

@@ -196,8 +196,121 @@ async function findOrCreatePlan(numberOfEmployees, amount, currency) {
   return planCode;
 }
 
+/**
+ * Generate payment reference for enterprise subscription
+ * 
+ * Format: `ent_quote_{quoteId}_{timestamp}_{random}`
+ * 
+ * @param {string} quoteId - Quote ID
+ * @returns {string} - Payment reference
+ */
+function generatePaymentReference(quoteId) {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 11);
+  return `ent_quote_${quoteId}_${timestamp}_${random}`;
+}
+
+/**
+ * Initialize enterprise subscription with Paystack
+ * 
+ * Creates a subscription initialization request to Paystack.
+ * 
+ * @param {object} quoteData - Quote data from database
+ * @param {string} planCode - Paystack plan code
+ * @returns {Promise<object>} - Paystack response with authorization_url and reference
+ * @throws {Error} - If subscription initialization fails
+ */
+async function initializeEnterpriseSubscription(quoteData, planCode) {
+  // Validate inputs
+  if (!quoteData || !quoteData.quoteId) {
+    throw new Error('Invalid quote data');
+  }
+  if (!planCode || typeof planCode !== 'string') {
+    throw new Error('Invalid plan code');
+  }
+  if (!quoteData.contactEmail) {
+    throw new Error('Contact email is required');
+  }
+
+  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+  const paymentReference = generatePaymentReference(quoteData.quoteId);
+
+  // Prepare Paystack request parameters
+  const params = JSON.stringify({
+    email: quoteData.contactEmail,
+    amount: quoteData.calculatedPrice, // Already in cents
+    plan: planCode,
+    callback_url: `${baseUrl}/api/enterprise/payment/callback`,
+    reference: paymentReference,
+    metadata: {
+      quoteId: quoteData.quoteId,
+      companyName: quoteData.companyName,
+      numberOfEmployees: quoteData.numberOfEmployees,
+      currency: quoteData.currency,
+      subscriptionType: 'enterprise_yearly',
+      cancel_action: `${baseUrl}/enterprise-payment-cancel.html`
+    }
+  });
+
+  const options = getRequestOptions('/transaction/initialize', 'POST');
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+
+          if (!response.status) {
+            reject(new Error(response.message || 'Failed to initialize Paystack subscription'));
+            return;
+          }
+
+          if (!response.data || !response.data.authorization_url) {
+            reject(new Error('Paystack subscription initialization succeeded but authorization_url is missing'));
+            return;
+          }
+
+          if (!response.data.reference) {
+            reject(new Error('Paystack subscription initialization succeeded but reference is missing'));
+            return;
+          }
+
+          console.log(`✅ Paystack subscription initialized: ${response.data.reference} for quote ${quoteData.quoteId}`);
+          resolve({
+            authorization_url: response.data.authorization_url,
+            reference: response.data.reference,
+            access_code: response.data.access_code
+          });
+        } catch (error) {
+          reject(new Error(`Failed to parse Paystack response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', error => {
+      reject(new Error(`Paystack API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Paystack API request timeout'));
+    });
+
+    req.write(params);
+    req.end();
+  });
+}
+
 module.exports = {
   findOrCreatePlan,
-  createPaystackPlan
+  createPaystackPlan,
+  generatePaymentReference,
+  initializeEnterpriseSubscription
 };
 
