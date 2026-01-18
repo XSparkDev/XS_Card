@@ -7,8 +7,14 @@
 const { db, admin } = require('../firebase');
 const { calculateEnterprisePrice, formatPrice } = require('../config/enterprisePricing');
 const { validateEnterpriseQuote } = require('../utils/enterpriseValidation');
-const { logEnterpriseError, logPaymentInitializationFailure } = require('../utils/enterpriseErrorLogger');
-const { findOrCreatePlan, initializeEnterpriseSubscription } = require('../utils/enterprisePaymentUtils');
+const { logEnterpriseError, logPaymentInitializationFailure, logAccountCreationFailure } = require('../utils/enterpriseErrorLogger');
+const { 
+  findOrCreatePlan, 
+  initializeEnterpriseSubscription,
+  verifyEnterprisePayment,
+  getPaystackSubscriptionStatus,
+  createEnterpriseAccountWithRetry
+} = require('../utils/enterprisePaymentUtils');
 
 /**
  * Generate enterprise quote
@@ -359,6 +365,185 @@ exports.initializeSubscription = async (req, res) => {
       error: 'Internal server error',
       message: 'An unexpected error occurred while initializing payment. Please try again later.'
     });
+  }
+};
+
+/**
+ * Handle payment callback from Paystack
+ * 
+ * GET /api/enterprise/payment/callback?ref={paymentReference}
+ * 
+ * Handles Paystack redirect after payment and creates enterprise account.
+ */
+exports.handlePaymentCallback = async (req, res) => {
+  try {
+    // 1. Extract payment reference from query
+    const paymentReference = req.query.ref || req.query.reference;
+
+    if (!paymentReference || typeof paymentReference !== 'string' || paymentReference.trim() === '') {
+      return res.redirect('/enterprise-payment-failure.html?error=missing_reference');
+    }
+
+    // 2. Verify payment with Paystack
+    let verificationResult;
+    try {
+      verificationResult = await verifyEnterprisePayment(paymentReference);
+    } catch (verifyError) {
+      console.error('Payment verification failed:', verifyError.message);
+      await logEnterpriseError('payment_verification_failure', {
+        error: verifyError.message,
+        context: {
+          paymentReference
+        }
+      });
+      return res.redirect(`/enterprise-payment-failure.html?error=verification_failed&ref=${encodeURIComponent(paymentReference)}`);
+    }
+
+    // 3. Find quote by paymentReference
+    let quoteQuery;
+    try {
+      quoteQuery = await db.collection('enterprise_quotes')
+        .where('paymentReference', '==', paymentReference)
+        .limit(1)
+        .get();
+    } catch (dbError) {
+      console.error('Database error finding quote:', dbError.message);
+      await logEnterpriseError('quote_lookup_failure', {
+        error: dbError.message,
+        context: {
+          paymentReference
+        }
+      });
+      return res.redirect(`/enterprise-payment-failure.html?error=database_error&ref=${encodeURIComponent(paymentReference)}`);
+    }
+
+    if (quoteQuery.empty) {
+      console.error(`Quote not found for payment reference: ${paymentReference}`);
+      return res.redirect(`/enterprise-payment-failure.html?error=quote_not_found&ref=${encodeURIComponent(paymentReference)}`);
+    }
+
+    const quoteDoc = quoteQuery.docs[0];
+    const quoteData = quoteDoc.data();
+    const quoteRef = quoteDoc.ref;
+
+    // 4. Check idempotency (already processed?)
+    if (quoteData.quoteStatus === 'paid') {
+      console.log(`✅ Payment already processed for quote: ${quoteData.quoteId}`);
+      // Already processed, redirect to success
+      return res.redirect(`/enterprise-payment-success.html?quoteId=${encodeURIComponent(quoteData.quoteId)}`);
+    }
+
+    // 5. Get subscription details from Paystack (if available)
+    let subscriptionDetails = null;
+    if (verificationResult.subscription) {
+      try {
+        subscriptionDetails = await getPaystackSubscriptionStatus(verificationResult.subscription);
+      } catch (subError) {
+        console.warn('Failed to fetch subscription details:', subError.message);
+        // Continue without subscription details - webhook will handle it
+      }
+    }
+
+    // 6. Create enterprise account (atomic transaction with retry)
+    const enterpriseId = `ent_${quoteData.quoteId}`;
+    const now = admin.firestore.Timestamp.now();
+
+    // Calculate dates
+    let subscriptionStartDate = now;
+    let subscriptionEndDate = null;
+    let nextBillingDate = null;
+
+    if (subscriptionDetails) {
+      subscriptionStartDate = subscriptionDetails.startDate 
+        ? admin.firestore.Timestamp.fromDate(new Date(subscriptionDetails.startDate))
+        : now;
+      
+      if (subscriptionDetails.nextPaymentDate) {
+        nextBillingDate = admin.firestore.Timestamp.fromDate(new Date(subscriptionDetails.nextPaymentDate));
+        // For annual subscriptions, end date is 1 year from start
+        const endDate = new Date(subscriptionStartDate.toDate());
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        subscriptionEndDate = admin.firestore.Timestamp.fromDate(endDate);
+      }
+    } else {
+      // Fallback: calculate dates from current time (annual subscription)
+      const endDate = new Date(now.toDate());
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      subscriptionEndDate = admin.firestore.Timestamp.fromDate(endDate);
+      nextBillingDate = subscriptionEndDate;
+    }
+
+    const accountData = {
+      enterpriseId,
+      companyName: quoteData.companyName,
+      contactEmail: quoteData.contactEmail,
+      contactName: quoteData.contactName,
+      numberOfEmployees: quoteData.numberOfEmployees,
+      plan: 'enterprise',
+      accountStatus: 'active',
+      
+      // Paystack Subscription Fields
+      subscriptionCode: subscriptionDetails?.subscriptionCode || verificationResult.subscription || null,
+      subscriptionStatus: subscriptionDetails?.status || 'active',
+      planCode: subscriptionDetails?.planCode || quoteData.planCode || null,
+      customerCode: subscriptionDetails?.customerCode || verificationResult.transaction.customer?.customer_code || null,
+      
+      // Dates
+      subscriptionStartDate,
+      subscriptionEndDate,
+      nextBillingDate,
+      lastBillingDate: now,
+      
+      // Grace Period (not applicable for initial payment, but set defaults)
+      gracePeriodDays: 7,
+      
+      // Warning Banner (not needed for active account)
+      warningBanner: {
+        show: false,
+        message: '',
+        severity: 'info',
+        actionRequired: false,
+        actionUrl: ''
+      },
+      
+      // Tracking
+      quoteId: quoteData.quoteId,
+      activatedAt: now,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    try {
+      await createEnterpriseAccountWithRetry(accountData, quoteRef, 3);
+      
+      console.log(`✅ Enterprise account created successfully: ${enterpriseId} for quote ${quoteData.quoteId}`);
+      
+      // 7. Redirect to success page
+      return res.redirect(`/enterprise-payment-success.html?quoteId=${encodeURIComponent(quoteData.quoteId)}&enterpriseId=${encodeURIComponent(enterpriseId)}`);
+    } catch (accountError) {
+      console.error('Failed to create enterprise account:', accountError.message);
+      await logAccountCreationFailure(accountData, accountError.message, 3, 3);
+      
+      // Payment was successful but account creation failed - redirect to failure with special error
+      return res.redirect(`/enterprise-payment-failure.html?error=account_creation_failed&ref=${encodeURIComponent(paymentReference)}&quoteId=${encodeURIComponent(quoteData.quoteId)}`);
+    }
+
+  } catch (error) {
+    console.error('Error handling payment callback:', error);
+
+    // Log unexpected errors
+    const paymentReference = req.query.ref || req.query.reference || 'unknown';
+    await logEnterpriseError('payment_callback_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        paymentReference,
+        query: req.query,
+        ip: req.ip || req.connection.remoteAddress || 'unknown'
+      }
+    });
+
+    return res.redirect(`/enterprise-payment-failure.html?error=unexpected_error&ref=${encodeURIComponent(paymentReference)}`);
   }
 };
 

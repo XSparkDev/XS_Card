@@ -307,10 +307,228 @@ async function initializeEnterpriseSubscription(quoteData, planCode) {
   });
 }
 
+/**
+ * Verify enterprise payment with Paystack
+ * 
+ * @param {string} paymentReference - Payment reference from Paystack
+ * @returns {Promise<object>} - Payment verification result with transaction and subscription data
+ * @throws {Error} - If verification fails
+ */
+async function verifyEnterprisePayment(paymentReference) {
+  if (!paymentReference || typeof paymentReference !== 'string') {
+    throw new Error('Payment reference is required');
+  }
+
+  const options = getRequestOptions(`/transaction/verify/${encodeURIComponent(paymentReference)}`, 'GET');
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+
+          if (!response.status) {
+            reject(new Error(response.message || 'Payment verification failed'));
+            return;
+          }
+
+          if (!response.data) {
+            reject(new Error('No transaction data found'));
+            return;
+          }
+
+          const transaction = response.data;
+
+          // Check if payment was successful
+          if (transaction.status !== 'success') {
+            reject(new Error(`Payment not successful. Status: ${transaction.status}`));
+            return;
+          }
+
+          console.log(`✅ Payment verified: ${paymentReference} - Amount: ${transaction.amount} ${transaction.currency}`);
+
+          resolve({
+            success: true,
+            transaction: {
+              reference: transaction.reference,
+              amount: transaction.amount,
+              currency: transaction.currency,
+              status: transaction.status,
+              paidAt: transaction.paid_at,
+              customer: transaction.customer,
+              authorization: transaction.authorization
+            },
+            subscription: transaction.subscription || null,
+            customer: transaction.customer || null
+          });
+        } catch (error) {
+          reject(new Error(`Failed to parse Paystack response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', error => {
+      reject(new Error(`Paystack API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Paystack API request timeout'));
+    });
+
+    req.end();
+  });
+}
+
+/**
+ * Get Paystack subscription status and details
+ * 
+ * @param {string} subscriptionCode - Paystack subscription code (e.g., "SUB_xyz789")
+ * @returns {Promise<object>} - Subscription details from Paystack
+ * @throws {Error} - If subscription fetch fails
+ */
+async function getPaystackSubscriptionStatus(subscriptionCode) {
+  if (!subscriptionCode || typeof subscriptionCode !== 'string') {
+    throw new Error('Subscription code is required');
+  }
+
+  const options = getRequestOptions(`/subscription/${encodeURIComponent(subscriptionCode)}`, 'GET');
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+
+          if (!response.status) {
+            reject(new Error(response.message || 'Failed to fetch subscription from Paystack'));
+            return;
+          }
+
+          if (!response.data) {
+            reject(new Error('No subscription data found'));
+            return;
+          }
+
+          const subscription = response.data;
+
+          console.log(`✅ Subscription fetched: ${subscriptionCode} - Status: ${subscription.status}`);
+
+          resolve({
+            subscriptionCode: subscription.subscription_code || subscriptionCode,
+            status: subscription.status,
+            planCode: subscription.plan?.plan_code || null,
+            customerCode: subscription.customer?.customer_code || null,
+            email: subscription.customer?.email || null,
+            amount: subscription.amount,
+            interval: subscription.plan?.interval || subscription.interval || 'annually',
+            nextPaymentDate: subscription.next_payment_date,
+            createdAt: subscription.created_at,
+            startDate: subscription.created_at,
+            // Calculate end date (1 year from start for annual subscriptions)
+            endDate: subscription.next_payment_date ? new Date(subscription.next_payment_date) : null
+          });
+        } catch (error) {
+          reject(new Error(`Failed to parse Paystack response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', error => {
+      reject(new Error(`Paystack API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Paystack API request timeout'));
+    });
+
+    req.end();
+  });
+}
+
+/**
+ * Create enterprise account with retry logic (atomic transaction)
+ * 
+ * Creates account and updates quote status in a single atomic transaction.
+ * Retries on failure with exponential backoff.
+ * 
+ * @param {object} accountData - Account data to create
+ * @param {object} quoteRef - Firestore reference to quote document
+ * @param {number} maxRetries - Maximum retry attempts (default: 3)
+ * @returns {Promise<string>} - Enterprise ID
+ * @throws {Error} - If account creation fails after retries
+ */
+async function createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetries = 3) {
+  let attempts = 0;
+
+  while (attempts < maxRetries) {
+    try {
+      const batch = db.batch();
+      const accountRef = db.collection('enterprise_accounts').doc(accountData.enterpriseId);
+
+      // Set account data
+      batch.set(accountRef, accountData);
+
+      // Update quote status to 'paid'
+      batch.update(quoteRef, {
+        quoteStatus: 'paid',
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Commit atomic transaction
+      await batch.commit();
+
+      console.log(`✅ Enterprise account created: ${accountData.enterpriseId}`);
+      return accountData.enterpriseId;
+    } catch (error) {
+      attempts++;
+      console.error(`Account creation attempt ${attempts}/${maxRetries} failed:`, error.message);
+
+      // Log error
+      await logEnterpriseError('account_creation_failure', {
+        error: error.message,
+        context: {
+          enterpriseId: accountData.enterpriseId,
+          quoteId: accountData.quoteId,
+          attempt: attempts,
+          maxRetries
+        },
+        stack: error.stack
+      });
+
+      if (attempts === maxRetries) {
+        throw new Error(`Failed to create enterprise account after ${maxRetries} attempts: ${error.message}`);
+      }
+
+      // Exponential backoff: 1s, 2s, 4s
+      const backoffDelay = 1000 * Math.pow(2, attempts - 1);
+      console.log(`Retrying account creation in ${backoffDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
+    }
+  }
+}
+
 module.exports = {
   findOrCreatePlan,
   createPaystackPlan,
   generatePaymentReference,
-  initializeEnterpriseSubscription
+  initializeEnterpriseSubscription,
+  verifyEnterprisePayment,
+  getPaystackSubscriptionStatus,
+  createEnterpriseAccountWithRetry
 };
 
