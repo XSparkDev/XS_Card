@@ -522,6 +522,119 @@ async function createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetrie
   }
 }
 
+/**
+ * Disable Paystack subscription
+ * 
+ * @param {string} subscriptionCode - Paystack subscription code
+ * @returns {Promise<object>} - Paystack response
+ * @throws {Error} - If subscription disable fails
+ */
+async function disablePaystackSubscription(subscriptionCode) {
+  if (!subscriptionCode || typeof subscriptionCode !== 'string') {
+    throw new Error('Subscription code is required');
+  }
+
+  const options = getRequestOptions(`/subscription/${encodeURIComponent(subscriptionCode)}/disable`, 'POST');
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+
+          if (!response.status) {
+            reject(new Error(response.message || 'Failed to disable subscription'));
+            return;
+          }
+
+          console.log(`✅ Subscription disabled: ${subscriptionCode}`);
+          resolve(response);
+        } catch (error) {
+          reject(new Error(`Failed to parse Paystack response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', error => {
+      reject(new Error(`Paystack API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Paystack API request timeout'));
+    });
+
+    req.end();
+  });
+}
+
+/**
+ * Update Paystack subscription plan
+ * 
+ * @param {string} subscriptionCode - Paystack subscription code
+ * @param {string} newPlanCode - New Paystack plan code
+ * @returns {Promise<object>} - Paystack response
+ * @throws {Error} - If subscription update fails
+ */
+async function updatePaystackSubscriptionPlan(subscriptionCode, newPlanCode) {
+  if (!subscriptionCode || typeof subscriptionCode !== 'string') {
+    throw new Error('Subscription code is required');
+  }
+  if (!newPlanCode || typeof newPlanCode !== 'string') {
+    throw new Error('Plan code is required');
+  }
+
+  const params = JSON.stringify({
+    plan: newPlanCode
+  });
+
+  const options = getRequestOptions(`/subscription/${encodeURIComponent(subscriptionCode)}`, 'PUT');
+  
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+
+          if (!response.status) {
+            reject(new Error(response.message || 'Failed to update subscription plan'));
+            return;
+          }
+
+          console.log(`✅ Subscription plan updated: ${subscriptionCode} -> ${newPlanCode}`);
+          resolve(response);
+        } catch (error) {
+          reject(new Error(`Failed to parse Paystack response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', error => {
+      reject(new Error(`Paystack API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Paystack API request timeout'));
+    });
+
+    req.write(params);
+    req.end();
+  });
+}
+
 module.exports = {
   findOrCreatePlan,
   createPaystackPlan,
@@ -529,6 +642,8 @@ module.exports = {
   initializeEnterpriseSubscription,
   verifyEnterprisePayment,
   getPaystackSubscriptionStatus,
-  createEnterpriseAccountWithRetry
+  createEnterpriseAccountWithRetry,
+  disablePaystackSubscription,
+  updatePaystackSubscriptionPlan
 };
 

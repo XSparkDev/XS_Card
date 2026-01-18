@@ -7,7 +7,15 @@
 
 const express = require('express');
 const router = express.Router();
-const { generateQuote, initializeSubscription, handlePaymentCallback, handleSubscriptionWebhook } = require('../controllers/enterpriseController');
+const { 
+  generateQuote, 
+  initializeSubscription, 
+  handlePaymentCallback, 
+  handleSubscriptionWebhook,
+  getSubscriptionStatus,
+  cancelSubscription,
+  updateEmployeeCount
+} = require('../controllers/enterpriseController');
 const { quoteRateLimit } = require('../middleware/quoteRateLimit');
 const { paymentInitRateLimit } = require('../middleware/paymentInitRateLimit');
 
@@ -22,16 +30,18 @@ router.get('/api/enterprise/payment/callback', handlePaymentCallback);
 
 // Phase 6: Subscription Webhook
 router.post('/api/enterprise/payment/webhook', handleSubscriptionWebhook);
-// Phase 7: GET /api/enterprise/subscription/:enterpriseId/status
-// Phase 7: POST /api/enterprise/subscription/:enterpriseId/cancel
-// Phase 7: POST /api/enterprise/subscription/:enterpriseId/update-employees
+
+// Phase 7: Subscription Management
+router.get('/api/enterprise/subscription/:enterpriseId/status', getSubscriptionStatus);
+router.post('/api/enterprise/subscription/:enterpriseId/cancel', cancelSubscription);
+router.post('/api/enterprise/subscription/:enterpriseId/update-employees', updateEmployeeCount);
 
 // Placeholder route for testing
 router.get('/api/enterprise/health', (req, res) => {
   res.json({
     success: true,
     message: 'Enterprise routes module loaded successfully',
-    phase: 4
+    phase: 7
   });
 });
 

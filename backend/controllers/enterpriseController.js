@@ -13,7 +13,9 @@ const {
   initializeEnterpriseSubscription,
   verifyEnterprisePayment,
   getPaystackSubscriptionStatus,
-  createEnterpriseAccountWithRetry
+  createEnterpriseAccountWithRetry,
+  disablePaystackSubscription,
+  updatePaystackSubscriptionPlan
 } = require('../utils/enterprisePaymentUtils');
 const { validateWebhookSecurity } = require('../utils/webhookSecurity');
 
@@ -545,6 +547,464 @@ exports.handlePaymentCallback = async (req, res) => {
     });
 
     return res.redirect(`/enterprise-payment-failure.html?error=unexpected_error&ref=${encodeURIComponent(paymentReference)}`);
+  }
+};
+
+/**
+ * Get enterprise subscription status
+ * 
+ * GET /api/enterprise/subscription/:enterpriseId/status
+ * 
+ * Fetches latest status from Paystack, syncs database, checks grace period.
+ */
+exports.getSubscriptionStatus = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+
+    if (!enterpriseId || typeof enterpriseId !== 'string' || enterpriseId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'enterpriseId is required'
+      });
+    }
+
+    // 1. Find enterprise account
+    let accountDoc;
+    try {
+      accountDoc = await db.collection('enterprise_accounts').doc(enterpriseId).get();
+    } catch (dbError) {
+      await logEnterpriseError('account_lookup_failure', {
+        error: dbError.message,
+        context: { enterpriseId }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Database error',
+        message: 'Failed to fetch account. Please try again.'
+      });
+    }
+
+    if (!accountDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found',
+        message: 'The specified enterprise account does not exist.'
+      });
+    }
+
+    const accountData = accountDoc.data();
+    const accountRef = accountDoc.ref;
+
+    // 2. Fetch latest status from Paystack (sync)
+    let paystackSubscription = null;
+    if (accountData.subscriptionCode) {
+      try {
+        paystackSubscription = await getPaystackSubscriptionStatus(accountData.subscriptionCode);
+        
+        // 3. Update database with latest Paystack data (sync)
+        const updateData = {
+          subscriptionStatus: paystackSubscription.status,
+          nextBillingDate: paystackSubscription.nextPaymentDate 
+            ? admin.firestore.Timestamp.fromDate(new Date(paystackSubscription.nextPaymentDate))
+            : accountData.nextBillingDate,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Update end date if available
+        if (paystackSubscription.endDate) {
+          updateData.subscriptionEndDate = admin.firestore.Timestamp.fromDate(paystackSubscription.endDate);
+        }
+
+        await accountRef.update(updateData);
+        
+        // Update accountData for response
+        accountData.subscriptionStatus = paystackSubscription.status;
+        if (paystackSubscription.nextPaymentDate) {
+          accountData.nextBillingDate = admin.firestore.Timestamp.fromDate(new Date(paystackSubscription.nextPaymentDate));
+        }
+      } catch (syncError) {
+        console.warn('Failed to sync from Paystack:', syncError.message);
+        // Continue with database data if Paystack sync fails
+      }
+    }
+
+    // 3. Check grace period expiration (on-demand check)
+    // Note: Full grace period logic will be in Phase 8, but we check here
+    const now = admin.firestore.Timestamp.now();
+    let accountStatus = accountData.accountStatus || 'active';
+    let warningBanner = accountData.warningBanner || { show: false };
+
+    if (accountData.subscriptionStatus === 'payment_failed' && accountData.gracePeriodEndDate) {
+      const gracePeriodEnd = accountData.gracePeriodEndDate;
+      if (gracePeriodEnd.toMillis() < now.toMillis()) {
+        // Grace period expired - suspend account (Phase 8 will handle this fully)
+        accountStatus = 'suspended';
+        warningBanner = {
+          show: true,
+          message: 'Your subscription payment failed. Please update your payment method to reactivate your account.',
+          severity: 'error',
+          actionRequired: true,
+          actionUrl: '/enterprise-payment-update'
+        };
+      } else {
+        // Still in grace period
+        warningBanner = {
+          show: true,
+          message: `Your payment failed. Please update your payment method before ${gracePeriodEnd.toDate().toLocaleDateString()} to avoid account suspension.`,
+          severity: 'warning',
+          actionRequired: true,
+          actionUrl: '/enterprise-payment-update'
+        };
+      }
+    }
+
+    // 4. Return subscription status
+    const isActive = accountStatus === 'active' && 
+                     ['active', 'non-renewing'].includes(accountData.subscriptionStatus);
+
+    res.status(200).json({
+      success: true,
+      subscription: {
+        status: accountData.subscriptionStatus || 'unknown',
+        accountStatus: accountStatus,
+        nextBillingDate: accountData.nextBillingDate?.toDate().toISOString() || null,
+        lastBillingDate: accountData.lastBillingDate?.toDate().toISOString() || null,
+        subscriptionEndDate: accountData.subscriptionEndDate?.toDate().toISOString() || null,
+        amount: accountData.calculatedPrice || null, // Would need to calculate from plan
+        currency: accountData.currency || 'ZAR',
+        numberOfEmployees: accountData.numberOfEmployees || 0,
+        isActive: isActive,
+        warningBanner: warningBanner
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting subscription status:', error);
+
+    await logEnterpriseError('subscription_status_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        enterpriseId: req.params.enterpriseId,
+        ip: req.ip || req.connection.remoteAddress || 'unknown'
+      }
+    });
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while fetching subscription status. Please try again later.'
+    });
+  }
+};
+
+/**
+ * Cancel enterprise subscription
+ * 
+ * POST /api/enterprise/subscription/:enterpriseId/cancel
+ * 
+ * Cancels subscription with Paystack and updates database.
+ */
+exports.cancelSubscription = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+
+    if (!enterpriseId || typeof enterpriseId !== 'string' || enterpriseId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'enterpriseId is required'
+      });
+    }
+
+    // 1. Find enterprise account
+    let accountDoc;
+    try {
+      accountDoc = await db.collection('enterprise_accounts').doc(enterpriseId).get();
+    } catch (dbError) {
+      await logEnterpriseError('account_lookup_failure', {
+        error: dbError.message,
+        context: { enterpriseId }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Database error',
+        message: 'Failed to fetch account. Please try again.'
+      });
+    }
+
+    if (!accountDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found',
+        message: 'The specified enterprise account does not exist.'
+      });
+    }
+
+    const accountData = accountDoc.data();
+    const accountRef = accountDoc.ref;
+
+    // Check if already cancelled
+    if (accountData.subscriptionStatus === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: 'Already cancelled',
+        message: 'This subscription is already cancelled.'
+      });
+    }
+
+    // 2. Call Paystack API to disable subscription
+    if (!accountData.subscriptionCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'No subscription code',
+        message: 'Subscription code not found. Cannot cancel subscription.'
+      });
+    }
+
+    try {
+      await disablePaystackSubscription(accountData.subscriptionCode);
+    } catch (paystackError) {
+      console.error('Paystack cancellation failed:', paystackError.message);
+      await logEnterpriseError('subscription_cancellation_failure', {
+        error: paystackError.message,
+        context: {
+          enterpriseId,
+          subscriptionCode: accountData.subscriptionCode
+        }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Cancellation failed',
+        message: 'Failed to cancel subscription with Paystack. Please try again later.'
+      });
+    }
+
+    // 3. Update database
+    try {
+      await accountRef.update({
+        subscriptionStatus: 'cancelled',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (updateError) {
+      console.error('Database update failed:', updateError.message);
+      // Log but don't fail - Paystack cancellation succeeded
+      await logEnterpriseError('subscription_cancellation_db_update_failure', {
+        error: updateError.message,
+        context: { enterpriseId }
+      });
+    }
+
+    console.log(`✅ Subscription cancelled: ${enterpriseId}`);
+
+    // 4. Return response
+    const subscriptionEndDate = accountData.subscriptionEndDate?.toDate().toISOString() || null;
+
+    res.status(200).json({
+      success: true,
+      message: subscriptionEndDate 
+        ? `Subscription cancelled. Account active until ${new Date(subscriptionEndDate).toLocaleDateString()}.`
+        : 'Subscription cancelled successfully.',
+      subscriptionEndDate: subscriptionEndDate
+    });
+
+  } catch (error) {
+    console.error('Error cancelling subscription:', error);
+
+    await logEnterpriseError('subscription_cancellation_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        enterpriseId: req.params.enterpriseId,
+        ip: req.ip || req.connection.remoteAddress || 'unknown'
+      }
+    });
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while cancelling subscription. Please try again later.'
+    });
+  }
+};
+
+/**
+ * Update employee count for enterprise subscription
+ * 
+ * POST /api/enterprise/subscription/:enterpriseId/update-employees
+ * 
+ * Updates employee count (creates new plan, updates Paystack subscription).
+ * Change takes effect on next renewal (no prorating).
+ */
+exports.updateEmployeeCount = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+    const { newNumberOfEmployees } = req.body;
+
+    // 1. Validate input
+    if (!enterpriseId || typeof enterpriseId !== 'string' || enterpriseId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'enterpriseId is required'
+      });
+    }
+
+    if (!newNumberOfEmployees || typeof newNumberOfEmployees !== 'number' || 
+        newNumberOfEmployees < 1 || newNumberOfEmployees > 10000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'newNumberOfEmployees must be a number between 1 and 10,000'
+      });
+    }
+
+    // 2. Find enterprise account
+    let accountDoc;
+    try {
+      accountDoc = await db.collection('enterprise_accounts').doc(enterpriseId).get();
+    } catch (dbError) {
+      await logEnterpriseError('account_lookup_failure', {
+        error: dbError.message,
+        context: { enterpriseId }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Database error',
+        message: 'Failed to fetch account. Please try again.'
+      });
+    }
+
+    if (!accountDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found',
+        message: 'The specified enterprise account does not exist.'
+      });
+    }
+
+    const accountData = accountDoc.data();
+    const accountRef = accountDoc.ref;
+
+    // Check if employee count is the same
+    if (accountData.numberOfEmployees === newNumberOfEmployees) {
+      return res.status(400).json({
+        success: false,
+        error: 'No change',
+        message: 'Employee count is already set to this value.'
+      });
+    }
+
+    // 3. Calculate new price
+    const currency = accountData.currency || 'ZAR';
+    let newPrice;
+    try {
+      newPrice = calculateEnterprisePrice(newNumberOfEmployees, currency);
+    } catch (priceError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Price calculation failed',
+        message: priceError.message
+      });
+    }
+
+    // 4. Create or find new plan
+    let newPlanCode;
+    try {
+      newPlanCode = await findOrCreatePlan(newNumberOfEmployees, newPrice, currency);
+    } catch (planError) {
+      await logEnterpriseError('plan_creation_failure', {
+        error: planError.message,
+        context: {
+          enterpriseId,
+          newNumberOfEmployees,
+          newPrice,
+          currency
+        }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Plan creation failed',
+        message: 'Failed to create payment plan. Please try again later.'
+      });
+    }
+
+    // 5. Update Paystack subscription with new plan
+    if (!accountData.subscriptionCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'No subscription code',
+        message: 'Subscription code not found. Cannot update subscription.'
+      });
+    }
+
+    try {
+      await updatePaystackSubscriptionPlan(accountData.subscriptionCode, newPlanCode);
+    } catch (paystackError) {
+      console.error('Paystack subscription update failed:', paystackError.message);
+      await logEnterpriseError('subscription_update_failure', {
+        error: paystackError.message,
+        context: {
+          enterpriseId,
+          subscriptionCode: accountData.subscriptionCode,
+          newPlanCode
+        }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Subscription update failed',
+        message: 'Failed to update subscription with Paystack. Please try again later.'
+      });
+    }
+
+    // 6. Update database
+    try {
+      await accountRef.update({
+        numberOfEmployees: newNumberOfEmployees,
+        planCode: newPlanCode,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (updateError) {
+      console.error('Database update failed:', updateError.message);
+      // Log but don't fail - Paystack update succeeded
+      await logEnterpriseError('employee_count_update_db_failure', {
+        error: updateError.message,
+        context: { enterpriseId }
+      });
+    }
+
+    console.log(`✅ Employee count updated: ${enterpriseId} -> ${newNumberOfEmployees} employees`);
+
+    // 7. Return response
+    const nextRenewalDate = accountData.nextBillingDate?.toDate().toISOString() || null;
+
+    res.status(200).json({
+      success: true,
+      message: 'Employee count updated. New price will take effect on next renewal.',
+      nextRenewalDate: nextRenewalDate,
+      newPrice: newPrice,
+      newNumberOfEmployees: newNumberOfEmployees
+    });
+
+  } catch (error) {
+    console.error('Error updating employee count:', error);
+
+    await logEnterpriseError('employee_count_update_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        enterpriseId: req.params.enterpriseId,
+        body: req.body,
+        ip: req.ip || req.connection.remoteAddress || 'unknown'
+      }
+    });
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while updating employee count. Please try again later.'
+    });
   }
 };
 
