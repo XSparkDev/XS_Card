@@ -7,7 +7,7 @@
 const { db, admin } = require('../firebase');
 const { calculateEnterprisePrice, formatPrice } = require('../config/enterprisePricing');
 const { validateEnterpriseQuote } = require('../utils/enterpriseValidation');
-const { logEnterpriseError, logPaymentInitializationFailure, logAccountCreationFailure } = require('../utils/enterpriseErrorLogger');
+const { logEnterpriseError, logPaymentInitializationFailure, logAccountCreationFailure, logWebhookProcessingFailure } = require('../utils/enterpriseErrorLogger');
 const { 
   findOrCreatePlan, 
   initializeEnterpriseSubscription,
@@ -15,6 +15,7 @@ const {
   getPaystackSubscriptionStatus,
   createEnterpriseAccountWithRetry
 } = require('../utils/enterprisePaymentUtils');
+const { validateWebhookSecurity } = require('../utils/webhookSecurity');
 
 /**
  * Generate enterprise quote
@@ -546,4 +547,443 @@ exports.handlePaymentCallback = async (req, res) => {
     return res.redirect(`/enterprise-payment-failure.html?error=unexpected_error&ref=${encodeURIComponent(paymentReference)}`);
   }
 };
+
+/**
+ * Handle Paystack subscription webhook
+ * 
+ * POST /api/enterprise/payment/webhook
+ * 
+ * Handles all subscription lifecycle events from Paystack.
+ * Acknowledges immediately and processes asynchronously.
+ */
+exports.handleSubscriptionWebhook = async (req, res) => {
+  try {
+    // 1. Verify webhook signature
+    const securityValidation = await validateWebhookSecurity(req);
+    if (!securityValidation.isValid) {
+      console.error('Webhook security validation failed:', securityValidation.errors);
+      return res.status(401).json({ 
+        error: 'Invalid webhook signature',
+        errors: securityValidation.errors
+      });
+    }
+
+    // 2. Acknowledge webhook immediately (Paystack best practice)
+    res.status(200).json({ received: true });
+
+    // 3. Process asynchronously (don't block response)
+    setImmediate(async () => {
+      try {
+        const webhookData = req.body;
+        const event = webhookData.event;
+
+        console.log(`📥 Processing webhook event: ${event}`);
+
+        // 4. Always fetch current state from Paystack before processing (handles out-of-order webhooks)
+        const subscriptionCode = webhookData.data?.subscription?.subscription_code || 
+                                 webhookData.data?.subscription_code;
+        
+        if (subscriptionCode) {
+          try {
+            const currentSubscription = await getPaystackSubscriptionStatus(subscriptionCode);
+            // Merge current state with webhook data (current state takes precedence)
+            webhookData.data = {
+              ...webhookData.data,
+              subscription: {
+                ...webhookData.data?.subscription,
+                ...currentSubscription
+              },
+              ...currentSubscription
+            };
+            console.log(`✅ Fetched current subscription state: ${subscriptionCode}`);
+          } catch (subError) {
+            console.warn('Failed to fetch current subscription state:', subError.message);
+            // Continue with webhook data only
+          }
+        }
+
+        // 5. Route to appropriate handler
+        await routeWebhookEvent(webhookData);
+
+      } catch (error) {
+        console.error('Error processing webhook:', error);
+        const event = req.body?.event || 'unknown';
+        await logWebhookProcessingFailure(event, req.body, error.message);
+        // Don't throw - already acknowledged
+      }
+    });
+
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+    // If we haven't responded yet, send error
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  }
+};
+
+/**
+ * Route webhook event to appropriate handler
+ */
+async function routeWebhookEvent(webhookData) {
+  const event = webhookData.event;
+
+  switch (event) {
+    case 'subscription.create':
+      await handleSubscriptionCreated(webhookData);
+      break;
+    
+    case 'invoice.payment_succeeded':
+      await handleInvoicePaymentSucceeded(webhookData);
+      break;
+    
+    case 'invoice.payment_failed':
+      await handleInvoicePaymentFailed(webhookData);
+      break;
+    
+    case 'subscription.disable':
+      await handleSubscriptionCancelled(webhookData);
+      break;
+    
+    case 'subscription.not_renewing':
+      await handleSubscriptionNotRenewing(webhookData);
+      break;
+    
+    default:
+      console.log(`⚠️  Unhandled webhook event: ${event}`);
+  }
+}
+
+/**
+ * Handle subscription.create event
+ * Creates enterprise account when subscription is first created
+ */
+async function handleSubscriptionCreated(webhookData) {
+  try {
+    const subscriptionCode = webhookData.data?.subscription?.subscription_code || 
+                             webhookData.data?.subscription_code;
+    
+    if (!subscriptionCode) {
+      throw new Error('Subscription code missing from webhook data');
+    }
+
+    // Check idempotency - find account by subscription code
+    const accountQuery = await db.collection('enterprise_accounts')
+      .where('subscriptionCode', '==', subscriptionCode)
+      .limit(1)
+      .get();
+
+    if (!accountQuery.empty) {
+      const account = accountQuery.docs[0].data();
+      if (account.subscriptionStatus === 'active' && account.accountStatus === 'active') {
+        console.log(`✅ Subscription already processed - skipping: ${subscriptionCode}`);
+        return { alreadyProcessed: true };
+      }
+    }
+
+    // Find quote by metadata.quoteId or subscriptionCode
+    let quoteDoc = null;
+    const quoteId = webhookData.data?.metadata?.quoteId;
+    
+    if (quoteId) {
+      quoteDoc = await db.collection('enterprise_quotes').doc(quoteId).get();
+    }
+
+    // If quote not found, try to find by subscription code (fallback)
+    if (!quoteDoc || !quoteDoc.exists) {
+      const quoteQuery = await db.collection('enterprise_quotes')
+        .where('planCode', '==', webhookData.data?.plan?.plan_code || webhookData.data?.planCode)
+        .where('quoteStatus', '==', 'accepted')
+        .limit(1)
+        .get();
+      
+      if (!quoteQuery.empty) {
+        quoteDoc = quoteQuery.docs[0];
+      }
+    }
+
+    if (!quoteDoc || !quoteDoc.exists) {
+      console.warn(`⚠️  Quote not found for subscription: ${subscriptionCode}`);
+      // Account might have been created via callback - that's okay
+      return { skipped: true, reason: 'Quote not found' };
+    }
+
+    const quoteData = quoteDoc.data();
+    const quoteRef = quoteDoc.ref;
+
+    // Check if already paid (idempotency)
+    if (quoteData.quoteStatus === 'paid') {
+      console.log(`✅ Quote already paid - skipping: ${quoteData.quoteId}`);
+      return { alreadyProcessed: true };
+    }
+
+    // Create enterprise account
+    const enterpriseId = `ent_${quoteData.quoteId}`;
+    const now = admin.firestore.Timestamp.now();
+
+    // Calculate dates from subscription data
+    let subscriptionStartDate = now;
+    let subscriptionEndDate = null;
+    let nextBillingDate = null;
+
+    if (webhookData.data?.subscription) {
+      const sub = webhookData.data.subscription;
+      if (sub.startDate) {
+        subscriptionStartDate = admin.firestore.Timestamp.fromDate(new Date(sub.startDate));
+      }
+      if (sub.nextPaymentDate) {
+        nextBillingDate = admin.firestore.Timestamp.fromDate(new Date(sub.nextPaymentDate));
+        const endDate = new Date(subscriptionStartDate.toDate());
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        subscriptionEndDate = admin.firestore.Timestamp.fromDate(endDate);
+      }
+    } else {
+      // Fallback: calculate from current time
+      const endDate = new Date(now.toDate());
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      subscriptionEndDate = admin.firestore.Timestamp.fromDate(endDate);
+      nextBillingDate = subscriptionEndDate;
+    }
+
+    const accountData = {
+      enterpriseId,
+      companyName: quoteData.companyName,
+      contactEmail: quoteData.contactEmail,
+      contactName: quoteData.contactName,
+      numberOfEmployees: quoteData.numberOfEmployees,
+      plan: 'enterprise',
+      accountStatus: 'active',
+      
+      // Paystack Subscription Fields
+      subscriptionCode,
+      subscriptionStatus: 'active',
+      planCode: webhookData.data?.plan?.plan_code || quoteData.planCode || null,
+      customerCode: webhookData.data?.customer?.customer_code || null,
+      
+      // Dates
+      subscriptionStartDate,
+      subscriptionEndDate,
+      nextBillingDate,
+      lastBillingDate: now,
+      
+      // Grace Period
+      gracePeriodDays: 7,
+      
+      // Warning Banner
+      warningBanner: {
+        show: false,
+        message: '',
+        severity: 'info',
+        actionRequired: false,
+        actionUrl: ''
+      },
+      
+      // Tracking
+      quoteId: quoteData.quoteId,
+      activatedAt: now,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await createEnterpriseAccountWithRetry(accountData, quoteRef, 3);
+    console.log(`✅ Enterprise account created from webhook: ${enterpriseId}`);
+
+  } catch (error) {
+    console.error('Error handling subscription.create webhook:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle invoice.payment_succeeded event
+ * Updates dates for renewals and reactivates suspended accounts
+ */
+async function handleInvoicePaymentSucceeded(webhookData) {
+  try {
+    const subscriptionCode = webhookData.data?.subscription?.subscription_code || 
+                             webhookData.data?.subscription_code;
+    
+    if (!subscriptionCode) {
+      throw new Error('Subscription code missing from webhook data');
+    }
+
+    // Find account by subscription code
+    const accountQuery = await db.collection('enterprise_accounts')
+      .where('subscriptionCode', '==', subscriptionCode)
+      .limit(1)
+      .get();
+
+    if (accountQuery.empty) {
+      console.warn(`⚠️  Account not found for subscription: ${subscriptionCode}`);
+      return { skipped: true, reason: 'Account not found' };
+    }
+
+    const accountDoc = accountQuery.docs[0];
+    const account = accountDoc.data();
+
+    // Check idempotency - compare payment dates
+    const paidAt = webhookData.data?.paid_at || webhookData.data?.paidAt;
+    if (paidAt && account.lastBillingDate) {
+      const lastBillingDate = account.lastBillingDate.toDate();
+      const webhookPaymentDate = new Date(paidAt);
+      if (lastBillingDate.getTime() === webhookPaymentDate.getTime()) {
+        console.log(`✅ Payment already processed - skipping: ${subscriptionCode}`);
+        return { alreadyProcessed: true };
+      }
+    }
+
+    const updateData = {
+      subscriptionStatus: 'active',
+      lastBillingDate: admin.firestore.Timestamp.fromDate(new Date(paidAt || Date.now())),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Check if account is suspended (reactivation scenario)
+    if (account.accountStatus === 'suspended') {
+      console.log(`🔄 Reactivating suspended account: ${account.enterpriseId}`);
+      
+      const nextPaymentDate = webhookData.data?.next_payment_date || webhookData.data?.nextPaymentDate;
+      if (nextPaymentDate) {
+        const nextBilling = admin.firestore.Timestamp.fromDate(new Date(nextPaymentDate));
+        const endDate = new Date(nextBilling.toDate());
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        
+        updateData.accountStatus = 'active';
+        updateData.nextBillingDate = nextBilling;
+        updateData.subscriptionEndDate = admin.firestore.Timestamp.fromDate(endDate);
+        updateData.reactivatedAt = admin.firestore.FieldValue.serverTimestamp();
+        updateData.warningBanner = {
+          show: false,
+          message: '',
+          severity: 'info',
+          actionRequired: false,
+          actionUrl: ''
+        };
+      }
+    } else {
+      // Normal renewal - just update dates
+      const nextPaymentDate = webhookData.data?.next_payment_date || webhookData.data?.nextPaymentDate;
+      if (nextPaymentDate) {
+        const nextBilling = admin.firestore.Timestamp.fromDate(new Date(nextPaymentDate));
+        const endDate = new Date(nextBilling.toDate());
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        
+        updateData.nextBillingDate = nextBilling;
+        updateData.subscriptionEndDate = admin.firestore.Timestamp.fromDate(endDate);
+      }
+    }
+
+    await accountDoc.ref.update(updateData);
+    console.log(`✅ Invoice payment succeeded processed: ${subscriptionCode}`);
+
+  } catch (error) {
+    console.error('Error handling invoice.payment_succeeded webhook:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle invoice.payment_failed event
+ * Sets grace period and tracks payment failure
+ */
+async function handleInvoicePaymentFailed(webhookData) {
+  try {
+    const subscriptionCode = webhookData.data?.subscription?.subscription_code || 
+                             webhookData.data?.subscription_code;
+    
+    if (!subscriptionCode) {
+      throw new Error('Subscription code missing from webhook data');
+    }
+
+    // Find account by subscription code
+    const accountQuery = await db.collection('enterprise_accounts')
+      .where('subscriptionCode', '==', subscriptionCode)
+      .limit(1)
+      .get();
+
+    if (accountQuery.empty) {
+      console.warn(`⚠️  Account not found for subscription: ${subscriptionCode}`);
+      return { skipped: true, reason: 'Account not found' };
+    }
+
+    const accountDoc = accountQuery.docs[0];
+    const account = accountDoc.data();
+
+    // Set grace period (7 days)
+    const gracePeriodDays = account.gracePeriodDays || 7;
+    const gracePeriodEndDate = admin.firestore.Timestamp.fromDate(
+      new Date(Date.now() + gracePeriodDays * 24 * 60 * 60 * 1000)
+    );
+
+    await accountDoc.ref.update({
+      subscriptionStatus: 'payment_failed',
+      accountStatus: 'active', // Still active during grace period
+      paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+      gracePeriodEndDate,
+      warningBanner: {
+        show: true,
+        message: `Payment failed. Please update your payment method. Grace period ends in ${gracePeriodDays} days.`,
+        severity: 'warning',
+        actionRequired: true,
+        actionUrl: '/enterprise-payment-update'
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`⚠️  Invoice payment failed processed: ${subscriptionCode} (grace period: ${gracePeriodDays} days)`);
+
+  } catch (error) {
+    console.error('Error handling invoice.payment_failed webhook:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle subscription.disable event
+ * Updates status when subscription is cancelled
+ */
+async function handleSubscriptionCancelled(webhookData) {
+  try {
+    const subscriptionCode = webhookData.data?.subscription?.subscription_code || 
+                             webhookData.data?.subscription_code;
+    
+    if (!subscriptionCode) {
+      throw new Error('Subscription code missing from webhook data');
+    }
+
+    // Find account by subscription code
+    const accountQuery = await db.collection('enterprise_accounts')
+      .where('subscriptionCode', '==', subscriptionCode)
+      .limit(1)
+      .get();
+
+    if (accountQuery.empty) {
+      console.warn(`⚠️  Account not found for subscription: ${subscriptionCode}`);
+      return { skipped: true, reason: 'Account not found' };
+    }
+
+    const accountDoc = accountQuery.docs[0];
+
+    await accountDoc.ref.update({
+      subscriptionStatus: 'cancelled',
+      // Account remains active until subscriptionEndDate
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`✅ Subscription cancelled processed: ${subscriptionCode}`);
+
+  } catch (error) {
+    console.error('Error handling subscription.disable webhook:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle subscription.not_renewing event
+ * Updates status when subscription is not renewing
+ */
+async function handleSubscriptionNotRenewing(webhookData) {
+  // Same as subscription.disable
+  await handleSubscriptionCancelled(webhookData);
+}
 

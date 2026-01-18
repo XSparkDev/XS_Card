@@ -7,7 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { generateQuote, initializeSubscription, handlePaymentCallback } = require('../controllers/enterpriseController');
+const { generateQuote, initializeSubscription, handlePaymentCallback, handleSubscriptionWebhook } = require('../controllers/enterpriseController');
 const { quoteRateLimit } = require('../middleware/quoteRateLimit');
 const { paymentInitRateLimit } = require('../middleware/paymentInitRateLimit');
 
@@ -20,8 +20,8 @@ router.post('/api/enterprise/payment/initialize', paymentInitRateLimit, initiali
 // Phase 5: Payment Callback
 router.get('/api/enterprise/payment/callback', handlePaymentCallback);
 
-// Routes to be added in subsequent phases:
-// Phase 6: POST /api/enterprise/payment/webhook
+// Phase 6: Subscription Webhook
+router.post('/api/enterprise/payment/webhook', handleSubscriptionWebhook);
 // Phase 7: GET /api/enterprise/subscription/:enterpriseId/status
 // Phase 7: POST /api/enterprise/subscription/:enterpriseId/cancel
 // Phase 7: POST /api/enterprise/subscription/:enterpriseId/update-employees

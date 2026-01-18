@@ -247,40 +247,40 @@ function validateCurrency(currency) {
  * @returns {{isValid: boolean, errors: string[]}} - Validation result with array of errors
  */
 function validateEnterpriseQuote(data) {
-  const errors = {};
+  const errors = [];
 
   // Validate company name
   const companyNameResult = validateCompanyName(data.companyName);
   if (!companyNameResult.isValid) {
-    errors.companyName = companyNameResult.error;
+    errors.push(companyNameResult.error);
   }
 
   // Validate contact name
   const contactNameResult = validateContactName(data.contactName);
   if (!contactNameResult.isValid) {
-    errors.contactName = contactNameResult.error;
+    errors.push(contactNameResult.error);
   }
 
   // Validate email
   const emailResult = validateEmail(data.contactEmail);
   if (!emailResult.isValid) {
-    errors.contactEmail = emailResult.error;
+    errors.push(emailResult.error);
   }
 
   // Validate number of employees
   const employeesResult = validateNumberOfEmployees(data.numberOfEmployees);
   if (!employeesResult.isValid) {
-    errors.numberOfEmployees = employeesResult.error;
+    errors.push(employeesResult.error);
   }
 
   // Validate currency (optional)
   const currencyResult = validateCurrency(data.currency);
   if (!currencyResult.isValid) {
-    errors.currency = currencyResult.error;
+    errors.push(currencyResult.error);
   }
 
   return {
-    isValid: Object.keys(errors).length === 0,
+    isValid: errors.length === 0,
     errors
   };
 }

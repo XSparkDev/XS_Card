@@ -316,7 +316,7 @@ async function testValidationErrors() {
     if (res.body.success !== false) {
       return { success: false, error: 'Response should indicate failure' };
     }
-    if (!res.body.errors || !res.body.errors.numberOfEmployees) {
+    if (!res.body.errors || !Array.isArray(res.body.errors) || !res.body.errors.some(e => e.includes('employee') || e.includes('Employee'))) {
       return { success: false, error: 'Employee count error missing' };
     }
 
@@ -341,7 +341,7 @@ async function testValidationErrors() {
     if (res.body.success !== false) {
       return { success: false, error: 'Response should indicate failure' };
     }
-    if (!res.body.errors || !res.body.errors.contactEmail) {
+    if (!res.body.errors || !Array.isArray(res.body.errors) || !res.body.errors.some(e => e.includes('email') || e.includes('Email'))) {
       return { success: false, error: 'Email error missing' };
     }
 
@@ -366,7 +366,7 @@ async function testValidationErrors() {
     if (res.body.success !== false) {
       return { success: false, error: 'Response should indicate failure' };
     }
-    if (!res.body.errors || !res.body.errors.companyName) {
+    if (!res.body.errors || !Array.isArray(res.body.errors) || !res.body.errors.some(e => e.includes('company') || e.includes('Company'))) {
       return { success: false, error: 'Company name error missing' };
     }
 

@@ -33,8 +33,16 @@ const SUPPORTED_CURRENCIES = ['ZAR', 'USD'];
  * @throws {Error} - If employee count is invalid or currency is unsupported
  */
 function calculateEnterprisePrice(numberOfEmployees, currency = 'ZAR') {
-  // Normalize currency to uppercase
-  const upperCaseCurrency = currency ? currency.toUpperCase() : 'ZAR';
+  // Normalize currency to uppercase (handle non-string by converting to string first)
+  let upperCaseCurrency;
+  if (!currency) {
+    upperCaseCurrency = 'ZAR';
+  } else if (typeof currency === 'string') {
+    upperCaseCurrency = currency.toUpperCase();
+  } else {
+    // Convert non-string to string for error message
+    upperCaseCurrency = String(currency).toUpperCase();
+  }
   
   // Validate currency
   if (!SUPPORTED_CURRENCIES.includes(upperCaseCurrency)) {

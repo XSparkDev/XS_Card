@@ -19,7 +19,7 @@
 | **Phase 3** | Plan Management | Plan creation, DB storage, reuse | `test-phase3-plans.js` | ✅ **COMPLETE** |
 | **Phase 4** | Payment Initialization | Subscription init endpoint | `test-phase4-payment-init.js` | ✅ **COMPLETE** |
 | **Phase 5** | Payment Callback | Callback handler, account creation | `test-phase5-callback.js` | ✅ **COMPLETE** |
-| **Phase 6** | Webhook Handling | Webhook processing, all events | `test-phase6-webhooks.js` | ⏳ Pending |
+| **Phase 6** | Webhook Handling | Webhook processing, all events | `test-phase6-webhooks.js` | ✅ **COMPLETE** |
 | **Phase 7** | Subscription Management | Status, cancel, employee updates | `test-phase7-management.js` | ⏳ Pending |
 | **Phase 8** | Grace Period & Suspension | Grace tracking, suspension logic | `test-phase8-grace-period.js` | ⏳ Pending |
 | **Phase 9** | Polish & Production | Email, cleanup, audit logging | `test-phase9-polish.js` | ⏳ Pending |
