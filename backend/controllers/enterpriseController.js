@@ -15,7 +15,11 @@ const {
   getPaystackSubscriptionStatus,
   createEnterpriseAccountWithRetry,
   disablePaystackSubscription,
-  updatePaystackSubscriptionPlan
+  updatePaystackSubscriptionPlan,
+  checkGracePeriodExpiration,
+  suspendEnterpriseAccount,
+  setGracePeriodOnPaymentFailure,
+  clearGracePeriodOnPaymentSuccess
 } = require('../utils/enterprisePaymentUtils');
 const { validateWebhookSecurity } = require('../utils/webhookSecurity');
 
@@ -630,33 +634,35 @@ exports.getSubscriptionStatus = async (req, res) => {
     }
 
     // 3. Check grace period expiration (on-demand check)
-    // Note: Full grace period logic will be in Phase 8, but we check here
-    const now = admin.firestore.Timestamp.now();
+    const gracePeriodCheck = await checkGracePeriodExpiration(accountData);
+    
     let accountStatus = accountData.accountStatus || 'active';
-    let warningBanner = accountData.warningBanner || { show: false };
+    let warningBanner = gracePeriodCheck.warningBanner;
 
-    if (accountData.subscriptionStatus === 'payment_failed' && accountData.gracePeriodEndDate) {
-      const gracePeriodEnd = accountData.gracePeriodEndDate;
-      if (gracePeriodEnd.toMillis() < now.toMillis()) {
-        // Grace period expired - suspend account (Phase 8 will handle this fully)
+    // If grace period expired, suspend account
+    if (gracePeriodCheck.isExpired && gracePeriodCheck.isSuspended) {
+      try {
+        await suspendEnterpriseAccount(enterpriseId);
         accountStatus = 'suspended';
-        warningBanner = {
-          show: true,
-          message: 'Your subscription payment failed. Please update your payment method to reactivate your account.',
-          severity: 'error',
-          actionRequired: true,
-          actionUrl: '/enterprise-payment-update'
-        };
-      } else {
-        // Still in grace period
-        warningBanner = {
-          show: true,
-          message: `Your payment failed. Please update your payment method before ${gracePeriodEnd.toDate().toLocaleDateString()} to avoid account suspension.`,
-          severity: 'warning',
-          actionRequired: true,
-          actionUrl: '/enterprise-payment-update'
-        };
+        // Refresh account data after suspension
+        const updatedAccountDoc = await db.collection('enterprise_accounts').doc(enterpriseId).get();
+        if (updatedAccountDoc.exists) {
+          const updatedAccount = updatedAccountDoc.data();
+          accountStatus = updatedAccount.accountStatus || accountStatus;
+          warningBanner = updatedAccount.warningBanner || warningBanner;
+        }
+      } catch (suspendError) {
+        console.error('Failed to suspend account:', suspendError.message);
+        // Continue with warning banner even if suspension fails
+        accountStatus = 'suspended';
       }
+    } else if (gracePeriodCheck.warningBanner.show) {
+      // Still in grace period - use warning banner from check
+      accountStatus = 'active'; // Still active during grace period
+    } else {
+      // No grace period issues
+      accountStatus = accountData.accountStatus || 'active';
+      warningBanner = accountData.warningBanner || { show: false };
     }
 
     // 4. Return subscription status
@@ -1298,9 +1304,14 @@ async function handleInvoicePaymentSucceeded(webhookData) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    // Check if account is suspended (reactivation scenario)
-    if (account.accountStatus === 'suspended') {
-      console.log(`🔄 Reactivating suspended account: ${account.enterpriseId}`);
+    // Check if account is suspended or has grace period (reactivation scenario)
+    if (account.accountStatus === 'suspended' || account.gracePeriodEndDate) {
+      console.log(`🔄 Reactivating account: ${account.enterpriseId}`);
+      
+      // Clear grace period if it exists
+      if (account.gracePeriodEndDate) {
+        await clearGracePeriodOnPaymentSuccess(account.enterpriseId);
+      }
       
       const nextPaymentDate = webhookData.data?.next_payment_date || webhookData.data?.nextPaymentDate;
       if (nextPaymentDate) {
@@ -1368,27 +1379,11 @@ async function handleInvoicePaymentFailed(webhookData) {
 
     const accountDoc = accountQuery.docs[0];
     const account = accountDoc.data();
+    const enterpriseId = account.enterpriseId;
 
-    // Set grace period (7 days)
+    // Set grace period using utility function
     const gracePeriodDays = account.gracePeriodDays || 7;
-    const gracePeriodEndDate = admin.firestore.Timestamp.fromDate(
-      new Date(Date.now() + gracePeriodDays * 24 * 60 * 60 * 1000)
-    );
-
-    await accountDoc.ref.update({
-      subscriptionStatus: 'payment_failed',
-      accountStatus: 'active', // Still active during grace period
-      paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
-      gracePeriodEndDate,
-      warningBanner: {
-        show: true,
-        message: `Payment failed. Please update your payment method. Grace period ends in ${gracePeriodDays} days.`,
-        severity: 'warning',
-        actionRequired: true,
-        actionUrl: '/enterprise-payment-update'
-      },
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
+    await setGracePeriodOnPaymentFailure(enterpriseId, gracePeriodDays);
 
     console.log(`⚠️  Invoice payment failed processed: ${subscriptionCode} (grace period: ${gracePeriodDays} days)`);
 

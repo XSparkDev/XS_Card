@@ -635,6 +635,240 @@ async function updatePaystackSubscriptionPlan(subscriptionCode, newPlanCode) {
   });
 }
 
+/**
+ * Check grace period expiration and suspend account if expired
+ * 
+ * @param {object} enterpriseAccount - Enterprise account data
+ * @returns {Promise<object>} - Result with suspended flag and warning banner
+ */
+async function checkGracePeriodExpiration(enterpriseAccount) {
+  const now = admin.firestore.Timestamp.now();
+  const result = {
+    isExpired: false,
+    isSuspended: false,
+    warningBanner: {
+      show: false,
+      message: '',
+      severity: 'info',
+      actionRequired: false,
+      actionUrl: ''
+    }
+  };
+
+  // Check if payment failed and grace period exists
+  if (enterpriseAccount.subscriptionStatus === 'payment_failed' && 
+      enterpriseAccount.gracePeriodEndDate) {
+    
+    const gracePeriodEnd = enterpriseAccount.gracePeriodEndDate;
+    
+    if (gracePeriodEnd.toMillis() < now.toMillis()) {
+      // Grace period expired - account should be suspended
+      result.isExpired = true;
+      result.isSuspended = true;
+      result.warningBanner = {
+        show: true,
+        message: 'Your subscription payment failed. Please update your payment method to reactivate your account.',
+        severity: 'error',
+        actionRequired: true,
+        actionUrl: '/enterprise-payment-update'
+      };
+    } else {
+      // Still in grace period
+      const daysRemaining = Math.ceil((gracePeriodEnd.toMillis() - now.toMillis()) / (24 * 60 * 60 * 1000));
+      result.isExpired = false;
+      result.isSuspended = false;
+      result.warningBanner = {
+        show: true,
+        message: `Your payment failed. Please update your payment method before ${gracePeriodEnd.toDate().toLocaleDateString()} to avoid account suspension. (${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining)`,
+        severity: 'warning',
+        actionRequired: true,
+        actionUrl: '/enterprise-payment-update'
+      };
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Suspend enterprise account
+ * 
+ * Sets account status to 'suspended' and updates warning banner.
+ * Account remains accessible but with restricted features.
+ * 
+ * @param {string} enterpriseId - Enterprise account ID
+ * @returns {Promise<boolean>} - Success status
+ * @throws {Error} - If suspension fails
+ */
+async function suspendEnterpriseAccount(enterpriseId) {
+  if (!enterpriseId || typeof enterpriseId !== 'string') {
+    throw new Error('Enterprise ID is required');
+  }
+
+  try {
+    const accountRef = db.collection('enterprise_accounts').doc(enterpriseId);
+    const accountDoc = await accountRef.get();
+
+    if (!accountDoc.exists) {
+      throw new Error(`Enterprise account not found: ${enterpriseId}`);
+    }
+
+    const accountData = accountDoc.data();
+
+    // Only suspend if not already suspended
+    if (accountData.accountStatus === 'suspended') {
+      console.log(`Account already suspended: ${enterpriseId}`);
+      return true;
+    }
+
+    // Update account status to suspended
+    await accountRef.update({
+      accountStatus: 'suspended',
+      warningBanner: {
+        show: true,
+        message: 'Your subscription payment failed. Please update your payment method to reactivate your account.',
+        severity: 'error',
+        actionRequired: true,
+        actionUrl: '/enterprise-payment-update'
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`✅ Enterprise account suspended: ${enterpriseId}`);
+
+    // Log suspension
+    await logEnterpriseError('account_suspended', {
+      error: 'Grace period expired',
+      context: {
+        enterpriseId,
+        subscriptionStatus: accountData.subscriptionStatus,
+        gracePeriodEndDate: accountData.gracePeriodEndDate?.toDate().toISOString() || null
+      }
+    });
+
+    return true;
+  } catch (error) {
+    console.error(`Failed to suspend enterprise account ${enterpriseId}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Set grace period on payment failure
+ * 
+ * Sets grace period end date and updates warning banner.
+ * Called by webhook handlers when payment fails.
+ * 
+ * @param {string} enterpriseId - Enterprise account ID
+ * @param {number} gracePeriodDays - Grace period in days (default: 7)
+ * @returns {Promise<object>} - Grace period data
+ */
+async function setGracePeriodOnPaymentFailure(enterpriseId, gracePeriodDays = 7) {
+  if (!enterpriseId || typeof enterpriseId !== 'string') {
+    throw new Error('Enterprise ID is required');
+  }
+
+  try {
+    const accountRef = db.collection('enterprise_accounts').doc(enterpriseId);
+    const accountDoc = await accountRef.get();
+
+    if (!accountDoc.exists) {
+      throw new Error(`Enterprise account not found: ${enterpriseId}`);
+    }
+
+    const accountData = accountDoc.data();
+    const now = admin.firestore.Timestamp.now();
+    
+    // Calculate grace period end date
+    const gracePeriodEndDate = admin.firestore.Timestamp.fromDate(
+      new Date(now.toDate().getTime() + gracePeriodDays * 24 * 60 * 60 * 1000)
+    );
+
+    // Update account with grace period
+    await accountRef.update({
+      subscriptionStatus: 'payment_failed',
+      accountStatus: 'active', // Still active during grace period
+      paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+      gracePeriodEndDate,
+      gracePeriodDays,
+      warningBanner: {
+        show: true,
+        message: `Payment failed. Please update your payment method. Grace period ends in ${gracePeriodDays} days.`,
+        severity: 'warning',
+        actionRequired: true,
+        actionUrl: '/enterprise-payment-update'
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`⚠️  Grace period set for ${enterpriseId}: ${gracePeriodDays} days (ends ${gracePeriodEndDate.toDate().toLocaleDateString()})`);
+
+    return {
+      gracePeriodEndDate: gracePeriodEndDate.toDate().toISOString(),
+      gracePeriodDays,
+      daysRemaining: gracePeriodDays
+    };
+  } catch (error) {
+    console.error(`Failed to set grace period for ${enterpriseId}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Clear grace period on successful payment
+ * 
+ * Clears grace period data and reactivates account.
+ * Called by webhook handlers when payment succeeds after failure.
+ * 
+ * @param {string} enterpriseId - Enterprise account ID
+ * @returns {Promise<boolean>} - Success status
+ */
+async function clearGracePeriodOnPaymentSuccess(enterpriseId) {
+  if (!enterpriseId || typeof enterpriseId !== 'string') {
+    throw new Error('Enterprise ID is required');
+  }
+
+  try {
+    const accountRef = db.collection('enterprise_accounts').doc(enterpriseId);
+    const accountDoc = await accountRef.get();
+
+    if (!accountDoc.exists) {
+      throw new Error(`Enterprise account not found: ${enterpriseId}`);
+    }
+
+    const accountData = accountDoc.data();
+
+    // Only clear if grace period exists
+    if (!accountData.gracePeriodEndDate) {
+      console.log(`No grace period to clear for ${enterpriseId}`);
+      return true;
+    }
+
+    // Clear grace period and reactivate account
+    await accountRef.update({
+      accountStatus: 'active',
+      paymentFailedAt: admin.firestore.FieldValue.delete(),
+      gracePeriodEndDate: admin.firestore.FieldValue.delete(),
+      warningBanner: {
+        show: false,
+        message: '',
+        severity: 'info',
+        actionRequired: false,
+        actionUrl: ''
+      },
+      reactivatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`✅ Grace period cleared and account reactivated: ${enterpriseId}`);
+
+    return true;
+  } catch (error) {
+    console.error(`Failed to clear grace period for ${enterpriseId}:`, error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   findOrCreatePlan,
   createPaystackPlan,
@@ -644,6 +878,10 @@ module.exports = {
   getPaystackSubscriptionStatus,
   createEnterpriseAccountWithRetry,
   disablePaystackSubscription,
-  updatePaystackSubscriptionPlan
+  updatePaystackSubscriptionPlan,
+  checkGracePeriodExpiration,
+  suspendEnterpriseAccount,
+  setGracePeriodOnPaymentFailure,
+  clearGracePeriodOnPaymentSuccess
 };
 

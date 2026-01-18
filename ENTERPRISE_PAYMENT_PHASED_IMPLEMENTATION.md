@@ -20,8 +20,8 @@
 | **Phase 4** | Payment Initialization | Subscription init endpoint | `test-phase4-payment-init.js` | ✅ **COMPLETE** |
 | **Phase 5** | Payment Callback | Callback handler, account creation | `test-phase5-callback.js` | ✅ **COMPLETE** |
 | **Phase 6** | Webhook Handling | Webhook processing, all events | `test-phase6-webhooks.js` | ✅ **COMPLETE** |
-| **Phase 7** | Subscription Management | Status, cancel, employee updates | `test-phase7-management.js` | ⏳ Pending |
-| **Phase 8** | Grace Period & Suspension | Grace tracking, suspension logic | `test-phase8-grace-period.js` | ⏳ Pending |
+| **Phase 7** | Subscription Management | Status, cancel, employee updates | `test-phase7-management.js` | ✅ **COMPLETE** |
+| **Phase 8** | Grace Period & Suspension | Grace tracking, suspension logic | `test-phase8-grace-period.js` | ✅ **COMPLETE** |
 | **Phase 9** | Polish & Production | Email, cleanup, audit logging | `test-phase9-polish.js` | ⏳ Pending |
 
 ---
@@ -62,6 +62,29 @@
 **Test Results:** ✅ 73/73 tests passing
 
 **Note:** Phase 1 was implemented before Phase 0. Phase 0 verifies Phase 1 files exist and work correctly. Both phases are fully compatible and independent.
+
+---
+
+### Phase 7: Subscription Management ✅
+**Status:** All 17 tests passing  
+**Files Created/Modified:**
+- `backend/utils/enterprisePaymentUtils.js` - Added subscription disable and plan update functions
+- `backend/controllers/enterpriseController.js` - Added subscription status, cancel, and employee update endpoints
+- `backend/routes/enterpriseRoutes.js` - Added subscription management routes
+- `backend/test-phase7-management.js` - Test suite
+
+**Key Deliverables:**
+- `getSubscriptionStatus()` endpoint (fetches status, syncs from Paystack, checks grace period)
+- `cancelSubscription()` endpoint (cancels subscription with Paystack, updates database)
+- `updateEmployeeCount()` endpoint (updates employee count, creates new plan, updates Paystack subscription)
+- Status syncing from Paystack (on-demand)
+- Grace period expiration check (on-demand)
+- Subscription cancellation with Paystack API
+- Employee count update (change takes effect on next renewal, no prorating)
+
+**Test Results:** ✅ 17/17 tests passing
+
+**Note:** Tests requiring Paystack API are skipped when `PAYSTACK_SECRET_KEY` is not configured. Configure Paystack test API key to run all tests.
 
 ---
 
