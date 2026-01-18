@@ -746,6 +746,30 @@ async function suspendEnterpriseAccount(enterpriseId) {
       }
     });
 
+    // Log audit event (if audit log available)
+    try {
+      const { logAccountSuspended } = require('./enterpriseAuditLog');
+      await logAccountSuspended(enterpriseId, {
+        gracePeriodEndDate: accountData.gracePeriodEndDate,
+        previousStatus: accountData.accountStatus
+      });
+    } catch (error) {
+      // Audit log not critical - continue
+    }
+
+    // Send suspended email (non-blocking, if email service available)
+    try {
+      const { sendSubscriptionEmail } = require('./enterpriseEmailService');
+      const suspendedAccount = await accountRef.get();
+      if (suspendedAccount.exists) {
+        sendSubscriptionEmail('suspended', suspendedAccount.data()).catch(error => {
+          console.warn('Failed to send suspended email:', error.message);
+        });
+      }
+    } catch (error) {
+      // Email service not critical - continue
+    }
+
     return true;
   } catch (error) {
     console.error(`Failed to suspend enterprise account ${enterpriseId}:`, error.message);
@@ -861,6 +885,34 @@ async function clearGracePeriodOnPaymentSuccess(enterpriseId) {
     });
 
     console.log(`✅ Grace period cleared and account reactivated: ${enterpriseId}`);
+
+    // Log audit event (if audit log available)
+    try {
+      const { logAccountReactivated } = require('./enterpriseAuditLog');
+      const reactivatedAccount = await accountRef.get();
+      if (reactivatedAccount.exists) {
+        const accountData = reactivatedAccount.data();
+        await logAccountReactivated(enterpriseId, {
+          subscriptionCode: accountData.subscriptionCode,
+          nextBillingDate: accountData.nextBillingDate
+        });
+      }
+    } catch (error) {
+      // Audit log not critical - continue
+    }
+
+    // Send reactivated email (non-blocking, if email service available)
+    try {
+      const { sendSubscriptionEmail } = require('./enterpriseEmailService');
+      const reactivatedAccount = await accountRef.get();
+      if (reactivatedAccount.exists) {
+        sendSubscriptionEmail('reactivated', reactivatedAccount.data()).catch(error => {
+          console.warn('Failed to send reactivation email:', error.message);
+        });
+      }
+    } catch (error) {
+      // Email service not critical - continue
+    }
 
     return true;
   } catch (error) {

@@ -525,6 +525,14 @@ exports.handlePaymentCallback = async (req, res) => {
       
       console.log(`✅ Enterprise account created successfully: ${enterpriseId} for quote ${quoteData.quoteId}`);
       
+      // Log audit event
+      await logSubscriptionCreated(enterpriseId, accountData);
+      
+      // Send welcome email (non-blocking)
+      sendSubscriptionEmail('welcome', accountData).catch(error => {
+        console.warn('Failed to send welcome email:', error.message);
+      });
+      
       // 7. Redirect to success page
       return res.redirect(`/enterprise-payment-success.html?quoteId=${encodeURIComponent(quoteData.quoteId)}&enterpriseId=${encodeURIComponent(enterpriseId)}`);
     } catch (accountError) {
@@ -804,6 +812,17 @@ exports.cancelSubscription = async (req, res) => {
 
     console.log(`✅ Subscription cancelled: ${enterpriseId}`);
 
+    // Log audit event
+    await logSubscriptionCancelled(enterpriseId, {
+      subscriptionCode: accountData.subscriptionCode,
+      subscriptionEndDate: accountData.subscriptionEndDate
+    });
+
+    // Send cancellation email (non-blocking)
+    sendSubscriptionEmail('cancelled', accountData).catch(error => {
+      console.warn('Failed to send cancellation email:', error.message);
+    });
+
     // 4. Return response
     const subscriptionEndDate = accountData.subscriptionEndDate?.toDate().toISOString() || null;
 
@@ -981,6 +1000,15 @@ exports.updateEmployeeCount = async (req, res) => {
     }
 
     console.log(`✅ Employee count updated: ${enterpriseId} -> ${newNumberOfEmployees} employees`);
+
+    // Log audit event
+    await logEmployeeCountUpdated(enterpriseId, {
+      oldNumberOfEmployees: accountData.numberOfEmployees,
+      newNumberOfEmployees: newNumberOfEmployees,
+      oldPlanCode: accountData.planCode,
+      newPlanCode: newPlanCode,
+      newPrice: newPrice
+    });
 
     // 7. Return response
     const nextRenewalDate = accountData.nextBillingDate?.toDate().toISOString() || null;
@@ -1254,6 +1282,14 @@ async function handleSubscriptionCreated(webhookData) {
     await createEnterpriseAccountWithRetry(accountData, quoteRef, 3);
     console.log(`✅ Enterprise account created from webhook: ${enterpriseId}`);
 
+    // Log audit event
+    await logSubscriptionCreated(enterpriseId, accountData);
+    
+    // Send welcome email (non-blocking)
+    sendSubscriptionEmail('welcome', accountData).catch(error => {
+      console.warn('Failed to send welcome email:', error.message);
+    });
+
   } catch (error) {
     console.error('Error handling subscription.create webhook:', error);
     throw error;
@@ -1347,6 +1383,37 @@ async function handleInvoicePaymentSucceeded(webhookData) {
     await accountDoc.ref.update(updateData);
     console.log(`✅ Invoice payment succeeded processed: ${subscriptionCode}`);
 
+    // Get updated account data for email/audit
+    const updatedAccountDoc = await db.collection('enterprise_accounts').doc(account.enterpriseId).get();
+    const updatedAccount = updatedAccountDoc.exists ? updatedAccountDoc.data() : account;
+
+    // Log audit event
+    await logPaymentSucceeded(account.enterpriseId, {
+      subscriptionCode,
+      amount: updatedAccount.calculatedPrice || account.calculatedPrice,
+      currency: updatedAccount.currency || account.currency,
+      nextBillingDate: updatedAccount.nextBillingDate
+    });
+
+    // Send payment succeeded email (non-blocking)
+    sendSubscriptionEmail('payment_succeeded', updatedAccount, {
+      amount: updatedAccount.calculatedPrice || account.calculatedPrice
+    }).catch(error => {
+      console.warn('Failed to send payment succeeded email:', error.message);
+    });
+
+    // If reactivated, send reactivation email
+    if (account.accountStatus === 'suspended' || account.gracePeriodEndDate) {
+      sendSubscriptionEmail('reactivated', updatedAccount).catch(error => {
+        console.warn('Failed to send reactivation email:', error.message);
+      });
+      
+      await logAccountReactivated(account.enterpriseId, {
+        subscriptionCode,
+        nextBillingDate: updatedAccount.nextBillingDate
+      });
+    }
+
   } catch (error) {
     console.error('Error handling invoice.payment_succeeded webhook:', error);
     throw error;
@@ -1383,9 +1450,25 @@ async function handleInvoicePaymentFailed(webhookData) {
 
     // Set grace period using utility function
     const gracePeriodDays = account.gracePeriodDays || 7;
-    await setGracePeriodOnPaymentFailure(enterpriseId, gracePeriodDays);
+    const gracePeriodResult = await setGracePeriodOnPaymentFailure(enterpriseId, gracePeriodDays);
 
     console.log(`⚠️  Invoice payment failed processed: ${subscriptionCode} (grace period: ${gracePeriodDays} days)`);
+
+    // Get updated account data
+    const updatedAccountDoc = await db.collection('enterprise_accounts').doc(enterpriseId).get();
+    const updatedAccount = updatedAccountDoc.exists ? updatedAccountDoc.data() : account;
+
+    // Log audit event
+    await logPaymentFailed(enterpriseId, {
+      subscriptionCode,
+      gracePeriodEndDate: updatedAccount.gracePeriodEndDate,
+      gracePeriodDays: gracePeriodDays
+    });
+
+    // Send payment failed email (non-blocking)
+    sendSubscriptionEmail('payment_failed', updatedAccount).catch(error => {
+      console.warn('Failed to send payment failed email:', error.message);
+    });
 
   } catch (error) {
     console.error('Error handling invoice.payment_failed webhook:', error);
