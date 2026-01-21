@@ -271,6 +271,40 @@ exports.saveContactInfo = async (req, res) => {
             }
         }
 
+        // Send confirmation email to the person who filled the form (non-blocking)
+        if (contactEmail) {
+            const ownerName = userData.name || userData.fullName || 'an XS Card user';
+            const ownerContactLink = `${process.env.APP_URL || process.env.API_BASE_URL || ''}/saveContact.html?userId=${userId}`;
+            const appStoreLink = process.env.IOS_APP_STORE_URL || 'https://apps.apple.com/app/id6742452317';
+            const metAt = contactInfo.howWeMet || 'your recent interaction';
+            const dayString = new Date().toLocaleDateString();
+
+            setImmediate(async () => {
+                try {
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: contactEmail,
+                        subject: `${ownerName} is excited to have met you`,
+                        html: `
+                            <p>${ownerName} is excited to have met you${contactInfo.name ? ` ${contactInfo.name}` : ''}.</p>
+                            <p>You made a great XS Card connection${metAt ? ` at ${metAt}` : ''} on ${dayString}.</p>
+                            <p>You will now have ${ownerName} in your device's phonebook and can keep networking.</p>
+                            <p>Download XS Card here: <a href="${appStoreLink}">${appStoreLink}</a></p>
+                            <p>If you want to view the card again, you can visit: <a href="${ownerContactLink}">${ownerContactLink}</a></p>
+                            <p style="color: #666; font-size: 12px;">This was sent automatically by XS Card.</p>
+                        `
+                    };
+
+                    const mailResult = await sendMailWithStatus(mailOptions);
+                    if (!mailResult.success) {
+                        console.error('Failed to send confirmation email to form filler:', mailResult.error);
+                    }
+                } catch (fillerEmailError) {
+                    console.error('Error sending confirmation to form filler:', fillerEmailError);
+                }
+            });
+        }
+
         // Make sure we're sending a success flag in the response for the frontend
         res.status(200).send({ 
             success: true,

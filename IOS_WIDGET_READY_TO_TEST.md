@@ -144,3 +144,4 @@ Check that widget shows:
 ---
 
 **🎉 Everything is ready! Add the last file and test your widgets!**
+

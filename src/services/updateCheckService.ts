@@ -33,6 +33,11 @@ export const getCurrentAppVersion = (): { version: string; buildNumber: string }
     let version = '0.0.0';
     let buildNumber = '0';
     
+    // Debug logging
+    console.log('[UpdateCheck] Constants.expoConfig:', Constants.expoConfig?.version);
+    console.log('[UpdateCheck] Constants.manifest:', Constants.manifest?.version);
+    console.log('[UpdateCheck] Constants.manifest2:', Constants.manifest2?.extra?.expoClient?.version);
+    
     if (Constants.expoConfig) {
       version = Constants.expoConfig.version || '0.0.0';
       if (Platform.OS === 'ios') {
@@ -40,6 +45,7 @@ export const getCurrentAppVersion = (): { version: string; buildNumber: string }
       } else if (Platform.OS === 'android') {
         buildNumber = String(Constants.expoConfig.android?.versionCode || 0);
       }
+      console.log('[UpdateCheck] Using expoConfig:', { version, buildNumber });
     } else if (Constants.manifest) {
       // Fallback for older Expo SDK
       version = Constants.manifest.version || '0.0.0';
@@ -48,11 +54,29 @@ export const getCurrentAppVersion = (): { version: string; buildNumber: string }
       } else if (Platform.OS === 'android') {
         buildNumber = String(Constants.manifest.android?.versionCode || 0);
       }
+      console.log('[UpdateCheck] Using manifest:', { version, buildNumber });
     } else if (Constants.manifest2) {
       // Fallback for newer Expo SDK
       version = Constants.manifest2?.extra?.expoClient?.version || '0.0.0';
       if (Platform.OS === 'ios') {
         buildNumber = Constants.manifest2?.ios?.buildNumber || '0';
+      }
+      console.log('[UpdateCheck] Using manifest2:', { version, buildNumber });
+    }
+    
+    // If still 0.0.0, try reading from Constants.executionEnvironment
+    if (version === '0.0.0' || version === '0') {
+      console.warn('[UpdateCheck] Version still 0.0.0, checking all Constants properties...');
+      console.log('[UpdateCheck] Constants keys:', Object.keys(Constants));
+      console.log('[UpdateCheck] Constants.executionEnvironment:', Constants.executionEnvironment);
+      
+      // Try to get from Constants.manifest?.version or Constants.manifest2
+      if (Constants.manifest?.version) {
+        version = Constants.manifest.version;
+        buildNumber = Platform.OS === 'ios' 
+          ? (Constants.manifest.ios?.buildNumber || '0')
+          : String(Constants.manifest.android?.versionCode || 0);
+        console.log('[UpdateCheck] Found in manifest fallback:', { version, buildNumber });
       }
     }
     

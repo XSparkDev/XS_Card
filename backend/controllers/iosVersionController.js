@@ -272,12 +272,60 @@ exports.getAllIosVersions = async (req, res) => {
 };
 
 /**
- * Helper function to compare semantic versions
+ * Helper function to compare versions (supports both numeric and semantic versions)
+ * Handles:
+ * - Numeric versions: "207", "208" (no dots)
+ * - Semantic versions: "2.0.7", "2.0.8" (with dots)
  * Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
  */
 function compareVersions(v1, v2) {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
+    // Normalize versions to strings
+    const version1 = String(v1 || '0');
+    const version2 = String(v2 || '0');
+    
+    // Check if versions are numeric (no dots) or semantic (with dots)
+    const isNumeric1 = !version1.includes('.');
+    const isNumeric2 = !version2.includes('.');
+    
+    // If both are numeric, compare as integers
+    if (isNumeric1 && isNumeric2) {
+        const num1 = parseInt(version1, 10) || 0;
+        const num2 = parseInt(version2, 10) || 0;
+        if (num1 < num2) return -1;
+        if (num1 > num2) return 1;
+        return 0;
+    }
+    
+    // If both are semantic, use semantic comparison
+    if (!isNumeric1 && !isNumeric2) {
+        const parts1 = version1.split('.').map(Number);
+        const parts2 = version2.split('.').map(Number);
+        
+        const maxLength = Math.max(parts1.length, parts2.length);
+        
+        for (let i = 0; i < maxLength; i++) {
+            const part1 = parts1[i] || 0;
+            const part2 = parts2[i] || 0;
+            
+            if (part1 < part2) return -1;
+            if (part1 > part2) return 1;
+        }
+        
+        return 0;
+    }
+    
+    // Mixed: one numeric, one semantic
+    // Convert numeric to semantic format (e.g., "207" -> "207.0.0")
+    // Then compare semantically
+    const normalized1 = isNumeric1 
+        ? `${version1}.0.0` 
+        : version1;
+    const normalized2 = isNumeric2 
+        ? `${version2}.0.0` 
+        : version2;
+    
+    const parts1 = normalized1.split('.').map(Number);
+    const parts2 = normalized2.split('.').map(Number);
     
     const maxLength = Math.max(parts1.length, parts2.length);
     

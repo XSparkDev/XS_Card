@@ -160,3 +160,4 @@ The system uses Firebase Firestore:
 - The modal automatically opens App Store when "Update Now" is tapped
 - Force updates cannot be dismissed by users
 
+
