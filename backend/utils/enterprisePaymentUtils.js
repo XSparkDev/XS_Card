@@ -100,9 +100,71 @@ async function createPaystackPlan(numberOfEmployees, amount, currency) {
 }
 
 /**
+ * Verify if a Paystack plan exists
+ * 
+ * @param {string} planCode - Paystack plan code
+ * @returns {Promise<boolean>} - True if plan exists, false otherwise
+ */
+async function verifyPaystackPlanExists(planCode) {
+  if (!planCode || typeof planCode !== 'string') {
+    return false;
+  }
+
+  const options = getRequestOptions(`/plan/${encodeURIComponent(planCode)}`, 'GET');
+  
+  return new Promise((resolve) => {
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+          
+          // Check HTTP status code first (404 = not found)
+          if (res.statusCode === 404) {
+            console.log(`   ❌ Plan verification failed: HTTP 404 - Plan not found`);
+            resolve(false);
+            return;
+          }
+          
+          // Then check response structure
+          const exists = res.statusCode === 200 && 
+                        response.status === true && 
+                        response.data && 
+                        response.data.plan_code === planCode;
+          
+          if (!exists) {
+            console.log(`   ❌ Plan verification failed: ${response.message || `HTTP ${res.statusCode} - Plan not found in Paystack`}`);
+          }
+          
+          resolve(exists);
+        } catch (error) {
+          console.log(`   ❌ Plan verification error: ${error.message}`);
+          resolve(false);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.log(`   ❌ Plan verification request error: ${error.message}`);
+      resolve(false);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      console.log(`   ❌ Plan verification timeout`);
+      resolve(false);
+    });
+
+    req.end();
+  });
+}
+
+/**
  * Find or create a Paystack plan
  * 
  * Checks database first for existing plan (fast lookup).
+ * Verifies plan exists in Paystack (handles deleted plans).
  * If not found, creates new plan in Paystack and stores in database.
  * 
  * @param {number} numberOfEmployees - Number of employees
@@ -125,9 +187,32 @@ async function findOrCreatePlan(numberOfEmployees, amount, currency) {
       .get();
 
     if (!existingPlanQuery.empty) {
-      const existingPlan = existingPlanQuery.docs[0].data();
-      console.log(`♻️  Reusing existing plan: ${existingPlan.planCode} for ${numberOfEmployees} employees (${upperCaseCurrency})`);
-      return existingPlan.planCode;
+      const existingPlanDoc = existingPlanQuery.docs[0];
+      const existingPlan = existingPlanDoc.data();
+      const planCode = existingPlan.planCode;
+      
+      // 2. Verify plan exists in Paystack (handles deleted plans)
+      console.log(`🔍 Verifying plan ${planCode} exists in Paystack...`);
+      const planExists = await verifyPaystackPlanExists(planCode);
+      
+      if (planExists) {
+        console.log(`✅ Plan verified in Paystack: ${planCode}`);
+        console.log(`♻️  Reusing existing plan: ${planCode} for ${numberOfEmployees} employees (${upperCaseCurrency})`);
+        return planCode;
+      } else {
+        // Plan was deleted from Paystack but still in our database
+        console.warn(`⚠️  Plan ${planCode} found in database but NOT in Paystack. Removing from database and creating new plan.`);
+        
+        // Delete from database
+        try {
+          await existingPlanDoc.ref.delete();
+          console.log(`🗑️  Removed stale plan from database: ${planCode}`);
+        } catch (deleteError) {
+          console.warn(`Failed to delete stale plan from database: ${deleteError.message}`);
+        }
+        
+        // Continue to create new plan below
+      }
     }
   } catch (error) {
     console.warn('Error checking database for existing plan:', error.message);
@@ -214,6 +299,16 @@ function generatePaymentReference(quoteId) {
  * Initialize enterprise subscription with Paystack
  * 
  * Creates a subscription initialization request to Paystack.
+ * 
+ * Uses Paystack's `/transaction/initialize` endpoint with `plan` parameter.
+ * This method is correct for NEW customers because:
+ * - It handles the first payment
+ * - It automatically creates the subscription when payment succeeds
+ * - It creates the customer if needed
+ * - It returns authorization URL for payment
+ * 
+ * Alternative `/subscription` endpoint requires existing customer/authorization,
+ * so it's only suitable for existing customers switching plans.
  * 
  * @param {object} quoteData - Quote data from database
  * @param {string} planCode - Paystack plan code

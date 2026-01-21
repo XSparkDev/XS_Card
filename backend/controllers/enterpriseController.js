@@ -287,18 +287,62 @@ exports.initializeSubscription = async (req, res) => {
       });
     }
 
-    // 6. Initialize Paystack subscription (with retry logic)
+    // 6. Initialize Paystack subscription (with retry logic and plan recovery)
     let paymentResult;
     let attempts = 0;
     const maxRetries = 3;
+    let currentPlanCode = planCode;
 
     while (attempts < maxRetries) {
       try {
-        paymentResult = await initializeEnterpriseSubscription(quoteData, planCode);
+        paymentResult = await initializeEnterpriseSubscription(quoteData, currentPlanCode);
         break; // Success
       } catch (error) {
         attempts++;
         console.error(`Payment initialization attempt ${attempts}/${maxRetries} failed:`, error.message);
+
+        // Check if error is "Plan not found" - this means plan was deleted from Paystack
+        const isPlanNotFound = error.message && (
+          error.message.toLowerCase().includes('plan not found') ||
+          error.message.toLowerCase().includes('plan does not exist') ||
+          error.message.toLowerCase().includes('no such plan')
+        );
+
+        if (isPlanNotFound && attempts < maxRetries) {
+          console.warn(`⚠️  Plan ${currentPlanCode} not found in Paystack. Creating new plan and retrying...`);
+          
+          // Delete stale plan from database if it exists
+          try {
+            const stalePlanQuery = await db.collection('enterprise_plans')
+              .where('planCode', '==', currentPlanCode)
+              .limit(1)
+              .get();
+            
+            if (!stalePlanQuery.empty) {
+              await stalePlanQuery.docs[0].ref.delete();
+              console.log(`🗑️  Removed stale plan from database: ${currentPlanCode}`);
+            }
+          } catch (deleteError) {
+            console.warn(`Failed to delete stale plan: ${deleteError.message}`);
+          }
+
+          // Create a new plan
+          try {
+            currentPlanCode = await findOrCreatePlan(
+              quoteData.numberOfEmployees,
+              quoteData.calculatedPrice,
+              quoteData.currency
+            );
+            console.log(`✅ Created new plan: ${currentPlanCode}. Retrying payment initialization...`);
+            
+            // Retry immediately with new plan (don't wait for backoff)
+            continue;
+          } catch (planError) {
+            console.error(`Failed to create new plan: ${planError.message}`);
+            await logPaymentInitializationFailure(quoteId, `Plan recovery failed: ${planError.message}`);
+            // Fall through to normal retry logic
+          }
+        }
 
         // Log error
         await logPaymentInitializationFailure(quoteId, `Attempt ${attempts}/${maxRetries}: ${error.message}`);
@@ -323,7 +367,7 @@ exports.initializeSubscription = async (req, res) => {
       await db.collection('enterprise_quotes').doc(quoteId).update({
         paymentReference: paymentResult.reference,
         paymentUrl: paymentResult.authorization_url,
-        planCode: planCode,
+        planCode: currentPlanCode, // Use currentPlanCode (may have been updated during retry)
         quoteStatus: 'accepted',
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
@@ -347,8 +391,10 @@ exports.initializeSubscription = async (req, res) => {
       success: true,
       paymentUrl: paymentResult.authorization_url,
       paymentReference: paymentResult.reference,
+      quoteId: quoteId,
       amount: quoteData.calculatedPrice,
       currency: quoteData.currency,
+      planCode: currentPlanCode, // Include plan code in response
       subscriptionType: 'yearly'
     });
 

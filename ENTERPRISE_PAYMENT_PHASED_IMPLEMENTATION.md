@@ -246,7 +246,15 @@ validateCurrency(currency)
 - [ ] Currency validation (ZAR or USD only)
 - [ ] All validation functions return clear error messages
 
-### **Test File:** `backend/test-phase1-pricing.js`
+### **Test Files:**
+- **Unit Tests:** `backend/test-phase1-pricing.js`
+- **Integration Tests:** `backend/test-e2e-phase1-pricing.js`
+
+### **Integration Test (E2E):**
+
+**Endpoint:** N/A (Phase 1 is utility functions only, no HTTP endpoint)
+
+**Note:** Phase 1 tests utility functions directly. No HTTP endpoint exists for this phase, so integration tests are not applicable.
 
 ### **Dependencies:** None (standalone - can be done before Phase 0)
 
@@ -277,6 +285,49 @@ git tag checkpoint-1
 POST /api/enterprise/quote
 ```
 
+### **Request Payload:**
+```json
+{
+  "companyName": "Test Company",
+  "contactName": "John Doe",
+  "contactEmail": "john@example.com",
+  "numberOfEmployees": 50,
+  "currency": "ZAR"
+}
+```
+
+### **Success Response (201):**
+```json
+{
+  "success": true,
+  "quote": {
+    "quoteId": "qte_1234567890",
+    "companyName": "Test Company",
+    "contactName": "John Doe",
+    "contactEmail": "john@example.com",
+    "numberOfEmployees": 50,
+    "currency": "ZAR",
+    "calculatedPrice": 600,
+    "formattedPrice": "R 600.00",
+    "quoteStatus": "pending",
+    "expiresAt": "2025-02-15T10:30:00Z",
+    "createdAt": "2025-01-16T10:30:00Z"
+  }
+}
+```
+
+### **Error Response (400):**
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "errors": [
+    "Company name is required",
+    "Employee count must be between 1 and 10000"
+  ]
+}
+```
+
 ### **Functions to Implement:**
 ```javascript
 // backend/controllers/enterpriseController.js
@@ -301,7 +352,60 @@ exports.generateQuote = async (req, res) => {
 - [ ] Invalid email returns error
 - [ ] Invalid company name returns error
 
-### **Test File:** `backend/test-phase2-quotes.js`
+### **Test Files:**
+- **Unit Tests:** `backend/test-phase2-quotes.js`
+- **Integration Tests:** `backend/test-e2e-phase2-quotes.js`
+
+### **Integration Test (E2E):**
+
+**Base URL:** `http://localhost:8383`
+
+**Test Cases:**
+
+1. **Valid Quote Request**
+   ```bash
+   POST http://localhost:8383/api/enterprise/quote
+   Content-Type: application/json
+   
+   {
+     "companyName": "Test Company",
+     "contactName": "John Doe",
+     "contactEmail": "john@example.com",
+     "numberOfEmployees": 50,
+     "currency": "ZAR"
+   }
+   ```
+   - **Expected:** Status 201, success response with quote
+
+2. **Invalid Employee Count**
+   ```bash
+   POST http://localhost:8383/api/enterprise/quote
+   Content-Type: application/json
+   
+   {
+     "companyName": "Test Company",
+     "contactName": "John Doe",
+     "contactEmail": "john@example.com",
+     "numberOfEmployees": 0,
+     "currency": "ZAR"
+   }
+   ```
+   - **Expected:** Status 400, validation error
+
+3. **Missing Required Fields**
+   ```bash
+   POST http://localhost:8383/api/enterprise/quote
+   Content-Type: application/json
+   
+   {
+     "companyName": "Test Company"
+   }
+   ```
+   - **Expected:** Status 400, validation errors
+
+4. **Rate Limiting**
+   - Send 11 requests rapidly from same IP
+   - **Expected:** 11th request returns 429 (Too Many Requests)
 
 ### **Dependencies:** Phase 0, Phase 1
 
@@ -359,16 +463,32 @@ git tag checkpoint-3
 
 ---
 
-## 📦 Phase 4: Payment Initialization
+## 📦 Phase 4: Subscription Initialization
 
-### **Goal:** Implement subscription initialization endpoint
+### **Goal:** Implement subscription initialization endpoint with Paystack
+
+### **Paystack API Method:**
+We use **`/transaction/initialize` with `plan` parameter** (not `/subscription` endpoint) because:
+
+✅ **For NEW customers** (our use case):
+- `/transaction/initialize` with `plan` handles first payment AND creates subscription automatically
+- Creates customer if needed
+- Returns authorization URL for payment
+- Works without existing authorization
+
+❌ **`/subscription` endpoint** requires:
+- Existing customer (who has already done a transaction)
+- Existing authorization
+- Only suitable for existing customers switching plans
+
+**Reference:** [Paystack Subscriptions API](https://paystack.com/docs/payments/subscriptions/) - "Adding Plan code to a transaction" method
 
 ### **Deliverables:**
 1. ✅ Create `initializeSubscription` controller function
 2. ✅ Implement quote validation (exists, not expired, not paid)
 3. ✅ Integrate plan creation/reuse
 4. ✅ Generate payment reference
-5. ✅ Call Paystack subscription initialization API
+5. ✅ Call Paystack `/transaction/initialize` with `plan` parameter
 6. ✅ Update quote with payment reference and URL
 7. ✅ Add rate limiting (5/hour per quote)
 8. ✅ Add error handling and retry logic
@@ -376,6 +496,37 @@ git tag checkpoint-3
 ### **Endpoint:**
 ```
 POST /api/enterprise/payment/initialize
+```
+
+**Note:** Endpoint name uses "payment" but it creates a subscription via Paystack's transaction/initialize with plan parameter.
+
+### **Request Payload:**
+```json
+{
+  "quoteId": "qte_1234567890"
+}
+```
+
+### **Success Response (200):**
+```json
+{
+  "success": true,
+  "paymentUrl": "https://checkout.paystack.com/xxxxx",
+  "paymentReference": "ENT_1234567890",
+  "quoteId": "qte_1234567890",
+  "amount": 600,
+  "currency": "ZAR",
+  "planCode": "PLN_1234567890"
+}
+```
+
+### **Error Response (400/404):**
+```json
+{
+  "success": false,
+  "error": "Quote not found",
+  "message": "The specified quote does not exist or has expired."
+}
 ```
 
 ### **Functions to Implement:**
@@ -409,7 +560,55 @@ generatePaymentReference(quoteId)
 - [ ] Retry logic works (exponential backoff)
 - [ ] Response includes payment URL
 
-### **Test File:** `backend/test-phase4-payment-init.js`
+### **Test Files:**
+- **Unit Tests:** `backend/test-phase4-payment-init.js`
+- **Integration Tests:** `backend/test-e2e-phase4-payment-init.js`
+
+### **Integration Test (E2E):**
+
+**Base URL:** `http://localhost:8383`
+
+**Prerequisites:**
+- Must have valid quote ID from Phase 2
+- Quote must be in `pending` status
+- Quote must not be expired
+
+**Test Cases:**
+
+1. **Valid Payment Initialization**
+   ```bash
+   POST http://localhost:8383/api/enterprise/payment/initialize
+   Content-Type: application/json
+   
+   {
+     "quoteId": "qte_1234567890"
+   }
+   ```
+   - **Expected:** Status 200, payment URL and reference returned
+
+2. **Invalid Quote ID**
+   ```bash
+   POST http://localhost:8383/api/enterprise/payment/initialize
+   Content-Type: application/json
+   
+   {
+     "quoteId": "invalid_quote_id"
+   }
+   ```
+   - **Expected:** Status 404, "Quote not found" error
+
+3. **Missing Quote ID**
+   ```bash
+   POST http://localhost:8383/api/enterprise/payment/initialize
+   Content-Type: application/json
+   
+   {}
+   ```
+   - **Expected:** Status 400, validation error
+
+4. **Rate Limiting**
+   - Send 6 requests rapidly for same quote
+   - **Expected:** 6th request returns 429 (Too Many Requests)
 
 ### **Dependencies:** Phase 0, Phase 1, Phase 2, Phase 3
 
@@ -475,7 +674,44 @@ async createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetries = 3)
 - [ ] Account created with all required fields
 - [ ] Subscription dates set correctly from Paystack
 
-### **Test File:** `backend/test-phase5-callback.js`
+### **Test Files:**
+- **Unit Tests:** `backend/test-phase5-callback.js`
+- **Integration Tests:** `backend/test-e2e-phase5-callback.js`
+
+### **Integration Test (E2E):**
+
+**Base URL:** `http://localhost:8383`
+
+**Prerequisites:**
+- Must have valid payment reference from Phase 4
+- Payment must be successful in Paystack
+
+**Test Cases:**
+
+1. **Valid Payment Callback**
+   ```bash
+   GET http://localhost:8383/api/enterprise/payment/callback?ref=ENT_1234567890
+   ```
+   - **Expected:** HTTP 302 redirect to success page
+   - **Location:** `/enterprise-payment-success.html?quoteId={quoteId}&enterpriseId={enterpriseId}`
+
+2. **Missing Payment Reference**
+   ```bash
+   GET http://localhost:8383/api/enterprise/payment/callback
+   ```
+   - **Expected:** HTTP 302 redirect to failure page
+   - **Location:** `/enterprise-payment-failure.html?error=missing_reference`
+
+3. **Invalid Payment Reference**
+   ```bash
+   GET http://localhost:8383/api/enterprise/payment/callback?ref=invalid_ref_123
+   ```
+   - **Expected:** HTTP 302 redirect to failure page
+   - **Location:** `/enterprise-payment-failure.html?error=verification_failed&ref=invalid_ref_123`
+
+4. **Idempotency Check**
+   - Call callback twice with same payment reference
+   - **Expected:** Both calls succeed (idempotent), second call redirects to success without creating duplicate account
 
 ### **Dependencies:** Phase 0, Phase 1, Phase 2, Phase 3, Phase 4
 
@@ -549,7 +785,65 @@ async handleSubscriptionCancelled(webhookData)
 - [ ] Error logging works (webhook processing failures logged)
 - [ ] Out-of-order webhooks handled correctly (uses current state)
 
-### **Test File:** `backend/test-phase6-webhooks.js`
+### **Test Files:**
+- **Unit Tests:** `backend/test-phase6-webhooks.js`
+- **Integration Tests:** `backend/test-e2e-phase6-webhooks.js`
+
+### **Integration Test (E2E):**
+
+**Base URL:** `http://localhost:8383`
+
+**Prerequisites:**
+- Must generate valid HMAC-SHA512 signature
+- Use `PAYSTACK_SECRET_KEY` for signature generation
+
+**Test Cases:**
+
+1. **Valid subscription.create Webhook**
+   ```bash
+   POST http://localhost:8383/api/enterprise/payment/webhook
+   Content-Type: application/json
+   x-paystack-signature: {valid_hmac_signature}
+   
+   {
+     "event": "subscription.create",
+     "data": { ... }
+   }
+   ```
+   - **Expected:** Status 200, "Webhook processed successfully"
+
+2. **Invalid Webhook Signature**
+   ```bash
+   POST http://localhost:8383/api/enterprise/payment/webhook
+   Content-Type: application/json
+   x-paystack-signature: invalid_signature_123
+   
+   {
+     "event": "subscription.create",
+     "data": { ... }
+   }
+   ```
+   - **Expected:** Status 401, "Invalid webhook signature"
+
+3. **Missing Webhook Signature**
+   ```bash
+   POST http://localhost:8383/api/enterprise/payment/webhook
+   Content-Type: application/json
+   
+   {
+     "event": "subscription.create",
+     "data": { ... }
+   }
+   ```
+   - **Expected:** Status 401, "Missing webhook signature"
+
+4. **IP Whitelisting (Production)**
+   - Request from non-Paystack IP
+   - **Expected:** Status 403, "Forbidden" (if IP whitelisting enabled)
+
+5. **All Event Types**
+   - Test: `subscription.create`, `invoice.payment_succeeded`, `invoice.payment_failed`, `subscription.disable`, `subscription.not_renewing`
+   - **Expected:** All return Status 200 when valid
 
 ### **Dependencies:** Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5
 
@@ -626,7 +920,68 @@ exports.updateEmployeeCount = async (req, res) => {
 - [ ] Employee count update updates database correctly
 - [ ] Employee count update returns correct response (next renewal date)
 
-### **Test File:** `backend/test-phase7-management.js`
+### **Test Files:**
+- **Unit Tests:** `backend/test-phase7-management.js`
+- **Integration Tests:** `backend/test-e2e-phase7-management.js`
+
+### **Integration Test (E2E):**
+
+**Base URL:** `http://localhost:8383`
+
+**Prerequisites:**
+- Must have valid `enterpriseId` from Phase 5
+
+#### **1. Get Subscription Status Tests:**
+
+```bash
+GET http://localhost:8383/api/enterprise/subscription/{enterpriseId}/status
+```
+- **Expected:** Status 200, subscription data with synced Paystack status
+
+```bash
+GET http://localhost:8383/api/enterprise/subscription/invalid_id/status
+```
+- **Expected:** Status 404, "Enterprise account not found"
+
+#### **2. Cancel Subscription Tests:**
+
+```bash
+POST http://localhost:8383/api/enterprise/subscription/{enterpriseId}/cancel
+Content-Type: application/json
+
+{}
+```
+- **Expected:** Status 200, cancellation confirmation
+
+```bash
+POST http://localhost:8383/api/enterprise/subscription/invalid_id/cancel
+Content-Type: application/json
+
+{}
+```
+- **Expected:** Status 404, "Enterprise account not found"
+
+#### **3. Update Employee Count Tests:**
+
+```bash
+POST http://localhost:8383/api/enterprise/subscription/{enterpriseId}/update-employees
+Content-Type: application/json
+
+{
+  "newNumberOfEmployees": 75
+}
+```
+- **Expected:** Status 200, update confirmation with new plan
+
+```bash
+POST http://localhost:8383/api/enterprise/subscription/{enterpriseId}/update-employees
+Content-Type: application/json
+
+{
+  "newNumberOfEmployees": 0
+}
+```
+- **Expected:** Status 400, validation error (must be 1-10000)
 
 ### **Dependencies:** Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6
 
@@ -734,15 +1089,49 @@ git tag checkpoint-9
 ### **Running Tests:**
 
 ```bash
-# Run specific phase test
+# Run specific phase unit test
 cd backend
 node test-phase{N}-{name}.js
 
-# Example: Run Phase 1 tests
+# Example: Run Phase 1 unit tests
 node test-phase1-pricing.js
 
-# Example: Run Phase 5 tests
+# Example: Run Phase 5 unit tests
 node test-phase5-callback.js
+```
+
+### **Running Integration Tests (E2E):**
+
+```bash
+# 1. Start the server (in separate terminal)
+cd backend
+node server.js
+
+# 2. Run integration tests (in another terminal)
+cd backend
+node test-e2e-phase{N}-{name}.js
+
+# Example: Run Phase 2 E2E tests
+node test-e2e-phase2-quotes.js
+
+# Example: Run Phase 4 E2E tests
+node test-e2e-phase4-payment-init.js
+```
+
+### **Running All Tests (Unit + E2E):**
+
+```bash
+# Run all unit tests
+cd backend
+for phase in {0..9}; do
+  node test-phase${phase}-*.js 2>/dev/null || echo "Phase ${phase} test not found"
+done
+
+# Run all E2E tests (server must be running)
+cd backend
+for phase in {0..9}; do
+  node test-e2e-phase${phase}-*.js 2>/dev/null || echo "Phase ${phase} E2E test not found"
+done
 ```
 
 ### **Test Requirements:**
@@ -856,6 +1245,81 @@ runPhaseNTests().catch(console.error);
 5. **Follow Patterns:** Use existing codebase patterns for consistency
 6. **Error Handling:** Always implement error handling and logging
 7. **Security:** Always verify webhook signatures, validate inputs
+
+---
+
+## 🔗 Frontend Integration Points
+
+### **Payment Success/Failure Pages**
+
+**Current Implementation (Backend Static Pages):**
+- Success page: `backend/public/enterprise-payment-success.html`
+- Failure page: `backend/public/enterprise-payment-failure.html`
+- Served via Express static file middleware
+- Accessible at: `http://localhost:8383/enterprise-payment-success.html` and `/enterprise-payment-failure.html`
+
+**Callback Redirect Flow:**
+1. Paystack redirects browser to: `GET /api/enterprise/payment/callback?ref={paymentReference}`
+2. Backend processes payment, creates account
+3. Backend redirects (302) to:
+   - Success: `/enterprise-payment-success.html?quoteId={quoteId}&enterpriseId={enterpriseId}`
+   - Failure: `/enterprise-payment-failure.html?error={errorCode}&ref={paymentReference}`
+
+**Planned Frontend Integration:**
+
+**Goal:** Replace backend static HTML pages with frontend routes for better UX integration.
+
+**Frontend Routes Required:**
+- Success: `{APP_URL}/enterprise/payment/success?quoteId={quoteId}&enterpriseId={enterpriseId}`
+- Failure: `{APP_URL}/enterprise/payment/failure?error={errorCode}&ref={paymentReference}`
+
+**Backend Changes Needed:**
+- Update `handlePaymentCallback` redirect URLs to use `APP_URL` environment variable:
+  ```javascript
+  // Current (backend static):
+  res.redirect(`/enterprise-payment-success.html?quoteId=${quoteId}&enterpriseId=${enterpriseId}`);
+  
+  // Future (frontend routes):
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  res.redirect(`${appUrl}/enterprise/payment/success?quoteId=${quoteId}&enterpriseId=${enterpriseId}`);
+  ```
+
+**Frontend Implementation Requirements:**
+1. Create success page component/route: `/enterprise/payment/success`
+   - Display success message
+   - Show quote ID and enterprise ID from query params
+   - Link to enterprise dashboard or home
+   - Handle loading states
+
+2. Create failure page component/route: `/enterprise/payment/failure`
+   - Display error message based on error code
+   - Show payment reference and quote ID (if available)
+   - Provide retry option or contact support
+   - Handle different error types with appropriate messaging
+
+3. Error Code Mapping (for frontend):
+   - `missing_reference` → "Payment reference is missing. Please try again."
+   - `verification_failed` → "Payment verification failed. Please contact support."
+   - `quote_not_found` → "Quote not found. Please generate a new quote."
+   - `database_error` → "Database error occurred. Please try again."
+   - `account_creation_failed` → "Payment succeeded but account creation failed. Please contact support."
+   - `unexpected_error` → "An unexpected error occurred. Please try again."
+
+**Environment Variable:**
+- `APP_URL` - Frontend application URL (e.g., `https://app.yourdomain.com` or `http://localhost:3000`)
+
+**Testing:**
+- Backend callback redirects can be tested with any URL (backend static or frontend)
+- Frontend pages should handle query parameters correctly
+- Test both success and failure scenarios
+- Test with missing/invalid query parameters
+
+**Migration Path:**
+1. ✅ Current: Backend static HTML pages (working, suitable for testing)
+2. ⏳ Next: Update backend to use `APP_URL` for redirects (configurable)
+3. ⏳ Future: Implement frontend routes and remove backend static pages
+
+**Note:** Backend static pages will remain as fallback until frontend integration is complete and tested.
 
 ---
 
