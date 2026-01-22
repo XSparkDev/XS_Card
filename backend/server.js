@@ -21,6 +21,8 @@ const { sendMailWithStatus } = require('./public/Utils/emailService');
 const { checkUserExistsByEmail } = require('./utils/userDetection');
 const { linkContactToXsCardUser } = require('./utils/contactLinking');
 const { handleSingleUpload } = require('./middleware/fileUpload');
+const { getContactConfirmationEmail } = require('./constants/emailTemplates');
+const { getOwnerName } = require('./utils/contactEmailHelpers');
 const app = express();
 const port = 8383;
 
@@ -215,27 +217,30 @@ const addContactHandler = async (req, res) => {
 
         // Send confirmation email to the person who filled the form (non-blocking)
         if (contactInfo.email) {
-            const ownerName = userData.name || userData.fullName || 'an XS Card user';
+            // Get owner's name using helper function
+            const ownerName = await getOwnerName(userId, userData);
             const host = req.get('origin') || `${req.protocol}://${req.get('host')}`;
             const ownerContactLink = `${host}/saveContact.html?userId=${userId}`;
-            const appStoreLink = process.env.IOS_APP_STORE_URL || 'https://apps.apple.com/app/id6742452317';
-            const metAt = contactInfo.howWeMet || 'your recent interaction';
+            const contactName = contactInfo.name || '';
+            const metAt = contactInfo.howWeMet || '';
             const dayString = new Date().toLocaleDateString();
+
+            // Get email template (ownerContactLink set to null to match user's preference - removed card link)
+            const emailTemplate = getContactConfirmationEmail({
+                ownerName,
+                contactName,
+                metAt,
+                dayString,
+                ownerContactLink: null
+            });
 
             setImmediate(async () => {
                 try {
                     const mailOptions = {
                         from: process.env.EMAIL_USER,
                         to: contactInfo.email,
-                        subject: `${ownerName} is excited to have met you`,
-                        html: `
-                            <p>${ownerName} is excited to have met you${contactInfo.name ? ` ${contactInfo.name}` : ''}.</p>
-                            <p>You made a great XS Card connection${metAt ? ` at ${metAt}` : ''} on ${dayString}.</p>
-                            <p>You will now have ${ownerName} in your device's phonebook and can keep networking.</p>
-                            <p>Download XS Card here: <a href="${appStoreLink}">${appStoreLink}</a></p>
-                            <p>If you want to view the card again, you can visit: <a href="${ownerContactLink}">${ownerContactLink}</a></p>
-                            <p style="color: #666; font-size: 12px;">This was sent automatically by XS Card.</p>
-                        `
+                        subject: emailTemplate.subject,
+                        html: emailTemplate.html
                     };
 
                     const mailResult = await sendMailWithStatus(mailOptions);
