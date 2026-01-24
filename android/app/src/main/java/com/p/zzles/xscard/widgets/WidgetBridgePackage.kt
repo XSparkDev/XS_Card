@@ -26,3 +26,7 @@ class WidgetBridgePackage : ReactPackage {
 
 
 
+
+
+
+

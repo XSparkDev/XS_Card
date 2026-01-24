@@ -60,14 +60,14 @@ export interface Event {
 
 // Recurrence Pattern for recurring events
 export interface RecurrencePattern {
-  type: 'daily' | 'weekly' | 'monthly';
+  type: 'daily' | 'weekly' | 'monthly' | 'yearly';
   daysOfWeek?: number[]; // [0-6] where 0=Sunday, 6=Saturday (required for weekly)
   timezone: string; // IANA timezone (e.g., "Africa/Johannesburg")
   startDate: string; // First occurrence ISO date
   startTime: string; // "HH:mm" format (e.g., "10:00")
   endDate?: string; // Optional: Series end date (null/undefined for "never ends")
   frequency?: number; // For daily/weekly: every N days/weeks (default: 1)
-  dayOfMonth?: number; // For monthly: day of month (1-31)
+  dayOfMonth?: number; // For monthly/yearly: day of month (1-31)
   excludedDates?: string[]; // Array of YYYY-MM-DD dates to skip
   eventId?: string; // Parent event template ID
 }

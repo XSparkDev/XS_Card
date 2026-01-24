@@ -32,7 +32,8 @@ function getContactConfirmationEmail(params) {
 
     // Build HTML body
     let html = `
-        <p>${ownerName} is excited to have met you, ${contactName ? ` ${contactName}` : ''}.</p>
+        <p>Hello ${contactName || 'there'},</p>
+        <p>${ownerName} is excited to have met you.</p>
         <p>You made a great XS Card ${storeLinkHtml} connection with ${ownerName}${metAt ? ` at ${metAt}` : ''} on ${dayString}.</p>
         <p>You will now have ${ownerName} in your device's phonebook. Download XS Card on ${storeLinkHtml} to keep networking.</p>
     `;

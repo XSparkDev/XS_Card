@@ -14,25 +14,106 @@ class WidgetBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun createWidget(cardIndex: Int, cardData: ReadableMap, config: ReadableMap, promise: Promise) {
         try {
+            // Log incoming data for debugging
+            android.util.Log.d("WidgetBridge", "=== createWidget called ===")
+            android.util.Log.d("WidgetBridge", "cardIndex: $cardIndex")
+            
             // Generate widget ID
             val widgetId = System.currentTimeMillis().toInt()
+            
+            // Helper function to safely get string from ReadableMap
+            fun safeGetString(map: ReadableMap, key: String, defaultValue: String): String {
+                return try {
+                    if (map.hasKey(key)) {
+                        when (map.getType(key)) {
+                            ReadableType.String -> map.getString(key) ?: defaultValue
+                            ReadableType.Number -> {
+                                // In React Native, all numbers are doubles
+                                // Convert to int if it's a whole number, otherwise keep decimal
+                                val doubleValue = map.getDouble(key)
+                                if (doubleValue % 1.0 == 0.0) {
+                                    doubleValue.toInt().toString()
+                                } else {
+                                    doubleValue.toString()
+                                }
+                            }
+                            ReadableType.Null -> defaultValue
+                            else -> {
+                                android.util.Log.w("WidgetBridge", "Unexpected type for key '$key': ${map.getType(key)}")
+                                defaultValue
+                            }
+                        }
+                    } else {
+                        defaultValue
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("WidgetBridge", "Error reading string key '$key': ${e.message}", e)
+                    defaultValue
+                }
+            }
+            
+            // Helper function to safely get boolean from ReadableMap
+            fun safeGetBoolean(map: ReadableMap, key: String, defaultValue: Boolean): Boolean {
+                return try {
+                    if (map.hasKey(key)) {
+                        when (map.getType(key)) {
+                            ReadableType.Boolean -> map.getBoolean(key)
+                            ReadableType.String -> {
+                                val str = map.getString(key)
+                                when (str?.lowercase()) {
+                                    "true", "1" -> true
+                                    "false", "0" -> false
+                                    else -> defaultValue
+                                }
+                            }
+                            ReadableType.Number -> {
+                                // In React Native, all numbers are doubles
+                                map.getDouble(key) != 0.0
+                            }
+                            ReadableType.Null -> defaultValue
+                            else -> defaultValue
+                        }
+                    } else {
+                        defaultValue
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("WidgetBridge", "Error reading boolean key '$key': ${e.message}", e)
+                    defaultValue
+                }
+            }
+            
+            // Safely extract values with defaults
+            val name = safeGetString(cardData, "name", "")
+            val surname = safeGetString(cardData, "surname", "")
+            val company = safeGetString(cardData, "company", "")
+            val occupation = safeGetString(cardData, "occupation", "")
+            val email = safeGetString(cardData, "email", "")
+            val phone = safeGetString(cardData, "phone", "")
+            val colorScheme = safeGetString(cardData, "colorScheme", "#1B2B5B")
+            val size = safeGetString(config, "size", "large")
+            
+            val showProfileImage = safeGetBoolean(config, "showProfileImage", true)
+            val showCompanyLogo = safeGetBoolean(config, "showCompanyLogo", false)
+            val showQRCode = safeGetBoolean(config, "showQRCode", true)
             
             // Create widget data
             val widgetData = WidgetData(
                 widgetId = widgetId,
                 cardIndex = cardIndex,
-                name = cardData.getString("name") ?: "",
-                surname = cardData.getString("surname") ?: "",
-                company = cardData.getString("company") ?: "",
-                occupation = cardData.getString("occupation") ?: "",
-                email = cardData.getString("email") ?: "",
-                phone = cardData.getString("phone") ?: "",
-                colorScheme = cardData.getString("colorScheme") ?: "#1B2B5B",
-                size = config.getString("size") ?: "large",
-                showProfileImage = config.getBoolean("showProfileImage"),
-                showCompanyLogo = config.getBoolean("showCompanyLogo"),
-                showQRCode = config.getBoolean("showQRCode")
+                name = name,
+                surname = surname,
+                company = company,
+                occupation = occupation,
+                email = email,
+                phone = phone,
+                colorScheme = colorScheme,
+                size = size,
+                showProfileImage = showProfileImage,
+                showCompanyLogo = showCompanyLogo,
+                showQRCode = showQRCode
             )
+            
+            android.util.Log.d("WidgetBridge", "Widget data created successfully: $widgetData")
             
             // Save widget data
             WidgetDataStore.saveWidgetData(reactApplicationContext, widgetData)
@@ -48,7 +129,8 @@ class WidgetBridgeModule(reactContext: ReactApplicationContext) :
             result.putInt("widgetId", widgetId)
             promise.resolve(result)
         } catch (e: Exception) {
-            promise.reject("CREATE_WIDGET_ERROR", e.message)
+            android.util.Log.e("WidgetBridge", "Error creating widget: ${e.message}", e)
+            promise.reject("CREATE_WIDGET_ERROR", e.message ?: "Unknown error", e)
         }
     }
 

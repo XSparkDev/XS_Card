@@ -689,6 +689,7 @@ exports.getAllEvents = async (req, res) => {
     console.log('[getAllEvents] Raw query returned', snapshot.size, 'events');
     
     // Filter by visibility client-side with enhanced logic
+    const recurrenceCalculator = require('../utils/recurrenceCalculator');
     const allEvents = [];
     snapshot.forEach(doc => {
       const eventData = doc.data();
@@ -724,6 +725,15 @@ exports.getAllEvents = async (req, res) => {
       }
       
       if (shouldInclude) {
+        // Filter out recurring events whose series has ended
+        // Note: Organizers can still see their ended series in getUserEvents, but not in public listings
+        if (eventData.isRecurring && eventData.recurrencePattern) {
+          if (!recurrenceCalculator.isSeriesActive(eventData.recurrencePattern)) {
+            console.log('[getAllEvents] Filtering out ended recurring series:', eventData.title);
+            return; // Skip this event
+          }
+        }
+        
         allEvents.push({
         ...eventData,
         // Send both formatted (for display) and ISO (for parsing) dates
@@ -748,8 +758,16 @@ exports.getAllEvents = async (req, res) => {
       .get();
     
     let totalVisibleEvents = 0;
+    // Note: recurrenceCalculator already required above
     totalSnapshot.forEach(doc => {
       const eventData = doc.data();
+      
+      // Filter out recurring events whose series has ended
+      if (eventData.isRecurring && eventData.recurrencePattern) {
+        if (!recurrenceCalculator.isSeriesActive(eventData.recurrencePattern)) {
+          return; // Skip this event in count
+        }
+      }
       
       // Apply same visibility logic for counting
       if (eventData.visibility === 'public') {
@@ -1519,6 +1537,7 @@ exports.searchEvents = async (req, res) => {
     
     // Filter results client-side for text search and visibility
     const searchTerm = q.toLowerCase();
+    const recurrenceCalculator = require('../utils/recurrenceCalculator');
     const events = [];
     
     snapshot.forEach(doc => {
@@ -1551,21 +1570,29 @@ exports.searchEvents = async (req, res) => {
       
       // If event is visible, check if it matches search criteria
       if (shouldInclude) {
-      const searchableText = `${eventData.title} ${eventData.description} ${eventData.tags?.join(' ') || ''}`.toLowerCase();
-      
-      if (searchableText.includes(searchTerm)) {
-        // Apply additional filters
-        if (category && eventData.category !== category) return;
-        if (location && !eventData.location?.city?.toLowerCase().includes(location.toLowerCase())) return;
+        // Filter out recurring events whose series has ended
+        if (eventData.isRecurring && eventData.recurrencePattern) {
+          if (!recurrenceCalculator.isSeriesActive(eventData.recurrencePattern)) {
+            console.log('[searchEvents] Filtering out ended recurring series:', eventData.title);
+            return; // Skip this event
+          }
+        }
         
-        events.push({
-          ...eventData,
-          // Send both formatted (for display) and ISO (for parsing) dates
-          eventDate: formatDate(eventData.eventDate),
-          eventDateISO: convertToISOString(eventData.eventDate),
-          endDate: eventData.endDate ? formatDate(eventData.endDate) : null,
-          endDateISO: eventData.endDate ? convertToISOString(eventData.endDate) : null
-        });
+        const searchableText = `${eventData.title} ${eventData.description} ${eventData.tags?.join(' ') || ''}`.toLowerCase();
+        
+        if (searchableText.includes(searchTerm)) {
+          // Apply additional filters
+          if (category && eventData.category !== category) return;
+          if (location && !eventData.location?.city?.toLowerCase().includes(location.toLowerCase())) return;
+          
+          events.push({
+            ...eventData,
+            // Send both formatted (for display) and ISO (for parsing) dates
+            eventDate: formatDate(eventData.eventDate),
+            eventDateISO: convertToISOString(eventData.eventDate),
+            endDate: eventData.endDate ? formatDate(eventData.endDate) : null,
+            endDateISO: eventData.endDate ? convertToISOString(eventData.endDate) : null
+          });
         }
       }
     });
@@ -1691,6 +1718,14 @@ exports.getEventById = async (req, res) => {
     }
 
     const eventData = eventDoc.data();
+
+    // Check if recurring series has ended (organizers can still view their own ended series)
+    if (eventData.isRecurring && eventData.recurrencePattern && eventData.organizerId !== userId) {
+      const recurrenceCalculator = require('../utils/recurrenceCalculator');
+      if (!recurrenceCalculator.isSeriesActive(eventData.recurrencePattern)) {
+        return sendError(res, 404, 'This recurring event series has ended');
+      }
+    }
 
     // Check if user can view this event
     if (eventData.visibility === 'private' && eventData.organizerId !== userId) {
@@ -3635,7 +3670,8 @@ exports.getEventInstances = async (req, res) => {
     };
     
     const instanceStartDate = startDate ? new Date(startDate) : new Date();
-    const instanceEndDate = endDate ? new Date(endDate) : new Date(pattern.endDate);
+    // endDate can be undefined/null for "never ends" - pass it as-is
+    const instanceEndDate = endDate ? new Date(endDate) : (pattern.endDate ? new Date(pattern.endDate) : null);
     
     let instances = recurrenceCalculator.generateInstances(
       instanceStartDate,

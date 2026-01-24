@@ -206,8 +206,8 @@ export default function CreateEventScreen() {
           if (pattern.type === 'weekly' && (!pattern.daysOfWeek || pattern.daysOfWeek.length === 0)) {
             newErrors.daysOfWeek = 'At least one day of week is required for weekly recurrence';
           }
-          if (pattern.type === 'monthly' && !pattern.dayOfMonth) {
-            newErrors.dayOfMonth = 'Day of month is required for monthly recurrence';
+          if ((pattern.type === 'monthly' || pattern.type === 'yearly') && !pattern.dayOfMonth) {
+            newErrors.dayOfMonth = `Day of month is required for ${pattern.type} recurrence`;
           }
           if (pattern.frequency && pattern.frequency < 1) {
             newErrors.frequency = 'Frequency must be at least 1';
@@ -228,12 +228,44 @@ export default function CreateEventScreen() {
   // Navigation helpers
   const nextStep = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, STEPS.REVIEW));
+      let nextStepIndex = currentStep + 1;
+      
+      // Skip recurrence step if not recurring
+      if (currentStep === STEPS.LOCATION && !formData.isRecurring) {
+        nextStepIndex = STEPS.MEDIA;
+      }
+      
+      setCurrentStep(Math.min(nextStepIndex, STEPS.REVIEW));
     }
   };
 
   const prevStep = () => {
-    setCurrentStep(prev => Math.max(prev - 1, STEPS.BASIC_INFO));
+    let prevStepIndex = currentStep - 1;
+    
+    // Skip recurrence step if not recurring
+    if (currentStep === STEPS.MEDIA && !formData.isRecurring) {
+      prevStepIndex = STEPS.LOCATION;
+    }
+    
+    setCurrentStep(Math.max(prevStepIndex, STEPS.BASIC_INFO));
+  };
+
+  // Progress indicator helpers
+  const getTotalSteps = () => {
+    const baseSteps = Object.keys(STEPS).length; // 6 steps normally
+    return formData.isRecurring ? baseSteps : baseSteps - 1; // 5 steps if skipping recurrence
+  };
+
+  const getCurrentStepNumber = () => {
+    if (currentStep <= STEPS.LOCATION) {
+      return currentStep + 1;
+    } else if (currentStep === STEPS.RECURRENCE) {
+      return currentStep + 1;
+    } else if (currentStep >= STEPS.MEDIA) {
+      // If we skipped recurrence, adjust step numbers
+      return formData.isRecurring ? currentStep + 1 : currentStep;
+    }
+    return currentStep + 1;
   };
 
   // Form handlers
@@ -372,8 +404,24 @@ export default function CreateEventScreen() {
     try {
       setLoading(true);
 
-      // Final validation
-      if (!validateStep(STEPS.BASIC_INFO) || !validateStep(STEPS.DETAILS) || !validateStep(STEPS.LOCATION) || !validateStep(STEPS.RECURRENCE)) {
+      // Final validation - conditionally validate recurrence step
+      const validationSteps: number[] = [
+        STEPS.BASIC_INFO,
+        STEPS.DETAILS,
+        STEPS.LOCATION,
+      ];
+      if (formData.isRecurring) {
+        validationSteps.push(STEPS.RECURRENCE);
+      }
+
+      let allValid = true;
+      for (const step of validationSteps) {
+        if (!validateStep(step)) {
+          allValid = false;
+        }
+      }
+
+      if (!allValid) {
         toast.warning('Validation Error', 'Please fix the errors before creating the event.');
         return;
       }
@@ -778,6 +826,49 @@ export default function CreateEventScreen() {
       </View>
 
       <View style={styles.inputGroup}>
+        <Text style={styles.label}>Recurring Event</Text>
+        <View style={styles.switchContainer}>
+          <Text style={styles.switchLabel}>
+            Make this event repeat on a schedule
+          </Text>
+          <Switch
+            value={formData.isRecurring || false}
+            onValueChange={(value) => {
+              if (value) {
+                // Initialize default pattern when enabling
+                const defaultPattern = {
+                  type: 'weekly' as const,
+                  daysOfWeek: [],
+                  timezone: 'Africa/Johannesburg',
+                  startDate: formData.eventDate.split('T')[0],
+                  startTime: new Date(formData.eventDate).toTimeString().slice(0, 5),
+                  frequency: 1,
+                };
+                updateFormData({ 
+                  isRecurring: true, 
+                  recurrencePattern: defaultPattern 
+                });
+              } else {
+                // Clear pattern when disabling
+                updateFormData({ 
+                  isRecurring: false, 
+                  recurrencePattern: undefined 
+                });
+              }
+            }}
+            trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
+            thumbColor={COLORS.white}
+          />
+        </View>
+        <Text style={styles.helpText}>
+          {formData.isRecurring 
+            ? 'Configure the recurrence schedule in the next step'
+            : 'Enable to create a series of events that repeat automatically'
+          }
+        </Text>
+      </View>
+
+      <View style={styles.inputGroup}>
         <Text style={styles.label}>Event Visibility</Text>
         <View style={styles.visibilityOptions}>
           {(['public', 'private', 'invite-only'] as const).map((visibility) => (
@@ -1119,14 +1210,14 @@ export default function CreateEventScreen() {
             style={[
               styles.progressFill, 
               { 
-                width: `${((currentStep + 1) / Object.keys(STEPS).length) * 100}%`,
+                width: `${(getCurrentStepNumber() / getTotalSteps()) * 100}%`,
                 backgroundColor: COLORS.primary 
               }
             ]} 
           />
         </View>
         <Text style={styles.progressText}>
-          Step {currentStep + 1} of {Object.keys(STEPS).length}: {STEP_TITLES[currentStep]}
+          Step {getCurrentStepNumber()} of {getTotalSteps()}: {STEP_TITLES[currentStep]}
         </Text>
       </View>
 

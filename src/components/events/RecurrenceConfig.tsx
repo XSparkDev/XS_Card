@@ -8,6 +8,8 @@ import {
   Switch,
   Platform,
   ScrollView,
+  Animated,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -36,11 +38,25 @@ export default function RecurrenceConfig({
   errors = {},
   timezone = DEFAULT_TIMEZONE,
 }: RecurrenceConfigProps) {
-  // Calculate default end date (3 months from start date)
-  const getDefaultEndDate = () => {
-    const start = new Date(startDate);
+  // Calculate default end date based on pattern type
+  const getDefaultEndDate = (patternType?: 'daily' | 'weekly' | 'monthly' | 'yearly') => {
+    const type = patternType || pattern.type || 'daily';
+    const currentStartDate = pattern.startDate || startDate.split('T')[0];
+    const start = new Date(currentStartDate);
     const end = new Date(start);
-    end.setMonth(end.getMonth() + 3);
+    
+    // Default based on pattern type
+    if (type === 'daily') {
+      end.setDate(end.getDate() + 30); // 30 days for daily
+    } else if (type === 'weekly') {
+      end.setDate(end.getDate() + 90); // ~13 weeks for weekly
+    } else if (type === 'monthly') {
+      end.setMonth(end.getMonth() + 6); // 6 months for monthly
+    } else if (type === 'yearly') {
+      end.setFullYear(end.getFullYear() + 2); // 2 years for yearly
+    } else {
+      end.setMonth(end.getMonth() + 3); // Default 3 months
+    }
     return end.toISOString().split('T')[0];
   };
 
@@ -50,13 +66,19 @@ export default function RecurrenceConfig({
       return value;
     }
     // Initialize with default end date
+    const defaultType = 'daily';
+    const defaultStartDate = startDate.split('T')[0];
+    const start = new Date(defaultStartDate);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 30); // 30 days for daily default
+    
     return {
-      type: 'weekly',
+      type: defaultType,
       daysOfWeek: [],
       timezone: timezone,
-      startDate: startDate.split('T')[0], // Extract date part
+      startDate: defaultStartDate, // Extract date part
       startTime: new Date(startDate).toTimeString().slice(0, 5), // Extract HH:mm
-      endDate: getDefaultEndDate(), // Default to 3 months from start
+      endDate: end.toISOString().split('T')[0], // Default 30 days for daily
       frequency: 1,
     };
   });
@@ -67,6 +89,9 @@ export default function RecurrenceConfig({
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [tempDate, setTempDate] = useState<Date>(new Date());
   const isInitializing = useRef(false);
+  const [showPatternDropdown, setShowPatternDropdown] = useState(false);
+  const patternDropdownAnimation = useRef(new Animated.Value(0)).current;
+  const patternDropdownRef = useRef<View>(null);
 
   // Initialize from value prop when it changes
   useEffect(() => {
@@ -84,14 +109,10 @@ export default function RecurrenceConfig({
   // Ensure endDate is set in pattern state when recurring is enabled and neverEnds is false
   useEffect(() => {
     if (isRecurring && !neverEnds && !pattern.endDate) {
-      const currentStartDate = pattern.startDate || startDate.split('T')[0];
-      const start = new Date(currentStartDate);
-      const end = new Date(start);
-      end.setMonth(end.getMonth() + 3);
-      const defaultEndDate = end.toISOString().split('T')[0];
+      const defaultEndDate = getDefaultEndDate(pattern.type);
       setPattern(prev => ({ ...prev, endDate: defaultEndDate }));
     }
-  }, [isRecurring, neverEnds, pattern.startDate, startDate]);
+  }, [isRecurring, neverEnds, pattern.startDate, startDate, pattern.type]);
 
   // Update parent when pattern changes (but not during initialization)
   useEffect(() => {
@@ -105,11 +126,8 @@ export default function RecurrenceConfig({
       let finalEndDate = pattern.endDate;
       if (!neverEnds) {
         if (!finalEndDate) {
-          // Calculate default end date (3 months from start)
-          const start = new Date(currentStartDate);
-          const end = new Date(start);
-          end.setMonth(end.getMonth() + 3);
-          finalEndDate = end.toISOString().split('T')[0];
+          // Calculate default end date based on pattern type
+          finalEndDate = getDefaultEndDate(pattern.type);
           // Update pattern state with default end date so UI shows it
           setPattern(prev => ({ ...prev, endDate: finalEndDate }));
           // Return early to let the state update trigger this effect again
@@ -118,7 +136,7 @@ export default function RecurrenceConfig({
       }
       
       const newPattern: RecurrencePattern = {
-        type: pattern.type || 'weekly',
+        type: pattern.type || 'daily',
         daysOfWeek: pattern.daysOfWeek || (pattern.type === 'weekly' ? [] : undefined),
         timezone: pattern.timezone || timezone,
         startDate: currentStartDate,
@@ -150,6 +168,39 @@ export default function RecurrenceConfig({
     }
   };
 
+  // Animate dropdown
+  const animatePatternDropdown = (show: boolean) => {
+    Animated.timing(patternDropdownAnimation, {
+      toValue: show ? 1 : 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const handlePatternSelect = (type: 'daily' | 'weekly' | 'monthly' | 'yearly') => {
+    updatePattern({ type });
+    if (type !== 'weekly') {
+      updatePattern({ daysOfWeek: undefined });
+    }
+    if (type !== 'monthly' && type !== 'yearly') {
+      updatePattern({ dayOfMonth: undefined });
+    }
+    // Update end date based on new type
+    if (!neverEnds) {
+      const defaultEndDate = getDefaultEndDate(type);
+      updatePattern({ endDate: defaultEndDate });
+    }
+    setShowPatternDropdown(false);
+    animatePatternDropdown(false);
+  };
+
+  const patternOptions = [
+    { value: 'daily', label: 'Daily' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'yearly', label: 'Yearly' },
+  ] as const;
+
   const formatRecurrenceText = (): string => {
     if (!isRecurring || !pattern.type) return '';
     
@@ -179,6 +230,8 @@ export default function RecurrenceConfig({
         const day = pattern.dayOfMonth || 1;
         const suffix = day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th';
         return `Every month on the ${day}${suffix} at ${formattedTime} ${DEFAULT_TIMEZONE_ABBR}`;
+      case 'yearly':
+        return `Every year on ${new Date(pattern.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} at ${formattedTime} ${DEFAULT_TIMEZONE_ABBR}`;
       default:
         return '';
     }
@@ -224,6 +277,10 @@ export default function RecurrenceConfig({
           current = new Date(current);
           current.setMonth(current.getMonth() + 1);
           break;
+        case 'yearly':
+          current = new Date(current);
+          current.setFullYear(current.getFullYear() + 1);
+          break;
       }
     }
     
@@ -233,13 +290,15 @@ export default function RecurrenceConfig({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Recurring Event</Text>
-        <Switch
-          value={isRecurring}
-          onValueChange={setIsRecurring}
-          trackColor={{ false: COLORS.gray, true: COLORS.primary }}
-          thumbColor={COLORS.white}
-        />
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Recurring Event</Text>
+          <Switch
+            value={isRecurring}
+            onValueChange={setIsRecurring}
+            trackColor={{ false: COLORS.gray, true: COLORS.primary }}
+            thumbColor={COLORS.white}
+          />
+        </View>
       </View>
 
       {isRecurring && (
@@ -248,43 +307,73 @@ export default function RecurrenceConfig({
             Create a series of events that repeat automatically
           </Text>
 
-          {/* Recurrence Type Selector */}
+          {/* Recurrence Type Selector - Dropdown */}
           <View style={styles.section}>
             <Text style={styles.label}>Repeat Pattern *</Text>
-            <View style={styles.typeSelector}>
-              {(['daily', 'weekly', 'monthly'] as const).map((type) => (
+            <TouchableWithoutFeedback onPress={() => {
+              setShowPatternDropdown(false);
+              animatePatternDropdown(false);
+            }}>
+              <View style={styles.dropdownWrapper} ref={patternDropdownRef}>
                 <TouchableOpacity
-                  key={type}
-                  style={[
-                    styles.typeButton,
-                    pattern.type === type && styles.typeButtonActive,
-                  ]}
+                  style={[styles.dropdownInput, errors.type && styles.inputError]}
                   onPress={() => {
-                    updatePattern({ type });
-                    if (type !== 'weekly') {
-                      updatePattern({ daysOfWeek: undefined });
-                    }
-                    if (type !== 'monthly') {
-                      updatePattern({ dayOfMonth: undefined });
-                    }
+                    const newState = !showPatternDropdown;
+                    setShowPatternDropdown(newState);
+                    animatePatternDropdown(newState);
                   }}
                 >
-                  <MaterialIcons
-                    name={type === 'daily' ? 'today' : type === 'weekly' ? 'date-range' : 'calendar-month'}
-                    size={20}
-                    color={pattern.type === type ? COLORS.white : COLORS.gray}
+                  <Text style={styles.dropdownText}>
+                    {patternOptions.find(opt => opt.value === pattern.type)?.label || 'Select pattern'}
+                  </Text>
+                  <MaterialIcons 
+                    name={showPatternDropdown ? "arrow-drop-up" : "arrow-drop-down"} 
+                    size={24} 
+                    color={COLORS.gray} 
                   />
-                  <Text
+                </TouchableOpacity>
+                
+                {showPatternDropdown && (
+                  <Animated.View 
                     style={[
-                      styles.typeButtonText,
-                      pattern.type === type && styles.typeButtonTextActive,
+                      styles.dropdownList,
+                      {
+                        opacity: patternDropdownAnimation,
+                        maxHeight: patternDropdownAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 200],
+                        }),
+                      }
                     ]}
                   >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <ScrollView nestedScrollEnabled>
+                      {patternOptions.map((option) => (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[
+                            styles.dropdownItem,
+                            pattern.type === option.value && styles.dropdownItemActive,
+                          ]}
+                          onPress={() => handlePatternSelect(option.value)}
+                        >
+                          <Text
+                            style={[
+                              styles.dropdownItemText,
+                              pattern.type === option.value && styles.dropdownItemTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                          {pattern.type === option.value && (
+                            <MaterialIcons name="check" size={20} color={COLORS.primary} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </Animated.View>
+                )}
+              </View>
+            </TouchableWithoutFeedback>
             {errors.type && <Text style={styles.errorText}>{errors.type}</Text>}
           </View>
 
@@ -298,16 +387,21 @@ export default function RecurrenceConfig({
                 style={[styles.input, errors.frequency && styles.inputError]}
                 value={(pattern.frequency || 1).toString()}
                 onChangeText={(text) => {
+                  // Allow empty string for clearing
+                  if (text === '') {
+                    updatePattern({ frequency: 1 });
+                    return;
+                  }
+                  // Only allow numeric input
                   const num = parseInt(text, 10);
                   if (!isNaN(num) && num >= 1) {
                     updatePattern({ frequency: num });
-                  } else if (text === '') {
-                    updatePattern({ frequency: 1 });
                   }
                 }}
                 keyboardType="numeric"
                 placeholder="1"
                 placeholderTextColor={COLORS.gray}
+                selectTextOnFocus={true}
               />
               {errors.frequency && <Text style={styles.errorText}>{errors.frequency}</Text>}
             </View>
@@ -345,8 +439,8 @@ export default function RecurrenceConfig({
             </View>
           )}
 
-          {/* Day of Month Selector (Monthly only) */}
-          {pattern.type === 'monthly' && (
+          {/* Day of Month Selector (Monthly and Yearly) */}
+          {(pattern.type === 'monthly' || pattern.type === 'yearly') && (
             <View style={styles.section}>
               <Text style={styles.label}>Day of Month *</Text>
               <View style={styles.dayOfMonthContainer}>
@@ -425,7 +519,11 @@ export default function RecurrenceConfig({
                     setNeverEnds(value);
                     // If turning off "never ends", set a default end date if not already set
                     if (!value && !pattern.endDate) {
-                      const defaultEndDate = getDefaultEndDate();
+                      const defaultEndDate = getDefaultEndDate(pattern.type);
+                      updatePattern({ endDate: defaultEndDate });
+                    } else if (!value && pattern.endDate) {
+                      // Recalculate end date based on current pattern type
+                      const defaultEndDate = getDefaultEndDate(pattern.type);
                       updatePattern({ endDate: defaultEndDate });
                     }
                   }}
@@ -443,30 +541,15 @@ export default function RecurrenceConfig({
                 <TouchableOpacity
                   style={[styles.dateInput, errors.endDate && styles.inputError]}
                   onPress={() => {
-                    // Calculate current end date (use pattern.endDate or default)
+                    // Calculate current end date (use pattern.endDate or default based on type)
                     const currentStartDate = pattern.startDate || startDate.split('T')[0];
-                    const currentEndDate = pattern.endDate || (() => {
-                      const start = new Date(currentStartDate);
-                      const end = new Date(start);
-                      end.setMonth(end.getMonth() + 3);
-                      return end.toISOString().split('T')[0];
-                    })();
+                    const currentEndDate = pattern.endDate || getDefaultEndDate(pattern.type);
                     setTempDate(new Date(currentEndDate));
                     setShowEndDatePicker(true);
                   }}
                 >
                   <Text style={styles.dateText}>
-                    {(() => {
-                      // Always show end date - use pattern.endDate or calculate default
-                      if (pattern.endDate) {
-                        return pattern.endDate;
-                      }
-                      const currentStartDate = pattern.startDate || startDate.split('T')[0];
-                      const start = new Date(currentStartDate);
-                      const end = new Date(start);
-                      end.setMonth(end.getMonth() + 3);
-                      return end.toISOString().split('T')[0];
-                    })()}
+                    {pattern.endDate || getDefaultEndDate(pattern.type)}
                   </Text>
                   <MaterialIcons name="event" size={20} color={COLORS.gray} />
                 </TouchableOpacity>
@@ -568,10 +651,12 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   header: {
+    marginBottom: 8,
+  },
+  titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
   },
   title: {
     fontSize: 18,
@@ -595,30 +680,61 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     marginBottom: 8,
   },
-  typeSelector: {
-    flexDirection: 'row',
-    gap: 8,
+  dropdownWrapper: {
+    position: 'relative',
+    zIndex: 10,
   },
-  typeButton: {
-    flex: 1,
+  dropdownInput: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: COLORS.gray,
     borderRadius: 8,
+    padding: 12,
+    backgroundColor: COLORS.white,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    marginTop: 4,
+    maxHeight: 200,
+    zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
+  },
+  dropdownItemActive: {
     backgroundColor: COLORS.background,
-    gap: 6,
   },
-  typeButtonActive: {
-    backgroundColor: COLORS.primary,
+  dropdownItemText: {
+    fontSize: 16,
+    color: COLORS.black,
   },
-  typeButtonText: {
-    fontSize: 14,
-    color: COLORS.gray,
-    fontWeight: '500',
-  },
-  typeButtonTextActive: {
-    color: COLORS.white,
+  dropdownItemTextActive: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,
