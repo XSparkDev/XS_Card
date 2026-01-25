@@ -26,12 +26,8 @@ const testResults = [];
 
 /**
  * Generate HMAC-SHA512 signature for webhook payload
- * 
- * Note: The server uses JSON.stringify(req.body) to get the raw payload,
- * so we need to match that exact string format (no extra whitespace, consistent key order)
  */
 function generateWebhookSignature(payload, secret) {
-  // Match server's JSON.stringify behavior exactly
   const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
   return crypto
     .createHmac('sha512', secret)
@@ -152,28 +148,16 @@ async function testWebhookSignatureVerification() {
   };
 
   await test('Valid webhook signature returns 200', async () => {
-    // The server uses JSON.stringify(req.body) to verify signature
-    // We need to match that exact string format
-    const payloadString = JSON.stringify(webhookPayload);
-    const signature = generateWebhookSignature(payloadString, secret);
+    const signature = generateWebhookSignature(webhookPayload, secret);
     
     const response = await makeRequest('POST', WEBHOOK_PATH, webhookPayload, {
-      'x-paystack-signature': signature,
-      'x-forwarded-for': '52.31.139.75' // Paystack IP for IP whitelist bypass in tests
+      'x-paystack-signature': signature
     });
 
-    // Note: Server may reject due to IP whitelisting (localhost not in allowed IPs)
-    // If 401, check if it's IP validation or signature validation
+    // May return 200 (success) or other status depending on webhook processing
+    // But should NOT return 401 (unauthorized) if signature is valid
     if (response.statusCode === 401) {
-      // Check response body to see if it's IP or signature issue
-      const errorMsg = response.body?.error || response.body?.message || response.rawBody || '';
-      if (errorMsg.includes('IP') || errorMsg.includes('unauthorized IP')) {
-        return { 
-          success: true, 
-          note: 'Signature valid but IP whitelist blocked (expected in test environment). Set NODE_ENV=development and ALLOW_DEVELOPMENT_IPS=true to allow localhost.' 
-        };
-      }
-      return { success: false, error: `Valid signature was rejected (401). Response: ${errorMsg}` };
+      return { success: false, error: 'Valid signature was rejected (401)' };
     }
 
     // Any other status code means signature was accepted
@@ -273,29 +257,19 @@ async function testWebhookEventTypes() {
 
   for (const eventType of eventTypes) {
     await test(`Webhook event ${eventType.name} is accepted`, async () => {
-      // Match server's JSON.stringify behavior
-      const payloadString = JSON.stringify(eventType.payload);
-      const signature = generateWebhookSignature(payloadString, secret);
+      const signature = generateWebhookSignature(eventType.payload, secret);
       
       const response = await makeRequest('POST', WEBHOOK_PATH, eventType.payload, {
-        'x-paystack-signature': signature,
-        'x-forwarded-for': '52.31.139.75' // Paystack IP for IP whitelist bypass in tests
+        'x-paystack-signature': signature
       });
 
-      // Note: Server may reject due to IP whitelisting
+      // Should not return 401 (unauthorized) if signature is valid
       if (response.statusCode === 401) {
-        // Check if it's IP validation (acceptable in test) or signature validation (failure)
-        const errorMsg = response.body?.error || response.body?.message || response.rawBody || '';
-        if (errorMsg.includes('IP') || errorMsg.includes('unauthorized IP')) {
-          return { 
-            success: true, 
-            note: `Event ${eventType.name} signature valid but IP whitelist blocked (expected in test)` 
-          };
-        }
-        return { success: false, error: `Event ${eventType.name} was rejected with 401. Response: ${errorMsg}` };
+        return { success: false, error: `Event ${eventType.name} was rejected with 401` };
       }
 
-      // Any other status code means signature was accepted
+      // May return 200 (success) or other status depending on processing
+      // But signature should be accepted
       return true;
     });
   }

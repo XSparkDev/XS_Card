@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Payment Success - XS Card</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: #10b981;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+        .success-icon::after {
+            content: '✓';
+            color: white;
+            font-size: 48px;
+            font-weight: bold;
+        }
+        h1 {
+            color: #1f2937;
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+        p {
+            color: #6b7280;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .info-box {
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 24px 0;
+            text-align: left;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+        .info-label {
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .info-value {
+            color: #1f2937;
+            font-weight: 600;
+        }
+        .button {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 16px;
+            transition: background 0.2s;
+        }
+        .button:hover {
+            background: #5568d3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon"></div>
+        <h1>Payment Successful!</h1>
+        <p>Your enterprise subscription payment has been processed successfully.</p>
+        
+        <div class="info-box" id="infoBox">
+            <div class="info-item">
+                <span class="info-label">Quote ID:</span>
+                <span class="info-value" id="quoteId">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Enterprise ID:</span>
+                <span class="info-value" id="enterpriseId">-</span>
+            </div>
+        </div>
+        
+        <p style="font-size: 14px; color: #6b7280;">
+            Your enterprise account has been activated. You will receive a confirmation email shortly.
+        </p>
+        
+        <a href="/" class="button">Return to Home</a>
+    </div>
+
+    <script>
+        // Extract query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const quoteId = urlParams.get('quoteId');
+        const enterpriseId = urlParams.get('enterpriseId');
+
+        // Update info box
+        if (quoteId) {
+            document.getElementById('quoteId').textContent = quoteId;
+        } else {
+            document.getElementById('quoteId').parentElement.style.display = 'none';
+        }
+
+        if (enterpriseId) {
+            document.getElementById('enterpriseId').textContent = enterpriseId;
+        } else {
+            document.getElementById('enterpriseId').parentElement.style.display = 'none';
+        }
+
+        // Hide info box if no data
+        if (!quoteId && !enterpriseId) {
+            document.getElementById('infoBox').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
+
