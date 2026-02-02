@@ -124,4 +124,3 @@ export const migrateAltNumbersToBackend = async (userId: string): Promise<void> 
     // Don't throw - migration failure shouldn't break the app
   }
 };
-

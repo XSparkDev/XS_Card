@@ -97,26 +97,32 @@
 </head>
 <body>
     <div class="container">
-        <div class="success-icon"></div>
-        <h1>Payment Successful!</h1>
-        <p>Your enterprise subscription payment has been processed successfully.</p>
-        
-        <div class="info-box" id="infoBox">
-            <div class="info-item">
-                <span class="info-label">Quote ID:</span>
-                <span class="info-value" id="quoteId">-</span>
+        <div class="card">
+            <div class="success-icon"></div>
+            <h1>Enterprise Payment Complete!</h1>
+            <p>Your XS Card enterprise subscription payment has been processed successfully.</p>
+            
+            <div class="info-box" id="infoBox">
+                <div class="info-item">
+                    <span class="info-label">Quote ID:</span>
+                    <span class="info-value" id="quoteId">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Enterprise ID:</span>
+                    <span class="info-value" id="enterpriseId">-</span>
+                </div>
             </div>
-            <div class="info-item">
-                <span class="info-label">Enterprise ID:</span>
-                <span class="info-value" id="enterpriseId">-</span>
+            
+            <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
+                Your enterprise account has been activated. You will receive a confirmation email shortly.
+            </p>
+            
+            <div style="margin-top: 16px; padding: 12px 16px; border-radius: 8px; background-color: #ecfdf3; border: 1px solid #bbf7d0; font-size: 14px; color: #166534;">
+                <strong>All set!</strong> This payment is complete. You do <u>not</u> need to pay again using this link.
             </div>
+            
+            <a href="/" class="button" style="margin-top: 20px; display: inline-block;">Done</a>
         </div>
-        
-        <p style="font-size: 14px; color: #6b7280;">
-            Your enterprise account has been activated. You will receive a confirmation email shortly.
-        </p>
-        
-        <a href="/" class="button">Return to Home</a>
     </div>
 
     <script>

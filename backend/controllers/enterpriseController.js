@@ -4,10 +4,15 @@
  * Handles enterprise payment and subscription operations.
  */
 
+// Get maximum employees from environment variable (default: 10000)
+const MAX_EMPLOYEES = parseInt(process.env.ENTERPRISE_MAX_EMPLOYEES || '10000', 10);
+
 const { db, admin } = require('../firebase');
 const { calculateEnterprisePrice, formatPrice } = require('../config/enterprisePricing');
 const { validateEnterpriseQuote } = require('../utils/enterpriseValidation');
 const { logEnterpriseError, logPaymentInitializationFailure, logAccountCreationFailure, logWebhookProcessingFailure } = require('../utils/enterpriseErrorLogger');
+const { logSubscriptionCreated } = require('../utils/enterpriseAuditLog');
+const { sendSubscriptionEmail } = require('../utils/enterpriseEmailService');
 const { 
   findOrCreatePlan, 
   initializeEnterpriseSubscription,
@@ -77,16 +82,35 @@ exports.generateQuote = async (req, res) => {
       currency = 'ZAR' // Default to ZAR if not provided
     } = req.body;
 
-    // 2. Calculate price
-    let calculatedPrice;
+    // 2. Calculate price (supports exact number or range string)
+    let priceResult;
     try {
-      calculatedPrice = calculateEnterprisePrice(numberOfEmployees, currency);
+      priceResult = calculateEnterprisePrice(numberOfEmployees, currency);
     } catch (priceError) {
       return res.status(400).json({
         success: false,
         error: 'Price calculation failed',
         message: priceError.message
       });
+    }
+
+    let calculatedPrice;
+    let priceRange = null;
+
+    if (typeof priceResult === 'number') {
+      // Backwards compatible: exact employee count, single price in cents
+      calculatedPrice = priceResult;
+    } else {
+      // Range result from calculateEnterprisePrice
+      calculatedPrice = priceResult.midPrice;
+      priceRange = {
+        minEmployees: priceResult.minEmployees,
+        maxEmployees: priceResult.maxEmployees,
+        minPrice: priceResult.minPrice,
+        maxPrice: priceResult.maxPrice,
+        midEmployees: priceResult.midEmployees,
+        midPrice: priceResult.midPrice
+      };
     }
 
     // 3. Generate unique quote ID
@@ -106,6 +130,8 @@ exports.generateQuote = async (req, res) => {
       contactName: contactName.trim(),
       numberOfEmployees,
       calculatedPrice,
+      // Optional range metadata when a range was provided
+      ...(priceRange ? { priceRange } : {}),
       currency: currency.toUpperCase(),
       quoteStatus: 'pending',
       subscriptionType: 'yearly',
@@ -153,6 +179,14 @@ exports.generateQuote = async (req, res) => {
         contactEmail: quoteData.contactEmail,
         numberOfEmployees,
         calculatedPrice,
+        // When a range is used, expose additional pricing info to the client
+        ...(priceRange ? {
+          priceRange: {
+            ...priceRange,
+            formattedMinPrice: formatPrice(priceRange.minPrice, currency),
+            formattedMaxPrice: formatPrice(priceRange.maxPrice, currency)
+          }
+        } : {}),
         formattedPrice,
         currency: quoteData.currency,
         quoteStatus: quoteData.quoteStatus,
@@ -180,6 +214,417 @@ exports.generateQuote = async (req, res) => {
       error: 'Internal server error',
       message: 'An unexpected error occurred while generating the quote. Please try again later.'
     });
+  }
+};
+
+/**
+ * Find active (non-expired) quotes by contact email
+ * 
+ * GET /api/enterprise/quotes/by-email?email={contactEmail}
+ * 
+ * A "non-expired" quote is defined as: now < expiresAt.
+ */
+exports.getActiveQuotesByEmail = async (req, res) => {
+  try {
+    const rawEmail = (req.query.email || '').toString().trim();
+    const email = rawEmail.toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'email query parameter is required'
+      });
+    }
+
+    // Basic email shape check (backend still trusts stored data)
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'email must be a valid email address'
+      });
+    }
+
+    const now = admin.firestore.Timestamp.now();
+
+    let snapshot;
+    try {
+      snapshot = await db.collection('enterprise_quotes')
+        .where('contactEmail', '==', email)
+        .get();
+    } catch (dbError) {
+      console.error('Error querying quotes by email:', dbError);
+      await logEnterpriseError('quote_lookup_by_email_failure', {
+        error: dbError.message,
+        context: { email }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: 'Failed to look up quotes. Please try again later.'
+      });
+    }
+
+    if (snapshot.empty) {
+      return res.json({
+        success: true,
+        quotes: []
+      });
+    }
+
+    // Filter non-expired in memory: expiresAt > now
+    const activeQuotes = snapshot.docs
+      .map(doc => doc.data())
+      .filter(data => {
+        if (!data.expiresAt || typeof data.expiresAt.toMillis !== 'function') {
+          return false;
+        }
+        return data.expiresAt.toMillis() > now.toMillis();
+      })
+      // Sort by createdAt descending (most recent first)
+      .sort((a, b) => {
+        const aTime = a.createdAt && typeof a.createdAt.toMillis === 'function'
+          ? a.createdAt.toMillis()
+          : 0;
+        const bTime = b.createdAt && typeof b.createdAt.toMillis === 'function'
+          ? b.createdAt.toMillis()
+          : 0;
+        return bTime - aTime;
+      });
+
+    if (activeQuotes.length === 0) {
+      return res.json({
+        success: true,
+        quotes: []
+      });
+    }
+
+    const responseQuotes = activeQuotes.map(data => {
+      const createdAtIso = data.createdAt && typeof data.createdAt.toDate === 'function'
+        ? data.createdAt.toDate().toISOString()
+        : null;
+      const expiresAtIso = data.expiresAt && typeof data.expiresAt.toDate === 'function'
+        ? data.expiresAt.toDate().toISOString()
+        : null;
+
+      const formattedPrice = typeof data.calculatedPrice === 'number'
+        ? formatPrice(data.calculatedPrice, data.currency || 'ZAR')
+        : null;
+
+      let priceRange = null;
+      if (data.priceRange && typeof data.priceRange === 'object') {
+        const pr = data.priceRange;
+        if (typeof pr.minPrice === 'number' && typeof pr.maxPrice === 'number') {
+          priceRange = {
+            minEmployees: pr.minEmployees,
+            maxEmployees: pr.maxEmployees,
+            formattedMinPrice: formatPrice(pr.minPrice, data.currency || 'ZAR'),
+            formattedMaxPrice: formatPrice(pr.maxPrice, data.currency || 'ZAR')
+          };
+        }
+      }
+
+      return {
+        quoteId: data.quoteId,
+        companyName: data.companyName,
+        contactName: data.contactName,
+        contactEmail: data.contactEmail,
+        numberOfEmployees: data.numberOfEmployees,
+        currency: data.currency,
+        formattedPrice,
+        ...(priceRange ? { priceRange } : {}),
+        quoteStatus: data.quoteStatus,
+        createdAt: createdAtIso,
+        expiresAt: expiresAtIso,
+        paymentUrl: data.paymentUrl || null
+      };
+    });
+
+    return res.json({
+      success: true,
+      quotes: responseQuotes
+    });
+  } catch (error) {
+    console.error('Unexpected error in getActiveQuotesByEmail:', error);
+    await logEnterpriseError('quote_lookup_by_email_unexpected_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        email: req.query.email || null
+      }
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while looking up quotes. Please try again later.'
+    });
+  }
+};
+
+/**
+ * Public payment entry URL for a quote
+ * 
+ * GET /pay/quote/:quoteId
+ * 
+ * This endpoint is designed to be used by:
+ * - QR codes in the quote PDF
+ * - Payment links in the quote PDF
+ * - “Proceed to Payment” buttons in the frontend
+ * 
+ * Behaviour:
+ * 1. Lookup quote by quoteId
+ * 2. Validate:
+ *    - If not found → show simple HTML “Quote not found”
+ *    - If expired → show simple HTML “Quote expired”
+ * 3. If quoteStatus === 'paid' → show simple HTML “Payment already completed”
+ * 4. If quote has paymentUrl and status is pending/accepted → redirect to paymentUrl
+ * 5. If quote is pending and has no paymentUrl → initialize payment server-side, then redirect
+ */
+exports.handleQuotePaymentEntry = async (req, res) => {
+  const { quoteId } = req.params;
+
+  const sendHtml = (statusCode, title, message) => {
+    res.status(statusCode).send(
+      `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>${title}</title>
+    <style>
+      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#f5f5f5; padding:40px; color:#222; }
+      .card { max-width:600px; margin:40px auto; background:#fff; border-radius:12px; padding:32px; box-shadow:0 10px 30px rgba(0,0,0,0.08); }
+      h1 { font-size:24px; margin-bottom:12px; }
+      p { font-size:15px; line-height:1.5; margin:4px 0; }
+      .muted { color:#666; font-size:13px; margin-top:16px; }
+      .status { font-size:13px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; color:#888; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="status">XS Card Enterprise Quote</div>
+      <h1>${title}</h1>
+      <p>${message}</p>
+      <p class="muted">If you believe this is an error, please contact the XS Card team with your quote ID: <strong>${quoteId || 'N/A'}</strong>.</p>
+    </div>
+  </body>
+</html>`
+    );
+  };
+
+  try {
+    if (!quoteId || typeof quoteId !== 'string' || quoteId.trim() === '') {
+      return sendHtml(
+        400,
+        'Invalid Quote Link',
+        'The quote link is missing a valid quote ID.'
+      );
+    }
+
+    // 1. Lookup quote
+    let quoteDoc;
+    try {
+      quoteDoc = await db.collection('enterprise_quotes').doc(quoteId).get();
+    } catch (dbError) {
+      console.error('Error looking up quote for payment entry:', dbError);
+      await logEnterpriseError('quote_payment_entry_lookup_failure', {
+        error: dbError.message,
+        context: { quoteId }
+      });
+      return sendHtml(
+        500,
+        'Unable to Load Quote',
+        'We could not load this quote at the moment. Please try again in a few minutes.'
+      );
+    }
+
+    if (!quoteDoc.exists) {
+      return sendHtml(
+        404,
+        'Quote Not Found',
+        'We could not find a quote matching this link. It may have been removed or never existed.'
+      );
+    }
+
+    const quoteData = quoteDoc.data();
+    const now = admin.firestore.Timestamp.now();
+
+    // 2. Check expiry
+    if (quoteData.expiresAt && typeof quoteData.expiresAt.toMillis === 'function') {
+      if (quoteData.expiresAt.toMillis() <= now.toMillis()) {
+        return sendHtml(
+          410,
+          'Quote Expired',
+          'This quote has expired and is no longer available for payment. Please request a new quote from the XS Card team.'
+        );
+      }
+    }
+
+    // 3. If already paid, show info (do not send user back to Paystack)
+    if (quoteData.quoteStatus === 'paid') {
+      return sendHtml(
+        200,
+        'Payment Already Completed',
+        'Payment for this quote has already been completed. Your enterprise account should be active. You can safely close this page.'
+      );
+    }
+
+    // 4. If we already have a paymentUrl for this quote and it is in a payable state, reuse it
+    if (quoteData.paymentUrl && typeof quoteData.paymentUrl === 'string') {
+      // For now, treat 'pending' and 'accepted' as payable
+      if (quoteData.quoteStatus === 'pending' || quoteData.quoteStatus === 'accepted') {
+        return res.redirect(302, quoteData.paymentUrl);
+      }
+    }
+
+    // 5. Initialize payment server-side if quote is pending and not yet initialized
+    if (quoteData.quoteStatus !== 'pending') {
+      // Not in a state we can initialize from
+      return sendHtml(
+        400,
+        'Quote Not Payable',
+        'This quote is not in a payable state. Please request a new quote or contact support.'
+      );
+    }
+
+    // Reuse the Phase 4 logic (find/create plan + initialize subscription)
+    let planCode;
+    try {
+      planCode = await findOrCreatePlan(
+        quoteData.numberOfEmployees,
+        quoteData.calculatedPrice,
+        quoteData.currency
+      );
+    } catch (planError) {
+      console.error('Plan creation failed in payment entry:', planError);
+      await logPaymentInitializationFailure(quoteId, `Plan creation failed (entry): ${planError.message}`);
+      return sendHtml(
+        500,
+        'Unable to Start Payment',
+        'We could not prepare this quote for payment. Please try again later or request a new quote.'
+      );
+    }
+
+    let paymentResult;
+    let attempts = 0;
+    const maxRetries = 3;
+    let currentPlanCode = planCode;
+
+    while (attempts < maxRetries) {
+      try {
+        paymentResult = await initializeEnterpriseSubscription(quoteData, currentPlanCode);
+        break; // Success
+      } catch (error) {
+        attempts++;
+        console.error(
+          `Payment initialization (entry) attempt ${attempts}/${maxRetries} failed:`,
+          error.message
+        );
+
+        // Detect "plan not found" to recover by creating a new plan and retrying
+        const isPlanNotFound = error.message && (
+          error.message.toLowerCase().includes('plan not found') ||
+          error.message.toLowerCase().includes('plan does not exist') ||
+          error.message.toLowerCase().includes('no such plan')
+        );
+
+        if (isPlanNotFound && attempts < maxRetries) {
+          console.warn(`Plan ${currentPlanCode} not found in Paystack (entry). Creating new plan and retrying...`);
+
+          // Delete stale plan from database if present
+          try {
+            const stalePlanQuery = await db.collection('enterprise_plans')
+              .where('planCode', '==', currentPlanCode)
+              .limit(1)
+              .get();
+
+            if (!stalePlanQuery.empty) {
+              await stalePlanQuery.docs[0].ref.delete();
+              console.log(`Removed stale plan from database (entry): ${currentPlanCode}`);
+            }
+          } catch (deleteError) {
+            console.warn(`Failed to delete stale plan (entry): ${deleteError.message}`);
+          }
+
+          try {
+            currentPlanCode = await findOrCreatePlan(
+              quoteData.numberOfEmployees,
+              quoteData.calculatedPrice,
+              quoteData.currency
+            );
+            console.log(`Created new plan (entry): ${currentPlanCode}. Retrying payment initialization...`);
+            continue; // Retry immediately with new plan
+          } catch (planError) {
+            console.error(`Plan recovery failed (entry): ${planError.message}`);
+            await logPaymentInitializationFailure(quoteId, `Plan recovery failed (entry): ${planError.message}`);
+            // Fall through to normal retry logic
+          }
+        }
+
+        await logPaymentInitializationFailure(
+          quoteId,
+          `Entry attempt ${attempts}/${maxRetries}: ${error.message}`
+        );
+
+        if (attempts === maxRetries) {
+          return sendHtml(
+            500,
+            'Unable to Start Payment',
+            'We could not start payment for this quote. Please try again later or request a new quote.'
+          );
+        }
+
+        // Exponential backoff: 1s, 2s, 4s
+        const backoffDelay = 1000 * Math.pow(2, attempts - 1);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      }
+    }
+
+    // Update quote with new payment reference, URL, and plan code
+    try {
+      await db.collection('enterprise_quotes').doc(quoteId).update({
+        paymentReference: paymentResult.reference,
+        paymentUrl: paymentResult.authorization_url,
+        planCode: currentPlanCode,
+        quoteStatus: 'accepted',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (updateError) {
+      console.error('Failed to update quote with payment info (entry):', updateError);
+      await logEnterpriseError('quote_update_failure_entry', {
+        error: updateError.message,
+        context: {
+          quoteId,
+          paymentReference: paymentResult.reference,
+          planCode: currentPlanCode
+        }
+      });
+      // Continue anyway – payment session exists and can still be used
+    }
+
+    console.log(`Payment initialized via entry URL: ${paymentResult.reference} for quote ${quoteId}`);
+
+    // Redirect to Paystack payment page
+    return res.redirect(302, paymentResult.authorization_url);
+  } catch (error) {
+    console.error('Unexpected error in handleQuotePaymentEntry:', error);
+    await logEnterpriseError('quote_payment_entry_unexpected_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        quoteId,
+        params: req.params,
+        ip: req.ip || req.connection.remoteAddress || 'unknown'
+      }
+    });
+
+    return sendHtml(
+      500,
+      'Unexpected Error',
+      'An unexpected error occurred while processing this quote. Please try again later or contact support.'
+    );
   }
 };
 
@@ -571,8 +1016,21 @@ exports.handlePaymentCallback = async (req, res) => {
       
       console.log(`✅ Enterprise account created successfully: ${enterpriseId} for quote ${quoteData.quoteId}`);
       
-      // Log audit event
-      await logSubscriptionCreated(enterpriseId, accountData);
+      // Log audit event (non-blocking - don't fail if this errors)
+      try {
+        await logSubscriptionCreated(enterpriseId, accountData);
+      } catch (auditError) {
+        console.warn('⚠️  Audit logging failed (non-critical):', auditError.message);
+        // Log to error logs but don't fail the operation
+        await logEnterpriseError('audit_logging_failure', {
+          error: auditError.message,
+          context: {
+            enterpriseId,
+            quoteId: quoteData.quoteId,
+            paymentReference
+          }
+        });
+      }
       
       // Send welcome email (non-blocking)
       sendSubscriptionEmail('welcome', accountData).catch(error => {
@@ -582,7 +1040,9 @@ exports.handlePaymentCallback = async (req, res) => {
       // 7. Redirect to success page
       return res.redirect(`/enterprise-payment-success.html?quoteId=${encodeURIComponent(quoteData.quoteId)}&enterpriseId=${encodeURIComponent(enterpriseId)}`);
     } catch (accountError) {
-      console.error('Failed to create enterprise account:', accountError.message);
+      // ONLY catch actual account creation errors here
+      // This should only happen if createEnterpriseAccountWithRetry() throws
+      console.error('❌ CRITICAL: Account creation failed:', accountError.message);
       await logAccountCreationFailure(accountData, accountError.message, 3, 3);
       
       // Payment was successful but account creation failed - redirect to failure with special error
@@ -923,11 +1383,11 @@ exports.updateEmployeeCount = async (req, res) => {
     }
 
     if (!newNumberOfEmployees || typeof newNumberOfEmployees !== 'number' || 
-        newNumberOfEmployees < 1 || newNumberOfEmployees > 10000) {
+        newNumberOfEmployees < 1 || newNumberOfEmployees > MAX_EMPLOYEES) {
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
-        message: 'newNumberOfEmployees must be a number between 1 and 10,000'
+        message: `newNumberOfEmployees must be a number between 1 and ${MAX_EMPLOYEES.toLocaleString()}`
       });
     }
 
@@ -1099,12 +1559,23 @@ exports.updateEmployeeCount = async (req, res) => {
 exports.handleSubscriptionWebhook = async (req, res) => {
   try {
     // 1. Verify webhook signature
-    const securityValidation = await validateWebhookSecurity(req);
-    if (!securityValidation.isValid) {
-      console.error('Webhook security validation failed:', securityValidation.errors);
+    let securityValidation;
+    try {
+      securityValidation = await validateWebhookSecurity(req);
+    } catch (validationError) {
+      // If validation function throws, treat as security failure
+      console.error('Webhook security validation threw error:', validationError.message);
       return res.status(401).json({ 
         error: 'Invalid webhook signature',
-        errors: securityValidation.errors
+        errors: ['Security validation failed: ' + validationError.message]
+      });
+    }
+    
+    if (!securityValidation || !securityValidation.isValid) {
+      console.error('Webhook security validation failed:', securityValidation?.errors || ['Unknown validation error']);
+      return res.status(401).json({ 
+        error: 'Invalid webhook signature',
+        errors: securityValidation?.errors || ['Security validation failed']
       });
     }
 
@@ -1155,8 +1626,24 @@ exports.handleSubscriptionWebhook = async (req, res) => {
 
   } catch (error) {
     console.error('Error handling webhook:', error);
-    // If we haven't responded yet, send error
+    console.error('Error stack:', error.stack);
+    // If we haven't responded yet, check if it's a security validation error
     if (!res.headersSent) {
+      // If error is related to security validation, return 401
+      const errorMessage = error.message || error.toString() || '';
+      if (errorMessage.includes('signature') || 
+          errorMessage.includes('security') ||
+          errorMessage.includes('validation') ||
+          errorMessage.includes('Missing webhook') ||
+          errorMessage.includes('Invalid webhook')) {
+        console.log('Returning 401 for security error:', errorMessage);
+        return res.status(401).json({ 
+          error: 'Invalid webhook signature',
+          errors: [errorMessage]
+        });
+      }
+      // Otherwise return 500 for unexpected errors
+      console.log('Returning 500 for unexpected error:', errorMessage);
       return res.status(500).json({ error: 'Webhook processing failed' });
     }
   }
@@ -1328,8 +1815,21 @@ async function handleSubscriptionCreated(webhookData) {
     await createEnterpriseAccountWithRetry(accountData, quoteRef, 3);
     console.log(`✅ Enterprise account created from webhook: ${enterpriseId}`);
 
-    // Log audit event
-    await logSubscriptionCreated(enterpriseId, accountData);
+    // Log audit event (non-blocking - don't fail if this errors)
+    try {
+      await logSubscriptionCreated(enterpriseId, accountData);
+    } catch (auditError) {
+      console.warn('⚠️  Audit logging failed (non-critical):', auditError.message);
+      // Log to error logs but don't fail the operation
+      await logEnterpriseError('audit_logging_failure', {
+        error: auditError.message,
+        context: {
+          enterpriseId,
+          quoteId: quoteData.quoteId,
+          subscriptionCode
+        }
+      });
+    }
     
     // Send welcome email (non-blocking)
     sendSubscriptionEmail('welcome', accountData).catch(error => {

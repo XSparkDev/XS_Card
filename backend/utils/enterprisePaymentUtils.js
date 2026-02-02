@@ -5,6 +5,9 @@
  * Handles Paystack plan creation and reuse logic.
  */
 
+// Get maximum employees from environment variable (default: 10000)
+const MAX_EMPLOYEES = parseInt(process.env.ENTERPRISE_MAX_EMPLOYEES || '10000', 10);
+
 const https = require('https');
 const { db, admin } = require('../firebase');
 const { getRequestOptions } = require('../config/paystack');
@@ -21,8 +24,8 @@ const { logPlanCreationFailure, logEnterpriseError } = require('./enterpriseErro
  */
 async function createPaystackPlan(numberOfEmployees, amount, currency) {
   // Validate inputs
-  if (typeof numberOfEmployees !== 'number' || numberOfEmployees < 1 || numberOfEmployees > 10000) {
-    throw new Error('Invalid number of employees');
+  if (typeof numberOfEmployees !== 'number' || numberOfEmployees < 1 || numberOfEmployees > MAX_EMPLOYEES) {
+    throw new Error(`Invalid number of employees. Must be between 1 and ${MAX_EMPLOYEES.toLocaleString()}`);
   }
   if (typeof amount !== 'number' || amount <= 0) {
     throw new Error('Invalid amount');

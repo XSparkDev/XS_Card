@@ -170,6 +170,36 @@ async function testQuoteGeneration() {
     return true;
   });
 
+  // Run USD test early before validation tests consume rate limit quota
+  await test('USD currency works correctly', async () => {
+    const payload = {
+      companyName: 'Test Company USD',
+      contactName: 'John Doe',
+      contactEmail: 'john.usd@example.com',
+      numberOfEmployees: 100,
+      currency: 'USD'
+    };
+
+    const response = await makeRequest('POST', BASE_PATH, payload);
+
+    if (response.statusCode !== 201) {
+      return { success: false, error: `Expected status 201, got ${response.statusCode}` };
+    }
+
+    if (response.body.quote.currency !== 'USD') {
+      return { success: false, error: 'Currency should be USD' };
+    }
+
+    // USD pricing: $5 base (500 cents) + $0.50/employee (50 cents) = 500 + (100 * 50) = 5500 cents = $55.00
+    // Prices are stored in cents for payment processing
+    const expectedPrice = 5500; // 500 (base) + (100 * 50) = 5500 cents
+    if (response.body.quote.calculatedPrice !== expectedPrice) {
+      return { success: false, error: `Expected price ${expectedPrice} cents ($55.00), got ${response.body.quote.calculatedPrice} cents` };
+    }
+
+    return true;
+  });
+
   await test('Invalid employee count returns 400', async () => {
     const payload = {
       companyName: 'Test Company',
@@ -224,33 +254,6 @@ async function testQuoteGeneration() {
 
     if (response.statusCode !== 400) {
       return { success: false, error: `Expected status 400, got ${response.statusCode}` };
-    }
-
-    return true;
-  });
-
-  await test('USD currency works correctly', async () => {
-    const payload = {
-      companyName: 'Test Company USD',
-      contactName: 'John Doe',
-      contactEmail: 'john.usd@example.com',
-      numberOfEmployees: 100,
-      currency: 'USD'
-    };
-
-    const response = await makeRequest('POST', BASE_PATH, payload);
-
-    if (response.statusCode !== 201) {
-      return { success: false, error: `Expected status 201, got ${response.statusCode}` };
-    }
-
-    if (response.body.quote.currency !== 'USD') {
-      return { success: false, error: 'Currency should be USD' };
-    }
-
-    // USD pricing: $5 base + $0.50/employee = $5 + $50 = $55
-    if (response.body.quote.calculatedPrice !== 55) {
-      return { success: false, error: `Expected price 55, got ${response.body.quote.calculatedPrice}` };
     }
 
     return true;

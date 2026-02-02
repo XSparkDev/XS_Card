@@ -8,13 +8,14 @@
  * - ALWAYS log all test results for audit trail
  */
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const http = require('http');
 const { db } = require('./firebase');
 
 // Test configuration
 const TEST_USER = {
-    email: 'neney20213@anysilo.com',
-    password: '123456'
+    email: process.env.TEST_USER_EMAIL || 'pule@xspark.co.za',
+    password: process.env.TEST_USER_PASSWORD || '123456'
 };
 
 let authToken = null;

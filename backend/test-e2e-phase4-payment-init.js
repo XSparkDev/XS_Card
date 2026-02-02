@@ -116,8 +116,9 @@ async function test(name, testFn) {
 
 /**
  * Create test quote for payment initialization
+ * Retries once if rate limited
  */
-async function createTestQuote() {
+async function createTestQuote(retry = true) {
   const payload = {
     companyName: `Test Company E2E ${Date.now()}`,
     contactName: 'John Doe',
@@ -132,7 +133,19 @@ async function createTestQuote() {
     return response.body.quote;
   }
   
-  throw new Error('Failed to create test quote');
+  // If rate limited and we haven't retried, wait a moment and try once more
+  if (response.statusCode === 429 && retry) {
+    console.log('⚠️  Rate limit hit, waiting 2 seconds before retry...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    return createTestQuote(false); // Retry once
+  }
+  
+  // Provide more detailed error message
+  const errorMsg = response.statusCode === 429 
+    ? 'Rate limit exceeded - server needs restart or wait for rate limit window'
+    : `Failed to create test quote. Status: ${response.statusCode}, Response: ${JSON.stringify(response.body)}`;
+  
+  throw new Error(errorMsg);
 }
 
 /**
@@ -144,17 +157,61 @@ async function testPaymentInitialization() {
 
   // Create test quote first
   console.log('📝 Creating test quote...');
+  let quoteCreated = false;
   try {
     const quote = await createTestQuote();
     testQuoteId = quote.quoteId;
     console.log(`✅ Test quote created: ${testQuoteId}`);
+    quoteCreated = true;
   } catch (error) {
     console.error('❌ Failed to create test quote:', error.message);
+    if (error.message.includes('Rate limit')) {
+      console.log('⚠️  Rate limit exceeded. Please restart server to clear rate limit store.');
+      console.log('⚠️  Will test validation endpoints only (invalid/missing quote ID)');
+    } else {
+      console.log('⚠️  Will test validation endpoints only (invalid/missing quote ID)');
+    }
+    // Continue with validation tests even if quote creation fails
+  }
+
+  // Test validation endpoints first (these don't require a valid quote or Paystack)
+  await test('Missing quote ID returns 400', async () => {
+    const payload = {};
+
+    const response = await makeRequest('POST', INIT_PATH, payload);
+
+    if (response.statusCode !== 400) {
+      return { success: false, error: `Expected status 400, got ${response.statusCode}. Response: ${JSON.stringify(response.body)}` };
+    }
+
+    return true;
+  });
+
+  await test('Invalid quote ID returns 404', async () => {
+    const payload = {
+      quoteId: 'invalid_quote_id_12345'
+    };
+
+    const response = await makeRequest('POST', INIT_PATH, payload);
+
+    if (response.statusCode !== 404) {
+      return { success: false, error: `Expected status 404, got ${response.statusCode}. Response: ${JSON.stringify(response.body)}` };
+    }
+
+    return true;
+  });
+
+  // Skip Paystack-dependent tests if key is missing
+  if (!process.env.PAYSTACK_SECRET_KEY) {
+    console.log('\n⚠️  Skipping Paystack-dependent tests - PAYSTACK_SECRET_KEY not configured');
+    console.log('⚠️  To test full payment initialization, set PAYSTACK_SECRET_KEY in .env file');
     return;
   }
 
-  if (!process.env.PAYSTACK_SECRET_KEY) {
-    console.log('⚠️  Skipping Paystack-dependent tests - PAYSTACK_SECRET_KEY not configured');
+  // Skip payment initialization test if quote creation failed
+  if (!quoteCreated) {
+    console.log('\n⚠️  Skipping payment initialization test - test quote creation failed');
+    console.log('⚠️  This is likely due to rate limiting. Restart server and re-run test.');
     return;
   }
 
@@ -185,30 +242,9 @@ async function testPaymentInitialization() {
       return { success: false, error: 'Plan code missing in response' };
     }
 
-    return true;
-  });
-
-  await test('Invalid quote ID returns 404', async () => {
-    const payload = {
-      quoteId: 'invalid_quote_id_12345'
-    };
-
-    const response = await makeRequest('POST', INIT_PATH, payload);
-
-    if (response.statusCode !== 404) {
-      return { success: false, error: `Expected status 404, got ${response.statusCode}` };
-    }
-
-    return true;
-  });
-
-  await test('Missing quote ID returns 400', async () => {
-    const payload = {};
-
-    const response = await makeRequest('POST', INIT_PATH, payload);
-
-    if (response.statusCode !== 400) {
-      return { success: false, error: `Expected status 400, got ${response.statusCode}` };
+    // Verify payment URL is a valid Paystack URL
+    if (!response.body.paymentUrl.includes('paystack.com') && !response.body.paymentUrl.includes('checkout')) {
+      return { success: false, error: `Payment URL doesn't appear to be a valid Paystack URL: ${response.body.paymentUrl}` };
     }
 
     return true;
@@ -218,6 +254,10 @@ async function testPaymentInitialization() {
     // This test sends multiple requests rapidly for the same quote
     // Note: Rate limiting may not trigger immediately depending on implementation
     
+    if (!testQuoteId) {
+      return { success: false, error: 'Cannot test rate limiting - no valid quote ID' };
+    }
+
     const payload = {
       quoteId: testQuoteId
     };

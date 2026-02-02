@@ -5,6 +5,9 @@
  * This is documentation only - Firestore is schemaless, but this serves as a reference.
  */
 
+// Get maximum employees from environment variable (default: 10000)
+const MAX_EMPLOYEES = parseInt(process.env.ENTERPRISE_MAX_EMPLOYEES || '10000', 10);
+
 /**
  * Collection: enterprise_quotes
  * 
@@ -16,7 +19,7 @@
  *   companyName: string,          // Company name (1-200 chars)
  *   contactEmail: string,         // Contact email (valid email format, max 255 chars)
  *   contactName: string,          // Contact person name (1-100 chars)
- *   numberOfEmployees: number,    // Number of employees (1-10000, integer)
+ *   numberOfEmployees: number,    // Number of employees (1-{MAX_EMPLOYEES}, integer)
  *   calculatedPrice: number,      // Price in cents (kobo)
  *   currency: 'ZAR' | 'USD',     // Currency code
  *   quoteStatus: 'pending' | 'accepted' | 'expired' | 'paid',
@@ -46,7 +49,7 @@ const ENTERPRISE_QUOTES_SCHEMA = {
     companyName: { type: 'string', required: true, minLength: 1, maxLength: 200 },
     contactEmail: { type: 'string', required: true, format: 'email', maxLength: 255 },
     contactName: { type: 'string', required: true, minLength: 1, maxLength: 100 },
-    numberOfEmployees: { type: 'number', required: true, min: 1, max: 10000, integer: true },
+    numberOfEmployees: { type: 'number', required: true, min: 1, max: MAX_EMPLOYEES, integer: true },
     calculatedPrice: { type: 'number', required: true, min: 0 },
     currency: { type: 'string', required: true, enum: ['ZAR', 'USD'] },
     quoteStatus: { type: 'string', required: true, enum: ['pending', 'accepted', 'expired', 'paid'] },

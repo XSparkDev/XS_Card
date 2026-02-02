@@ -8,15 +8,42 @@
  * - ALWAYS log test results for audit trail
  */
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const http = require('http');
-const { db } = require('./firebase');
+let db = null;
+try {
+    const firebase = require('./firebase');
+    db = firebase.db;
+} catch (error) {
+    console.warn('⚠️  Firebase initialization warning:', error.message);
+    console.warn('   Test will continue but logging to database will be skipped');
+    // Create a mock db object for logging
+    db = {
+        collection: (name) => ({
+            add: async (data) => {
+                console.warn(`[SKIP] Test logging skipped - Firebase not available (would log to ${name})`);
+                return { id: 'mock-id' };
+            }
+        })
+    };
+}
 
 // Test configuration
-const BASE_URL = 'http://localhost:8383';
+const BASE_URL = process.env.API_BASE || 'http://localhost:8383';
 const TEST_USER = {
-    email: 'neney20213@anysilo.com',
-    password: '123456'
+    email: process.env.TEST_USER_EMAIL || 'neney20213@anysilo.com',
+    password: process.env.TEST_USER_PASSWORD || '123456'
 };
+
+// Log configuration (without password)
+console.log('📋 Test Configuration:');
+console.log(`   Base URL: ${BASE_URL}`);
+console.log(`   Test User Email: ${TEST_USER.email}`);
+console.log(`   Test User Password: ${TEST_USER.password ? '***' + TEST_USER.password.slice(-2) : 'NOT SET'}`);
+if (!process.env.TEST_USER_EMAIL || !process.env.TEST_USER_PASSWORD) {
+    console.log('\n⚠️  WARNING: Using default test user credentials.');
+    console.log('   Set TEST_USER_EMAIL and TEST_USER_PASSWORD in .env for custom credentials.');
+}
 
 let authToken = null;
 let userId = null;
@@ -60,11 +87,16 @@ async function authenticateUser() {
                             console.log(`   Plan: ${response.user.plan}`);
                             resolve(response);
                         } else {
-                            console.error('❌ Authentication failed:', response);
-                            reject(new Error('Authentication failed'));
+                            console.error('❌ Authentication failed');
+                            console.error('   Status Code:', res.statusCode);
+                            console.error('   Response:', JSON.stringify(response, null, 2));
+                            console.error('\n💡 TIP: Set TEST_USER_EMAIL and TEST_USER_PASSWORD in .env file');
+                            console.error(`   Current email: ${TEST_USER.email}`);
+                            reject(new Error(`Authentication failed: ${response.message || response.error?.message || 'Invalid credentials'}`));
                         }
                     } catch (error) {
                         console.error('❌ Authentication response parsing failed:', error.message);
+                        console.error('   Raw response:', data);
                         reject(error);
                     }
                 });
@@ -426,8 +458,12 @@ async function runPhase4ATests() {
             console.log('\n❌ Multiple Phase 4A tests failed. Critical issues need to be resolved.');
         }
         
-        // Log test results for audit trail
-        await logTestResults(testResults, successRate);
+        // Log test results for audit trail (if Firebase is available)
+        try {
+            await logTestResults(testResults, successRate);
+        } catch (logError) {
+            console.warn('⚠️  Could not log test results to database:', logError.message);
+        }
         
         return { success: successRate === 100, results: testResults, successRate };
         
@@ -435,8 +471,12 @@ async function runPhase4ATests() {
         console.error('\n❌ PHASE 4A TEST SUITE FAILED:', error.message);
         console.error('Stack trace:', error.stack);
         
-        // Log error for audit trail
-        await logTestError(error);
+        // Log error for audit trail (if Firebase is available)
+        try {
+            await logTestError(error);
+        } catch (logError) {
+            console.warn('⚠️  Could not log test error to database:', logError.message);
+        }
         
         return { success: false, error: error.message };
     }

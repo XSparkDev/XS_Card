@@ -81,12 +81,10 @@ router.post('/notifications/:notificationId/read', markNotificationReadControlle
 router.get('/health', (req, res) => {
     res.status(200).json({
         success: true,
-        data: {
-            service: 'Billing API',
-            version: '1.0.0',
-            timestamp: new Date().toISOString(),
-            message: 'Billing service is operational'
-        }
+        service: 'Billing API',
+        version: '1.0.0',
+        timestamp: new Date().toISOString(),
+        message: 'Billing service is operational'
     });
 });
 

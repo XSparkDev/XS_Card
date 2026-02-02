@@ -61,8 +61,71 @@ const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple 
 const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 const oauthRoutes = require('./routes/oauthRoutes'); // NEW: Add OAuth routes (POOP)
 const enterpriseRoutes = require('./routes/enterpriseRoutes'); // Enterprise payment routes
+const billingRoutes = require('./routes/billingRoutes'); // Billing routes (Phase 4A)
 
-app.use(express.json());
+// Middleware to capture raw body for webhook signature verification
+// Must be applied before express.json() for webhook routes
+app.use('/api/enterprise/payment/webhook', (req, res, next) => {
+  // Wrap everything in try-catch to prevent any errors from bubbling up
+  try {
+    let data = '';
+    let hasError = false;
+    
+    // Set up error handler first
+    const errorHandler = (error) => {
+      if (!hasError) {
+        hasError = true;
+        console.error('Error reading webhook request body:', error.message);
+        req.rawBody = '';
+        req.body = {};
+        // Don't call next() here - let 'end' handler do it
+      }
+    };
+    
+    req.on('error', errorHandler);
+    req.on('data', (chunk) => {
+      try {
+        data += chunk;
+      } catch (error) {
+        errorHandler(error);
+      }
+    });
+    
+    req.on('end', () => {
+      try {
+        // Store raw body as string for signature verification
+        req.rawBody = data || '';
+        // Parse JSON for normal request handling
+        try {
+          req.body = data && data.trim() ? JSON.parse(data) : {};
+        } catch (parseError) {
+          // Invalid JSON - that's okay, we'll handle it in validation
+          req.body = {};
+        }
+        next();
+      } catch (error) {
+        console.error('Error processing webhook body:', error.message);
+        req.rawBody = data || '';
+        req.body = {};
+        next();
+      }
+    });
+  } catch (error) {
+    console.error('Error in webhook raw body middleware:', error.message);
+    req.rawBody = '';
+    req.body = {};
+    next();
+  }
+});
+
+// Apply JSON parsing middleware, but skip webhook route (already handled by raw body middleware)
+app.use((req, res, next) => {
+  // Skip JSON parsing for webhook route (already parsed by raw body middleware)
+  if (req.path === '/api/enterprise/payment/webhook') {
+    return next();
+  }
+  express.json()(req, res, next);
+});
 
 // ========================================================================
 // CRITICAL: Add Contact Handler - MUST be mounted at top to prevent 404s
@@ -658,6 +721,7 @@ app.use('/api', contactRequestRoutes); // Add contact request routes
 app.use('/api', eventOrganiserRoutes); // Add event organiser routes
 app.use('/api', bulkRegistrationRoutes); // Add bulk registration routes
 app.use('/api', testRoutes); // Add test routes for debugging
+app.use('/api/billing', billingRoutes); // Add billing routes (Phase 4A) - requires authentication
 
 
 
@@ -1154,6 +1218,30 @@ const jobs = require('./jobs');
 // Error handler
 app.use((error, req, res, next) => {
     console.error('Error:', error);
+    
+    // Check if this is a webhook security error - return 401 instead of 500
+    if (req.path === '/api/enterprise/payment/webhook') {
+        const isSecurityError = error.message && (
+            error.message.includes('signature') ||
+            error.message.includes('security') ||
+            error.message.includes('validation') ||
+            error.message.includes('Missing webhook') ||
+            error.message.includes('Invalid webhook')
+        );
+        
+        if (isSecurityError && !res.headersSent) {
+            return res.status(401).json({
+                error: 'Invalid webhook signature',
+                errors: [error.message]
+            });
+        }
+    }
+    
+    // If headers already sent, don't send another response
+    if (res.headersSent) {
+        return next(error);
+    }
+    
     res.status(500).send({
         message: 'Internal Server Error',
         error: {

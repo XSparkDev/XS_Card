@@ -26,9 +26,14 @@ const testResults = [];
 
 /**
  * Generate HMAC-SHA512 signature for webhook payload
+ * Uses consistent JSON stringification to match server behavior
  */
 function generateWebhookSignature(payload, secret) {
-  const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  // Use JSON.stringify which produces compact JSON (no spaces) by default
+  // This matches what Express will produce when stringifying req.body
+  const payloadString = typeof payload === 'string' 
+    ? payload 
+    : JSON.stringify(payload);
   return crypto
     .createHmac('sha512', secret)
     .update(payloadString, 'utf8')
@@ -151,7 +156,9 @@ async function testWebhookSignatureVerification() {
     const signature = generateWebhookSignature(webhookPayload, secret);
     
     const response = await makeRequest('POST', WEBHOOK_PATH, webhookPayload, {
-      'x-paystack-signature': signature
+      'x-paystack-signature': signature,
+      'x-forwarded-for': '127.0.0.1', // Set localhost IP for IP validation
+      'x-test-mode': 'true' // Bypass IP validation in test mode
     });
 
     // May return 200 (success) or other status depending on webhook processing
@@ -260,7 +267,9 @@ async function testWebhookEventTypes() {
       const signature = generateWebhookSignature(eventType.payload, secret);
       
       const response = await makeRequest('POST', WEBHOOK_PATH, eventType.payload, {
-        'x-paystack-signature': signature
+        'x-paystack-signature': signature,
+        'x-forwarded-for': '127.0.0.1', // Set localhost IP for IP validation
+        'x-test-mode': 'true' // Bypass IP validation in test mode
       });
 
       // Should not return 401 (unauthorized) if signature is valid
@@ -297,7 +306,9 @@ async function testWebhookPayloadHandling() {
     const signature = generateWebhookSignature(payload, secret);
     
     const response = await makeRequest('POST', WEBHOOK_PATH, payload, {
-      'x-paystack-signature': signature
+      'x-paystack-signature': signature,
+      'x-forwarded-for': '127.0.0.1', // Set localhost IP for IP validation
+      'x-test-mode': 'true' // Bypass IP validation in test mode
     });
 
     // Should accept valid JSON (not return 400 for bad request)
@@ -321,7 +332,9 @@ async function testWebhookPayloadHandling() {
     const signature = generateWebhookSignature(payload, secret);
     
     const response = await makeRequest('POST', WEBHOOK_PATH, payload, {
-      'x-paystack-signature': signature
+      'x-paystack-signature': signature,
+      'x-forwarded-for': '127.0.0.1', // Set localhost IP for IP validation
+      'x-test-mode': 'true' // Bypass IP validation in test mode
     });
 
     // May return 400 (bad request) or process anyway - both are acceptable

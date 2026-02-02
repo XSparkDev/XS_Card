@@ -6,6 +6,7 @@
  */
 
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const { getEnvOverride } = require('../config/environment');
 
 /**
@@ -26,10 +27,14 @@ const createPaymentInitRateLimit = () => {
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false, // Disable X-RateLimit-* headers
     
-    // Custom key generator - use quoteId from request body
+    // Custom key generator - use quoteId from request body, fallback to IP with IPv6 support
     keyGenerator: (req) => {
-      const quoteId = req.body?.quoteId || req.query?.quoteId || req.ip || 'unknown';
-      return `payment_init_${quoteId}`;
+      const quoteId = req.body?.quoteId || req.query?.quoteId;
+      if (quoteId) {
+        return `payment_init_${quoteId}`;
+      }
+      // Use ipKeyGenerator helper for IPv6 compatibility
+      return `payment_init_${ipKeyGenerator(req)}`;
     },
     
     // Custom handler for rate limit exceeded

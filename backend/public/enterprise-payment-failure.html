@@ -122,33 +122,39 @@
 </head>
 <body>
     <div class="container">
-        <div class="error-icon"></div>
-        <h1>Payment Failed</h1>
-        <p>We were unable to process your enterprise subscription payment.</p>
-        
-        <div class="error-box" id="errorBox">
-            <div class="error-code" id="errorCode">Error</div>
-            <div class="error-message" id="errorMessage">Please try again or contact support.</div>
-        </div>
-        
-        <div class="info-box" id="infoBox" style="display: none;">
-            <div class="info-item">
-                <span class="info-label">Payment Reference:</span>
-                <span class="info-value" id="paymentRef">-</span>
+        <div class="card">
+            <div class="error-icon"></div>
+            <h1>Payment Failed</h1>
+            <p>We were unable to process your enterprise subscription payment.</p>
+            
+            <div class="error-box" id="errorBox">
+                <div class="error-code" id="errorCode">Error</div>
+                <div class="error-message" id="errorMessage">Please try again or contact support.</div>
             </div>
-            <div class="info-item">
-                <span class="info-label">Quote ID:</span>
-                <span class="info-value" id="quoteId">-</span>
+            
+            <div class="info-box" id="infoBox" style="display: none;">
+                <div class="info-item">
+                    <span class="info-label">Payment Reference:</span>
+                    <span class="info-value" id="paymentRef">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Quote ID:</span>
+                    <span class="info-value" id="quoteId">-</span>
+                </div>
             </div>
-        </div>
-        
-        <p style="font-size: 14px; color: #6b7280;">
-            If you continue to experience issues, please contact our support team.
-        </p>
-        
-        <div>
-            <a href="/" class="button">Return to Home</a>
-            <a href="javascript:history.back()" class="button button-secondary">Go Back</a>
+            
+            <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
+                In most cases, you can safely retry payment from your original quote link or QR. If the issue persists, contact our team and include your payment reference.
+            </p>
+            
+            <div style="margin-top: 16px; padding: 12px 16px; border-radius: 8px; background-color: #fef2f2; border: 1px solid #fecaca; font-size: 14px; color: #991b1b;">
+                <strong>Tip:</strong> If you already see a successful charge in your bank, please do <u>not</u> attempt multiple retries. Contact support with your reference instead.
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <a href="/" class="button">Return Home</a>
+                <a href="javascript:history.back()" class="button button-secondary">Try Again</a>
+            </div>
         </div>
     </div>
 

@@ -5,6 +5,9 @@
  * All validation functions return clear error messages.
  */
 
+// Get maximum employees from environment variable (default: 10000)
+const MAX_EMPLOYEES = parseInt(process.env.ENTERPRISE_MAX_EMPLOYEES || '10000', 10);
+
 /**
  * Validate company name
  * 
@@ -148,14 +151,16 @@ function validateEmail(email) {
 
 /**
  * Validate number of employees
- * 
+ *
  * Rules:
  * - Required
- * - Must be a number
- * - Must be an integer
- * - Must be between 1 and 10,000
- * 
- * @param {number} count - Number of employees
+ * - EITHER:
+ *   - a concrete number (1–{MAX_EMPLOYEES}, integer)
+ *   - OR a range string in one of the forms:
+ *     - "min-max" (e.g. "201-1000")
+ *     - "min+"   (e.g. "1000+")
+ *
+ * @param {number|string} count - Number of employees or range string
  * @returns {{isValid: boolean, error?: string}} - Validation result
  */
 function validateNumberOfEmployees(count) {
@@ -166,35 +171,91 @@ function validateNumberOfEmployees(count) {
     };
   }
 
-  if (typeof count !== 'number') {
+  // Numeric path (existing behaviour)
+  if (typeof count === 'number') {
+    if (!Number.isInteger(count)) {
+      return {
+        isValid: false,
+        error: 'Number of employees must be an integer'
+      };
+    }
+
+    if (count < 1) {
+      return {
+        isValid: false,
+        error: 'Number of employees must be at least 1'
+      };
+    }
+
+    if (count > MAX_EMPLOYEES) {
+      return {
+        isValid: false,
+        error: `Number of employees cannot exceed ${MAX_EMPLOYEES.toLocaleString()}`
+      };
+    }
+
+    return { isValid: true };
+  }
+
+  // Range string path
+  if (typeof count === 'string') {
+    const trimmed = count.trim();
+
+    // "min-max"
+    const rangeMatch = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (rangeMatch) {
+      const min = parseInt(rangeMatch[1], 10);
+      const max = parseInt(rangeMatch[2], 10);
+
+      if (!Number.isInteger(min) || !Number.isInteger(max) || min <= 0 || max < min) {
+        return {
+          isValid: false,
+          error: 'Employee range is invalid. Use a format like "201-1000".'
+        };
+      }
+
+      if (max > MAX_EMPLOYEES) {
+        return {
+          isValid: false,
+          error: `Employee range cannot exceed ${MAX_EMPLOYEES.toLocaleString()} employees.`
+        };
+      }
+
+      return { isValid: true };
+    }
+
+    // "min+"
+    const plusMatch = trimmed.match(/^(\d+)\s*\+$/);
+    if (plusMatch) {
+      const min = parseInt(plusMatch[1], 10);
+
+      if (!Number.isInteger(min) || min <= 0) {
+        return {
+          isValid: false,
+          error: 'Employee open-ended range is invalid. Use a format like "1000+".'
+        };
+      }
+
+      if (min > MAX_EMPLOYEES) {
+        return {
+          isValid: false,
+          error: `Employee range cannot start above ${MAX_EMPLOYEES.toLocaleString()} employees.`
+        };
+      }
+
+      return { isValid: true };
+    }
+
     return {
       isValid: false,
-      error: 'Number of employees must be a number'
+      error: 'Number of employees must be a number or range string like "201-1000" or "1000+".'
     };
   }
 
-  if (!Number.isInteger(count)) {
-    return {
-      isValid: false,
-      error: 'Number of employees must be an integer'
-    };
-  }
-
-  if (count < 1) {
-    return {
-      isValid: false,
-      error: 'Number of employees must be at least 1'
-    };
-  }
-
-  if (count > 10000) {
-    return {
-      isValid: false,
-      error: 'Number of employees cannot exceed 10,000'
-    };
-  }
-
-  return { isValid: true };
+  return {
+    isValid: false,
+    error: 'Number of employees must be a number or range string'
+  };
 }
 
 /**
