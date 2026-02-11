@@ -13,8 +13,8 @@ const { validateEnterpriseQuote } = require('../utils/enterpriseValidation');
 const { logEnterpriseError, logPaymentInitializationFailure, logAccountCreationFailure, logWebhookProcessingFailure } = require('../utils/enterpriseErrorLogger');
 const { logSubscriptionCreated } = require('../utils/enterpriseAuditLog');
 const { sendSubscriptionEmail } = require('../utils/enterpriseEmailService');
-const { 
-  findOrCreatePlan, 
+const {
+  findOrCreatePlan,
   initializeEnterpriseSubscription,
   verifyEnterprisePayment,
   getPaystackSubscriptionStatus,
@@ -26,6 +26,9 @@ const {
   setGracePeriodOnPaymentFailure,
   clearGracePeriodOnPaymentSuccess
 } = require('../utils/enterprisePaymentUtils');
+const { generateReceiptFromQuote } = require('../utils/invoiceReceiptUtils');
+const { generateInvoiceFromAccount } = require('../utils/invoiceFromAccountUtils');
+const { sendMailWithStatus } = require('../public/Utils/emailService');
 const { validateWebhookSecurity } = require('../utils/webhookSecurity');
 
 /**
@@ -213,6 +216,113 @@ exports.generateQuote = async (req, res) => {
       success: false,
       error: 'Internal server error',
       message: 'An unexpected error occurred while generating the quote. Please try again later.'
+    });
+  }
+};
+
+/**
+ * Generate and download quote PDF
+ * 
+ * GET /api/enterprise/quotes/:quoteId/pdf
+ * 
+ * Generates a PDF matching the frontend implementation exactly.
+ */
+exports.getQuotePDF = async (req, res) => {
+  try {
+    const { quoteId } = req.params;
+
+    if (!quoteId || typeof quoteId !== 'string' || quoteId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'quoteId is required'
+      });
+    }
+
+    // Fetch quote from database
+    let quoteDoc;
+    try {
+      quoteDoc = await db.collection('enterprise_quotes').doc(quoteId).get();
+    } catch (dbError) {
+      console.error('Error fetching quote:', dbError);
+      await logEnterpriseError('quote_pdf_fetch_failure', {
+        error: dbError.message,
+        context: { quoteId }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Database error',
+        message: 'Failed to fetch quote. Please try again.'
+      });
+    }
+
+    if (!quoteDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Quote not found',
+        message: 'The requested quote does not exist or has expired.'
+      });
+    }
+
+    const quoteData = quoteDoc.data();
+
+    // Convert Firestore Timestamps to ISO strings for PDF generator
+    const quoteForPdf = {
+      ...quoteData,
+      createdAt: quoteData.createdAt?.toDate?.()?.toISOString() || quoteData.createdAt || new Date().toISOString(),
+      expiresAt: quoteData.expiresAt?.toDate?.()?.toISOString() || quoteData.expiresAt || new Date().toISOString()
+    };
+
+    // Get base URL for payment links
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || 'localhost:8383';
+    const baseUrl = `${protocol}://${host}`;
+
+    // Generate PDF
+    const { generateQuotePDF } = require('../utils/quotePdfGenerator');
+    let pdfBuffer;
+    try {
+      pdfBuffer = await generateQuotePDF(quoteForPdf, baseUrl);
+    } catch (pdfError) {
+      console.error('Error generating PDF:', pdfError);
+      await logEnterpriseError('quote_pdf_generation_failure', {
+        error: pdfError.message,
+        stack: pdfError.stack,
+        context: { quoteId }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'PDF generation failed',
+        message: 'Unable to generate PDF. Please try again later.'
+      });
+    }
+
+    // Generate filename
+    const date = new Date().toISOString().split('T')[0];
+    const filename = `XS_Card_Quote_${quoteId}_${date}.pdf`;
+
+    // Set headers and send PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('Error in getQuotePDF:', error);
+    await logEnterpriseError('quote_pdf_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        quoteId: req.params.quoteId,
+        ip: req.ip || req.connection.remoteAddress || 'unknown'
+      }
+    });
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while generating the PDF. Please try again later.'
     });
   }
 };
@@ -1012,7 +1122,7 @@ exports.handlePaymentCallback = async (req, res) => {
     };
 
     try {
-      await createEnterpriseAccountWithRetry(accountData, quoteRef, 3);
+      await createEnterpriseAccountWithRetry(accountData, quoteRef, quoteData);
       
       console.log(`✅ Enterprise account created successfully: ${enterpriseId} for quote ${quoteData.quoteId}`);
       
@@ -1036,6 +1146,18 @@ exports.handlePaymentCallback = async (req, res) => {
       sendSubscriptionEmail('welcome', accountData).catch(error => {
         console.warn('Failed to send welcome email:', error.message);
       });
+
+      // Generate receipt from quote (non-blocking for user)
+      try {
+        const enrichedQuoteData = {
+          ...quoteData,
+          paidAt: quoteData.paidAt || now
+        };
+        await generateReceiptFromQuote(enrichedQuoteData, verificationResult);
+      } catch (receiptError) {
+        console.warn('Failed to generate or email receipt:', receiptError.message);
+        // Detailed logging is handled inside generateReceiptFromQuote via logEnterpriseError
+      }
       
       // 7. Redirect to success page
       return res.redirect(`/enterprise-payment-success.html?quoteId=${encodeURIComponent(quoteData.quoteId)}&enterpriseId=${encodeURIComponent(enterpriseId)}`);
@@ -1812,7 +1934,7 @@ async function handleSubscriptionCreated(webhookData) {
       updatedAt: now
     };
 
-    await createEnterpriseAccountWithRetry(accountData, quoteRef, 3);
+    await createEnterpriseAccountWithRetry(accountData, quoteRef, quoteData);
     console.log(`✅ Enterprise account created from webhook: ${enterpriseId}`);
 
     // Log audit event (non-blocking - don't fail if this errors)
@@ -2071,3 +2193,749 @@ async function handleSubscriptionNotRenewing(webhookData) {
   await handleSubscriptionCancelled(webhookData);
 }
 
+// ============================================================================
+// Phase 1: Enterprise CRUD Operations (from other server)
+// ============================================================================
+
+const { logActivity, ACTIONS, RESOURCES } = require('../utils/logger');
+
+/**
+ * Get all enterprises
+ * GET /api/enterprise
+ * Note: Should be filtered by user's enterprise or admin-only
+ */
+exports.getAllEnterprises = async (req, res) => {
+  try {
+    const userId = req.user?.uid;
+    
+    // Get user document to check enterprise access
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+    
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+    
+    // If user has an enterprise, filter by their enterprise
+    // Otherwise, return empty (or implement admin check)
+    let query = db.collection('enterprise');
+    if (userEnterpriseId) {
+      // Filter by user's enterprise
+      const snapshot = await db.collection('enterprise').doc(userEnterpriseId).get();
+      if (snapshot.exists) {
+        const enterprises = [{
+          id: snapshot.id,
+          ...snapshot.data()
+        }];
+        
+        // Log activity
+        await logActivity({
+          action: ACTIONS.VIEW,
+          resource: RESOURCES.ENTERPRISE,
+          userId: userId,
+          enterpriseId: userEnterpriseId,
+          details: {
+            operation: 'get_all_enterprises',
+            count: enterprises.length
+          }
+        });
+        
+        return res.status(200).json({ 
+          success: true,
+          data: enterprises
+        });
+      }
+    }
+    
+    // If no enterprise, return empty array
+    // TODO: Add admin check if needed for viewing all enterprises
+    await logActivity({
+      action: ACTIONS.VIEW,
+      resource: RESOURCES.ENTERPRISE,
+      userId: userId,
+      details: {
+        operation: 'get_all_enterprises',
+        count: 0,
+        note: 'No enterprise access'
+      }
+    });
+    
+    return res.status(200).json({ 
+      success: true,
+      data: []
+    });
+  } catch (error) {
+    console.error('Error getting enterprises:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get enterprises', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Get enterprise by ID
+ * GET /api/enterprise/:enterpriseId
+ */
+exports.getEnterpriseById = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+    const userId = req.user?.uid;
+    
+    // Get user document
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+    
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+    
+    // Authorization check: user must have access to this enterprise
+    if (!userEnterpriseId || userEnterpriseId !== enterpriseId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied to enterprise' 
+      });
+    }
+    
+    const doc = await db.collection('enterprise').doc(enterpriseId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Enterprise not found' 
+      });
+    }
+
+    const enterprise = {
+      id: doc.id,
+      ...doc.data()
+    };
+
+    // Log activity
+    await logActivity({
+      action: ACTIONS.VIEW,
+      resource: RESOURCES.ENTERPRISE,
+      userId: userId,
+      resourceId: enterpriseId,
+      enterpriseId: enterpriseId,
+      details: {
+        operation: 'get_enterprise_by_id'
+      }
+    });
+
+    res.status(200).json({ 
+      success: true,
+      data: {
+        enterprise
+      }
+    });
+  } catch (error) {
+    console.error('Error getting enterprise:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get enterprise', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Update an enterprise
+ * PUT /api/enterprise/:enterpriseId
+ */
+exports.updateEnterprise = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+    const userId = req.user?.uid;
+    const { 
+      name, description, industry, website, logoUrl, 
+      colorScheme, companySize, address 
+    } = req.body;
+
+    // Get user document
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+    
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+    
+    // Authorization check: user must have access to this enterprise
+    if (!userEnterpriseId || userEnterpriseId !== enterpriseId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied to enterprise' 
+      });
+    }
+    
+    // Check if user is enterprise admin
+    if (userData.role !== 'admin' && userData.plan !== 'enterprise') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only enterprise admins can update enterprise details' 
+      });
+    }
+
+    const enterpriseRef = db.collection('enterprise').doc(enterpriseId);
+    const doc = await enterpriseRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Enterprise not found' 
+      });
+    }
+
+    const updates = {};
+    
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (industry !== undefined) updates.industry = industry;
+    if (website !== undefined) updates.website = website;
+    if (logoUrl !== undefined) updates.logoUrl = logoUrl;
+    if (colorScheme !== undefined) updates.colorScheme = colorScheme;
+    if (companySize !== undefined) updates.companySize = companySize;
+    if (address !== undefined) updates.address = address;
+    
+    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+    await enterpriseRef.update(updates);
+
+    const updatedDoc = await enterpriseRef.get();
+    const updatedEnterprise = {
+      id: updatedDoc.id,
+      ...updatedDoc.data()
+    };
+
+    // Log activity
+    await logActivity({
+      action: ACTIONS.UPDATE,
+      resource: RESOURCES.ENTERPRISE,
+      userId: userId,
+      resourceId: enterpriseId,
+      enterpriseId: enterpriseId,
+      details: {
+        operation: 'update_enterprise',
+        updatedFields: Object.keys(updates)
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Enterprise updated successfully',
+      data: {
+        enterprise: updatedEnterprise
+      }
+    });
+  } catch (error) {
+    console.error('Error updating enterprise:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update enterprise', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Delete an enterprise
+ * DELETE /api/enterprise/:enterpriseId
+ */
+exports.deleteEnterprise = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+    const userId = req.user?.uid;
+    
+    // Get user document
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+    
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+    
+    // Authorization check: user must have access to this enterprise
+    if (!userEnterpriseId || userEnterpriseId !== enterpriseId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied to enterprise' 
+      });
+    }
+    
+    // Check if user is enterprise admin
+    if (userData.role !== 'admin' && userData.plan !== 'enterprise') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only enterprise admins can delete enterprise' 
+      });
+    }
+    
+    const enterpriseRef = db.collection('enterprise').doc(enterpriseId);
+    const doc = await enterpriseRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Enterprise not found' 
+      });
+    }
+
+    // TODO: Add validation checks (active subscription, departments, employees, etc.)
+    // For now, allow deletion but log it
+
+    await enterpriseRef.delete();
+
+    // Log activity
+    await logActivity({
+      action: ACTIONS.DELETE,
+      resource: RESOURCES.ENTERPRISE,
+      userId: userId,
+      resourceId: enterpriseId,
+      enterpriseId: enterpriseId,
+      details: {
+        operation: 'delete_enterprise'
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Enterprise deleted successfully',
+      data: {
+        id: enterpriseId
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting enterprise:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete enterprise', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Get enterprise statistics
+ * GET /api/enterprise/:enterpriseId/stats
+ */
+exports.getEnterpriseStats = async (req, res) => {
+  try {
+    const { enterpriseId } = req.params;
+    const userId = req.user?.uid;
+    
+    // Get user document
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+    
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+    
+    // Authorization check: user must have access to this enterprise
+    if (!userEnterpriseId || userEnterpriseId !== enterpriseId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied to enterprise' 
+      });
+    }
+    
+    const doc = await db.collection('enterprise').doc(enterpriseId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Enterprise not found' 
+      });
+    }
+
+    // Get actual stats
+    // Count users in enterprise
+    const usersSnapshot = await db.collection('users')
+      .where('enterpriseRef', '==', db.collection('enterprise').doc(enterpriseId))
+      .get();
+    
+    const totalUsers = usersSnapshot.size;
+    const activeUsers = usersSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.status === 'active' || !data.status;
+    }).length;
+
+    // TODO: Add departments count when departments feature is integrated
+    const stats = {
+      totalUsers,
+      activeUsers,
+      departments: 0, // Placeholder until departments feature is integrated
+      lastActivity: new Date().toISOString()
+    };
+
+    // Log activity
+    await logActivity({
+      action: ACTIONS.VIEW,
+      resource: RESOURCES.ENTERPRISE,
+      userId: userId,
+      resourceId: enterpriseId,
+      enterpriseId: enterpriseId,
+      details: {
+        operation: 'get_enterprise_stats'
+      }
+    });
+
+    res.status(200).json({ 
+      success: true,
+      data: {
+        stats
+      }
+    });
+  } catch (error) {
+    console.error('Error getting enterprise stats:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get enterprise stats', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Get a single invoice/receipt by ID
+ *
+ * GET /api/enterprise/invoices/:invoiceId
+ */
+exports.getInvoiceById = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const userId = req.user?.uid;
+
+    if (!invoiceId || typeof invoiceId !== 'string' || invoiceId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'invoiceId is required'
+      });
+    }
+
+    // Load invoice
+    const invoiceDoc = await db.collection('enterprise_invoices').doc(invoiceId).get();
+    if (!invoiceDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found',
+        message: 'The requested invoice/receipt does not exist.'
+      });
+    }
+
+    const invoiceData = invoiceDoc.data();
+
+    // Authorization: user must belong to this enterprise
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+
+    if (!userEnterpriseId || userEnterpriseId !== invoiceData.enterpriseId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: 'You do not have access to this invoice/receipt.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      invoice: {
+        id: invoiceDoc.id,
+        ...invoiceData
+      }
+    });
+  } catch (error) {
+    console.error('Error getting invoice by ID:', error);
+    await logEnterpriseError('invoice_get_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        invoiceId: req.params.invoiceId,
+        userId: req.user?.uid || null
+      }
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'Failed to load invoice. Please try again later.'
+    });
+  }
+};
+
+/**
+ * Download invoice/receipt PDF
+ *
+ * GET /api/enterprise/invoices/:invoiceId/pdf
+ */
+exports.getInvoicePDF = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const userId = req.user?.uid;
+
+    if (!invoiceId || typeof invoiceId !== 'string' || invoiceId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'invoiceId is required'
+      });
+    }
+
+    // Load invoice
+    const invoiceDoc = await db.collection('enterprise_invoices').doc(invoiceId).get();
+    if (!invoiceDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found',
+        message: 'The requested invoice/receipt does not exist.'
+      });
+    }
+
+    const invoiceData = invoiceDoc.data();
+
+    // Authorization: user must belong to this enterprise
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+
+    if (!userEnterpriseId || userEnterpriseId !== invoiceData.enterpriseId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: 'You do not have access to this invoice/receipt.'
+      });
+    }
+
+    // Generate PDF
+    const { generateInvoicePDF } = require('../utils/invoicePdfGenerator');
+    let pdfBuffer;
+    try {
+      pdfBuffer = await generateInvoicePDF(invoiceData);
+    } catch (pdfError) {
+      console.error('Error generating invoice PDF:', pdfError);
+      await logEnterpriseError('invoice_pdf_generation_failure', {
+        error: pdfError.message,
+        stack: pdfError.stack,
+        context: { invoiceId }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'PDF generation failed',
+        message: 'Unable to generate PDF. Please try again later.'
+      });
+    }
+
+    // Filename: Invoice vs Receipt
+    const date = new Date().toISOString().split('T')[0];
+    const isReceipt = !!invoiceData.isReceipt;
+    const label = isReceipt ? 'Receipt' : 'Invoice';
+    const numberPart = invoiceData.invoiceNumber || invoiceData.receiptNumber || invoiceId;
+    const filename = `XS_Card_${label}_${numberPart}_${date}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error in getInvoicePDF:', error);
+    await logEnterpriseError('invoice_pdf_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        invoiceId: req.params.invoiceId,
+        userId: req.user?.uid || null
+      }
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while generating the PDF. Please try again later.'
+    });
+  }
+};
+
+/**
+ * Email an invoice/receipt PDF on demand
+ *
+ * POST /api/enterprise/invoices/:invoiceId/email
+ * Body (optional): { toEmail?: string }
+ */
+exports.emailInvoice = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const userId = req.user?.uid;
+    const { toEmail } = req.body || {};
+
+    if (!invoiceId || typeof invoiceId !== 'string' || invoiceId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        message: 'invoiceId is required'
+      });
+    }
+
+    // Load invoice
+    const invoiceDoc = await db.collection('enterprise_invoices').doc(invoiceId).get();
+    if (!invoiceDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found',
+        message: 'The requested invoice/receipt does not exist.'
+      });
+    }
+
+    const invoiceData = invoiceDoc.data();
+
+    // Authorization: user must belong to this enterprise
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userData = userDoc.data();
+    const userEnterpriseId = userData.enterpriseRef?.id;
+
+    if (!userEnterpriseId || userEnterpriseId !== invoiceData.enterpriseId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: 'You do not have access to this invoice/receipt.'
+      });
+    }
+
+    // Determine recipient
+    const targetEmail = (toEmail || invoiceData.billTo?.contactEmail || userData.email || '').trim();
+    if (!targetEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'No recipient',
+        message: 'No email address available to send this invoice.'
+      });
+    }
+
+    // Generate PDF buffer
+    const { generateInvoicePDF } = require('../utils/invoicePdfGenerator');
+    const pdfBuffer = await generateInvoicePDF(invoiceData);
+
+    const isReceipt = !!invoiceData.isReceipt;
+    const label = isReceipt ? 'Receipt' : 'Invoice';
+    const numberPart = invoiceData.invoiceNumber || invoiceData.receiptNumber || invoiceId;
+    const filename = `XS_Card_${label}_${numberPart}.pdf`;
+
+    const subject = isReceipt
+      ? `Your XS Card Receipt ${numberPart}`
+      : `Your XS Card Invoice ${numberPart}`;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #111827;">${label}</h2>
+        <p>Dear ${invoiceData.billTo?.contactName || invoiceData.billTo?.companyName || 'Customer'},</p>
+        <p>Please find your ${label.toLowerCase()} attached.</p>
+        <p><strong>${label} number:</strong> ${numberPart}<br/>
+           <strong>Amount ${isReceipt ? 'paid' : 'due'}:</strong> ${invoiceData.currency || 'ZAR'} ${(invoiceData.total / 100).toFixed(2)}</p>
+        <p>If you have any questions, please reply to this email.</p>
+        <p>Best regards,<br/>XS Card</p>
+      </div>
+    `;
+
+    const mailOptions = {
+      to: targetEmail,
+      subject,
+      html,
+      text: `${label} ${numberPart} - Amount ${isReceipt ? 'paid' : 'due'}: ${(invoiceData.total / 100).toFixed(2)}`,
+      attachments: [
+        {
+          filename,
+          content: pdfBuffer
+        }
+      ]
+    };
+
+    const emailResult = await sendMailWithStatus(mailOptions);
+
+    if (!emailResult || emailResult.success === false) {
+      await logEnterpriseError('invoice_email_failure', {
+        error: emailResult?.error || 'Unknown email failure',
+        context: {
+          invoiceId,
+          invoiceNumber: invoiceData.invoiceNumber || null,
+          receiptNumber: invoiceData.receiptNumber || null,
+          to: targetEmail,
+          provider: emailResult?.provider || null
+        }
+      });
+
+      return res.status(500).json({
+        success: false,
+        error: 'Email failed',
+        message: 'Failed to send invoice email. Please try again later.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${label} emailed successfully`,
+      to: targetEmail,
+      provider: emailResult.provider || null
+    });
+  } catch (error) {
+    console.error('Error emailing invoice:', error);
+    await logEnterpriseError('invoice_email_unexpected_error', {
+      error: error.message,
+      stack: error.stack,
+      context: {
+        invoiceId: req.params.invoiceId,
+        userId: req.user?.uid || null
+      }
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while emailing the invoice. Please try again later.'
+    });
+  }
+};

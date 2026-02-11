@@ -17,32 +17,75 @@ const { sendMailWithStatus } = require('../public/Utils/emailService');
  */
 async function sendSubscriptionEmail(type, enterpriseAccount, data = {}) {
   try {
-    const email = enterpriseAccount.contactEmail;
+    // For welcome emails, send to TEST_EMAIL if set (for testing)
+    const testEmail = process.env.TEST_EMAIL;
+    const email = (type === 'welcome' && testEmail) ? testEmail : enterpriseAccount.contactEmail;
     const companyName = enterpriseAccount.companyName;
     
     if (!email) {
       throw new Error('Contact email is required');
+    }
+    
+    if (type === 'welcome' && testEmail) {
+      console.log(`📧 Sending welcome email to TEST_EMAIL (${testEmail}) for testing`);
     }
 
     let subject, htmlBody, textBody;
 
     switch (type) {
       case 'welcome':
+        const enterpriseWebsiteUrl = 'https://staging.xscard.co.za';
+        const registrationFormUrl = `${enterpriseWebsiteUrl}/enterprise-registration.html?enterpriseId=${encodeURIComponent(enterpriseAccount.enterpriseId)}&enterpriseName=${encodeURIComponent(companyName)}`;
+        
         subject = `Welcome to Enterprise Subscription - ${companyName}`;
         htmlBody = `
-          <h2>Welcome to Enterprise Subscription!</h2>
-          <p>Dear ${enterpriseAccount.contactName},</p>
-          <p>Your enterprise subscription for <strong>${companyName}</strong> has been activated successfully.</p>
-          <p><strong>Subscription Details:</strong></p>
-          <ul>
-            <li>Number of Employees: ${enterpriseAccount.numberOfEmployees}</li>
-            <li>Subscription Type: Annual</li>
-            <li>Status: Active</li>
-            <li>Next Billing Date: ${enterpriseAccount.nextBillingDate?.toDate().toLocaleDateString() || 'N/A'}</li>
-          </ul>
-          <p>Thank you for choosing our enterprise solution!</p>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #f5f5f5; padding: 20px; text-align: center;">
+              <h1 style="color: #333; margin: 0;">XS Card Enterprise</h1>
+            </div>
+            
+            <div style="padding: 20px; background-color: #fff;">
+              <h2 style="color: #333;">Welcome to Enterprise Subscription!</h2>
+              <p>Dear ${enterpriseAccount.contactName},</p>
+              <p>Your enterprise subscription for <strong>${companyName}</strong> has been activated successfully.</p>
+              
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <h3 style="color: #333; margin-top: 0;">Subscription Details:</h3>
+                <ul style="color: #333; line-height: 1.8;">
+                  <li>Number of Employees: ${enterpriseAccount.numberOfEmployees}</li>
+                  <li>Subscription Type: Annual</li>
+                  <li>Status: Active</li>
+                  <li>Next Billing Date: ${enterpriseAccount.nextBillingDate?.toDate().toLocaleDateString() || 'N/A'}</li>
+                </ul>
+              </div>
+              
+              <div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <h3 style="color: #4CAF50; margin-top: 0;">Next Steps</h3>
+                <p style="color: #333;">To complete your enterprise account setup, please create your admin account:</p>
+                <p style="text-align: center; margin: 20px 0;">
+                  <a href="${registrationFormUrl}" style="display: inline-block; padding: 12px 24px; background-color: #ff4b6e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">Create Admin Account</a>
+                </p>
+                <p style="color: #666; font-size: 13px; margin-top: 15px;">
+                  Or visit: <a href="${enterpriseWebsiteUrl}" style="color: #ff4b6e;">${enterpriseWebsiteUrl}</a>
+                </p>
+              </div>
+              
+              <p style="color: #666; margin-top: 20px;">
+                Thank you for choosing our enterprise solution!
+              </p>
+              
+              <p style="color: #666;">
+                Best regards,<br>
+                The XS Card Team
+              </p>
+            </div>
+            
+            <div style="background-color: #f5f5f5; padding: 20px; text-align: center; font-size: 12px; color: #666;">
+              <p>&copy; ${new Date().getFullYear()} XS Card. All Rights Reserved.</p>
+            </div>
+          </div>
         `;
-        textBody = `Welcome to Enterprise Subscription!\n\nDear ${enterpriseAccount.contactName},\n\nYour enterprise subscription for ${companyName} has been activated successfully.\n\nSubscription Details:\n- Number of Employees: ${enterpriseAccount.numberOfEmployees}\n- Subscription Type: Annual\n- Status: Active\n- Next Billing Date: ${enterpriseAccount.nextBillingDate?.toDate().toLocaleDateString() || 'N/A'}\n\nThank you for choosing our enterprise solution!`;
+        textBody = `Welcome to Enterprise Subscription!\n\nDear ${enterpriseAccount.contactName},\n\nYour enterprise subscription for ${companyName} has been activated successfully.\n\nSubscription Details:\n- Number of Employees: ${enterpriseAccount.numberOfEmployees}\n- Subscription Type: Annual\n- Status: Active\n- Next Billing Date: ${enterpriseAccount.nextBillingDate?.toDate().toLocaleDateString() || 'N/A'}\n\nNext Steps:\nTo complete your enterprise account setup, please create your admin account:\n${registrationFormUrl}\n\nOr visit: ${enterpriseWebsiteUrl}\n\nThank you for choosing our enterprise solution!`;
         break;
 
       case 'payment_succeeded':

@@ -8,7 +8,8 @@
 const express = require('express');
 const router = express.Router();
 const { 
-  generateQuote, 
+  generateQuote,
+  getQuotePDF,
   getActiveQuotesByEmail,
   handleQuotePaymentEntry,
   initializeSubscription, 
@@ -20,9 +21,14 @@ const {
 } = require('../controllers/enterpriseController');
 const { quoteRateLimit } = require('../middleware/quoteRateLimit');
 const { paymentInitRateLimit } = require('../middleware/paymentInitRateLimit');
+const { authenticateUser } = require('../middleware/auth');
+const activityLogController = require('../controllers/activityLogController');
 
 // Phase 2: Quote Generation
 router.post('/api/enterprise/quote', quoteRateLimit, generateQuote);
+
+// Phase 2: Get quote PDF
+router.get('/api/enterprise/quotes/:quoteId/pdf', getQuotePDF);
 
 // Phase 2: Find active quotes by contact email
 router.get('/api/enterprise/quotes/by-email', getActiveQuotesByEmail);
@@ -84,6 +90,37 @@ router.get('/api/enterprise/health', (req, res) => {
     phase: 7
   });
 });
+
+// Phase 1: Activity Log routes
+router.get('/api/activity-logs/action/:action', authenticateUser, activityLogController.getByAction);
+router.get('/api/activity-logs/resource/:resource', authenticateUser, activityLogController.getByResource);
+router.get('/api/activity-logs/user/:userId', authenticateUser, activityLogController.getByUser);
+router.get('/api/activity-logs/enterprise/:enterpriseId', authenticateUser, activityLogController.getByEnterprise);
+router.get('/api/activity-logs/time-range', authenticateUser, activityLogController.getByTimeRange);
+router.get('/api/activity-logs/export', authenticateUser, activityLogController.exportActivities);
+
+// Phase 1: Enterprise CRUD operations
+const { 
+  getAllEnterprises,
+  getEnterpriseById,
+  updateEnterprise,
+  deleteEnterprise,
+  getEnterpriseStats,
+  getInvoiceById,
+  getInvoicePDF,
+  emailInvoice
+} = require('../controllers/enterpriseController');
+
+router.get('/api/enterprise', authenticateUser, getAllEnterprises);
+router.get('/api/enterprise/:enterpriseId', authenticateUser, getEnterpriseById);
+router.put('/api/enterprise/:enterpriseId', authenticateUser, updateEnterprise);
+router.delete('/api/enterprise/:enterpriseId', authenticateUser, deleteEnterprise);
+router.get('/api/enterprise/:enterpriseId/stats', authenticateUser, getEnterpriseStats);
+
+// Phase 4: Invoice & Receipt APIs
+router.get('/api/enterprise/invoices/:invoiceId', authenticateUser, getInvoiceById);
+router.get('/api/enterprise/invoices/:invoiceId/pdf', authenticateUser, getInvoicePDF);
+router.post('/api/enterprise/invoices/:invoiceId/email', authenticateUser, emailInvoice);
 
 module.exports = router;
 

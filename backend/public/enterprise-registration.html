@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Registration - XS Card</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            color: #222;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        label .required {
+            color: #ff4b6e;
+        }
+        
+        input[type="text"],
+        input[type="email"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #ff4b6e;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            margin-top: 4px;
+        }
+        
+        .checkbox-group label {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+        }
+        
+        .checkbox-group label a {
+            color: #ff4b6e;
+            text-decoration: none;
+        }
+        
+        .checkbox-group label a:hover {
+            text-decoration: underline;
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: #ff4b6e;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .submit-btn:hover {
+            background: #e63950;
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .error-message {
+            color: #ff4b6e;
+            font-size: 13px;
+            margin-top: 5px;
+            display: none;
+        }
+        
+        .success-message {
+            background: #e8f5e8;
+            color: #4CAF50;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .info-box {
+            background: #f0f7ff;
+            border-left: 4px solid #ff4b6e;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .info-box p {
+            font-size: 13px;
+            color: #333;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Enterprise Account Registration</h1>
+            <p>Complete your enterprise account setup</p>
+        </div>
+        
+        <div id="successMessage" class="success-message">
+            Registration successful! You will be redirected shortly.
+        </div>
+        
+        <div class="info-box" id="enterpriseInfo" style="display: none;">
+            <p><strong>Enterprise:</strong> <span id="enterpriseName"></span></p>
+        </div>
+        
+        <form id="registrationForm">
+            <input type="hidden" id="enterpriseId" name="enterpriseId" value="">
+            
+            <div class="form-group">
+                <label for="name">First Name <span class="required">*</span></label>
+                <input type="text" id="name" name="name" required>
+                <div class="error-message" id="nameError"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="surname">Last Name <span class="required">*</span></label>
+                <input type="text" id="surname" name="surname" required>
+                <div class="error-message" id="surnameError"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email Address <span class="required">*</span></label>
+                <input type="email" id="email" name="email" required>
+                <div class="error-message" id="emailError"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password <span class="required">*</span></label>
+                <input type="password" id="password" name="password" required minlength="6">
+                <div class="error-message" id="passwordError"></div>
+            </div>
+            
+            <div class="checkbox-group">
+                <input type="checkbox" id="termsAccepted" name="termsAccepted" required>
+                <label for="termsAccepted">
+                    I accept the <a href="/termsOfUse.html" target="_blank">Terms of Use</a> <span class="required">*</span>
+                </label>
+            </div>
+            
+            <div class="checkbox-group">
+                <input type="checkbox" id="privacyAccepted" name="privacyAccepted" required>
+                <label for="privacyAccepted">
+                    I accept the <a href="/privacyPolicy.html" target="_blank">Privacy Policy</a> <span class="required">*</span>
+                </label>
+            </div>
+            
+            <button type="submit" class="submit-btn" id="submitBtn">Create Account</button>
+        </form>
+    </div>
+    
+    <script>
+        // Get enterpriseId from URL query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const enterpriseId = urlParams.get('enterpriseId');
+        const enterpriseName = urlParams.get('enterpriseName');
+        
+        if (enterpriseId) {
+            document.getElementById('enterpriseId').value = enterpriseId;
+        }
+        
+        if (enterpriseName) {
+            document.getElementById('enterpriseName').textContent = enterpriseName;
+            document.getElementById('enterpriseInfo').style.display = 'block';
+        }
+        
+        // Form submission
+        document.getElementById('registrationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating Account...';
+            
+            // Clear previous errors
+            document.querySelectorAll('.error-message').forEach(el => {
+                el.style.display = 'none';
+                el.textContent = '';
+            });
+            
+            const formData = {
+                name: document.getElementById('name').value.trim(),
+                surname: document.getElementById('surname').value.trim(),
+                email: document.getElementById('email').value.trim().toLowerCase(),
+                password: document.getElementById('password').value,
+                termsAccepted: document.getElementById('termsAccepted').checked,
+                privacyAccepted: document.getElementById('privacyAccepted').checked,
+                legalAcceptedAt: new Date().toISOString(),
+                status: 'active',
+                enterpriseId: enterpriseId || ''
+            };
+            
+            try {
+                const response = await fetch('/api/users/AddUser', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.status) {
+                    // Success
+                    document.getElementById('successMessage').style.display = 'block';
+                    document.getElementById('registrationForm').style.display = 'none';
+                    
+                    // Redirect after 2 seconds
+                    setTimeout(() => {
+                        window.location.href = 'https://staging.xscard.co.za';
+                    }, 2000);
+                } else {
+                    // Error
+                    const errorMsg = result.message || result.error || 'Registration failed. Please try again.';
+                    showError('email', errorMsg);
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Create Account';
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                showError('email', 'An error occurred. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account';
+            }
+        });
+        
+        function showError(field, message) {
+            const errorEl = document.getElementById(field + 'Error');
+            if (errorEl) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

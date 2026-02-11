@@ -22,6 +22,15 @@ const MAX_EMPLOYEES = parseInt(process.env.ENTERPRISE_MAX_EMPLOYEES || '10000', 
  *   numberOfEmployees: number,    // Number of employees (1-{MAX_EMPLOYEES}, integer)
  *   calculatedPrice: number,      // Price in cents (kobo)
  *   currency: 'ZAR' | 'USD',     // Currency code
+ *   billingAddress: {             // Billing address (required)
+ *     street: string,
+ *     building: string,           // Optional (e.g., "Building 2, Randjespark")
+ *     city: string,
+ *     province: string,           // Optional
+ *     postalCode: string,
+ *     country: string
+ *   },
+ *   vatNumber: string,            // Customer VAT number (optional)
  *   quoteStatus: 'pending' | 'accepted' | 'expired' | 'paid',
  *   paymentReference: string,     // Paystack payment reference (when payment initialized)
  *   paymentUrl: string,           // Paystack payment URL
@@ -52,6 +61,8 @@ const ENTERPRISE_QUOTES_SCHEMA = {
     numberOfEmployees: { type: 'number', required: true, min: 1, max: MAX_EMPLOYEES, integer: true },
     calculatedPrice: { type: 'number', required: true, min: 0 },
     currency: { type: 'string', required: true, enum: ['ZAR', 'USD'] },
+    billingAddress: { type: 'object', required: true },
+    vatNumber: { type: 'string', required: false },
     quoteStatus: { type: 'string', required: true, enum: ['pending', 'accepted', 'expired', 'paid'] },
     paymentReference: { type: 'string', required: false },
     paymentUrl: { type: 'string', required: false },
@@ -219,6 +230,115 @@ const ERROR_LOGS_SCHEMA = {
 };
 
 /**
+ * Collection: enterprise_invoices
+ * 
+ * Stores invoices and receipts for enterprise subscriptions.
+ * Uses single collection with isReceipt flag to distinguish invoices from receipts.
+ * 
+ * Schema:
+ * {
+ *   invoiceId: string,            // Unique invoice ID (format: "inv_{timestamp}_{random}")
+ *   invoiceNumber: string,         // Sequential invoice number (e.g., "INV-2025-001")
+ *   receiptNumber: string,         // Receipt number (e.g., "RCP-2736-3055") - only when paid
+ *   quoteId: string,               // Reference to original quote (if converted from quote)
+ *   enterpriseId: string,          // Reference to enterprise account (if applicable)
+ *   
+ *   // Company Info (XSCard) - fetched from env vars
+ *   companyInfo: {
+ *     name: string,
+ *     address: { street, city, province, postalCode, country },
+ *     phone: string,
+ *     email: string,
+ *     vatNumber: string (optional)
+ *   },
+ *   
+ *   // Bill To (Customer) - reused from quote
+ *   billTo: {
+ *     companyName: string,
+ *     contactName: string,
+ *     contactEmail: string,
+ *     address: { street, building, city, province, postalCode, country },
+ *     vatNumber: string (optional)
+ *   },
+ *   
+ *   // Line Items
+ *   lineItems: [{
+ *     description: string,
+ *     quantity: number,
+ *     unitPrice: number,          // in cents
+ *     amount: number               // in cents
+ *   }],
+ *   
+ *   // Pricing
+ *   subtotal: number,             // in cents
+ *   tax: number,                   // in cents (0 if no tax)
+ *   total: number,                 // in cents
+ *   amountPaid: number,            // in cents
+ *   currency: 'ZAR' | 'USD',
+ *   
+ *   // Dates
+ *   invoiceDate: Timestamp,
+ *   dueDate: Timestamp,            // null for receipts
+ *   datePaid: Timestamp,           // null for invoices
+ *   
+ *   // Payment
+ *   paymentReference: string,      // Paystack payment reference
+ *   paymentMethod: string,          // "Visa - 4043" (optional, fetched when paid)
+ *   
+ *   // Status
+ *   invoiceStatus: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
+ *   isReceipt: boolean,            // true if receipt, false if invoice
+ *   
+ *   // Metadata
+ *   metadata: {
+ *     subscriptionType: string,
+ *     numberOfEmployees: number
+ *   },
+ *   
+ *   createdAt: Timestamp,
+ *   updatedAt: Timestamp
+ * }
+ * 
+ * Indexes:
+ * - invoiceId (unique)
+ * - invoiceNumber (unique)
+ * - receiptNumber (unique, when present)
+ * - quoteId (for quote lookups)
+ * - enterpriseId (for enterprise lookups)
+ * - invoiceStatus (for filtering)
+ * - isReceipt (for filtering)
+ * - Composite: enterpriseId + invoiceStatus
+ */
+const ENTERPRISE_INVOICES_SCHEMA = {
+  collection: 'enterprise_invoices',
+  fields: {
+    invoiceId: { type: 'string', required: true, unique: true },
+    invoiceNumber: { type: 'string', required: true, unique: true },
+    receiptNumber: { type: 'string', required: false, unique: true },
+    quoteId: { type: 'string', required: false },
+    enterpriseId: { type: 'string', required: false },
+    companyInfo: { type: 'object', required: true },
+    billTo: { type: 'object', required: true },
+    lineItems: { type: 'array', required: true },
+    subtotal: { type: 'number', required: true, min: 0 },
+    tax: { type: 'number', required: true, min: 0 },
+    total: { type: 'number', required: true, min: 0 },
+    amountPaid: { type: 'number', required: true, min: 0 },
+    currency: { type: 'string', required: true, enum: ['ZAR', 'USD'] },
+    invoiceDate: { type: 'timestamp', required: true },
+    dueDate: { type: 'timestamp', required: false },
+    datePaid: { type: 'timestamp', required: false },
+    paymentReference: { type: 'string', required: false },
+    paymentMethod: { type: 'string', required: false },
+    invoiceStatus: { type: 'string', required: true, enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'] },
+    isReceipt: { type: 'boolean', required: true },
+    metadata: { type: 'object', required: false },
+    createdAt: { type: 'timestamp', required: true },
+    updatedAt: { type: 'timestamp', required: true }
+  }
+};
+
+/**
  * Initialize enterprise collections (create if they don't exist)
  * 
  * Note: Firestore collections are created automatically on first write.
@@ -234,6 +354,7 @@ async function initializeEnterpriseCollections() {
       'enterprise_quotes',
       'enterprise_accounts',
       'enterprise_plans',
+      'enterprise_invoices',
       'error_logs'
     ];
 
@@ -276,6 +397,7 @@ module.exports = {
   ENTERPRISE_QUOTES_SCHEMA,
   ENTERPRISE_ACCOUNTS_SCHEMA,
   ENTERPRISE_PLANS_SCHEMA,
+  ENTERPRISE_INVOICES_SCHEMA,
   ERROR_LOGS_SCHEMA,
   initializeEnterpriseCollections
 };

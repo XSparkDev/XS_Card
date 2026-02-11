@@ -167,7 +167,8 @@ exports.addUser = async (req, res) => {
         status = 'active',
         termsAccepted = false,
         privacyAccepted = false,
-        legalAcceptedAt
+        legalAcceptedAt,
+        enterpriseId  // Optional: for enterprise user registration
     } = req.body;
     
     try {
@@ -189,6 +190,24 @@ exports.addUser = async (req, res) => {
             }
         }
         
+        // Validate enterprise if enterpriseId is provided
+        let enterpriseRef = null;
+        let enterpriseData = null;
+        if (enterpriseId) {
+            enterpriseRef = db.collection('enterprise').doc(enterpriseId);
+            const enterpriseDoc = await enterpriseRef.get();
+            
+            if (!enterpriseDoc.exists) {
+                return res.status(400).send({
+                    message: 'Invalid enterprise ID. The enterprise does not exist.',
+                    code: 'INVALID_ENTERPRISE_ID'
+                });
+            }
+            
+            enterpriseData = enterpriseDoc.data();
+            console.log('Enterprise found:', enterpriseData.name);
+        }
+        
         // Create user in Firebase Auth
         const userRecord = await admin.auth().createUser({
             email: email,
@@ -206,7 +225,7 @@ exports.addUser = async (req, res) => {
             surname,
             email,
             status,
-            plan: 'free', // Default plan
+            plan: enterpriseId ? 'enterprise' : 'free', // Enterprise plan if enterpriseId provided
             createdAt: admin.firestore.Timestamp.now(), // Changed to Firestore Timestamp
             isEmailVerified: false,
             verificationToken,
@@ -215,16 +234,51 @@ exports.addUser = async (req, res) => {
             legalAcceptedAt: legalAcceptedTimestamp
         };
 
+        // Add enterprise linking if enterpriseId is provided
+        if (enterpriseId && enterpriseRef) {
+            userData.enterpriseRef = enterpriseRef; // Firestore DocumentReference
+            userData.role = 'admin'; // Enterprise admin role (from other server pattern)
+            console.log('Linking user to enterprise:', enterpriseId);
+        }
+
         const responseData = {
             ...userData,
             createdAt: formatDate(userData.createdAt), // Format for display
             legalAcceptedAt: formatDate(legalAcceptedTimestamp)
         };
 
-        // Store user data in Firestore
-        console.log('Storing user data in Firestore, document ID:', userRecord.uid);
-        await db.collection('users').doc(userRecord.uid).set(userData);
-        console.log('User data stored successfully in Firestore');
+        // Use batch write for atomicity if enterprise linking is involved
+        if (enterpriseId && enterpriseRef) {
+            const batch = db.batch();
+            
+            // Store user data in Firestore
+            const userRef = db.collection('users').doc(userRecord.uid);
+            batch.set(userRef, userData);
+            
+            // Create user in enterprise subcollection (other server pattern)
+            const enterpriseUserRef = enterpriseRef.collection('users').doc(userRecord.uid);
+            const enterpriseUserData = {
+                id: userRecord.uid,
+                firstName: name,
+                lastName: surname,
+                email: email,
+                role: 'admin', // Enterprise admin
+                status: 'active',
+                individualPermissions: { removed: [], added: [] },
+                createdAt: admin.firestore.Timestamp.now(),
+                updatedAt: admin.firestore.Timestamp.now()
+            };
+            batch.set(enterpriseUserRef, enterpriseUserData);
+            
+            // Commit atomic transaction
+            await batch.commit();
+            console.log('User data and enterprise user record stored atomically');
+        } else {
+            // Store user data in Firestore (non-enterprise user)
+            console.log('Storing user data in Firestore, document ID:', userRecord.uid);
+            await db.collection('users').doc(userRecord.uid).set(userData);
+            console.log('User data stored successfully in Firestore');
+        }
 
         // Send verification email
         const verificationLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}&uid=${userRecord.uid}`;
@@ -244,12 +298,16 @@ exports.addUser = async (req, res) => {
         console.log('Verification email sent to:', email);
         
         res.status(201).send({ 
-            message: 'User added successfully. Please check your email to verify your account.',
+            status: true, // Match other server response pattern
+            message: enterpriseId 
+                ? 'Enterprise admin account created successfully. Please check your email to verify your account.'
+                : 'User added successfully. Please check your email to verify your account.',
             userId: userRecord.uid,
             userData: {
                 ...responseData,
                 verificationToken: undefined // Don't send token in response
-            }
+            },
+            ...(enterpriseId ? { enterpriseId: enterpriseId } : {})
         });
     } catch (error) {
         console.error('Error adding user:', error);

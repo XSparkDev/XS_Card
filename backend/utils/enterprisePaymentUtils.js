@@ -12,6 +12,9 @@ const https = require('https');
 const { db, admin } = require('../firebase');
 const { getRequestOptions } = require('../config/paystack');
 const { logPlanCreationFailure, logEnterpriseError } = require('./enterpriseErrorLogger');
+const { MIN_RETRIES, MAX_RETRIES } = require('../config/enterpriseRetryConfig');
+const { buildEnterpriseDocumentData } = require('./enterpriseDocumentHelpers');
+const { logManualInterventionRequired, sendManualInterventionEmails } = require('./enterpriseManualIntervention');
 
 /**
  * Create a Paystack plan
@@ -560,17 +563,35 @@ async function getPaystackSubscriptionStatus(subscriptionCode) {
 /**
  * Create enterprise account with retry logic (atomic transaction)
  * 
- * Creates account and updates quote status in a single atomic transaction.
+ * Creates account, enterprise document, and updates quote status in a single atomic transaction.
  * Retries on failure with exponential backoff.
  * 
  * @param {object} accountData - Account data to create
  * @param {object} quoteRef - Firestore reference to quote document
- * @param {number} maxRetries - Maximum retry attempts (default: 3)
+ * @param {object} quoteData - Quote data (for building enterprise document)
+ * @param {number} maxRetries - Maximum retry attempts (default: MAX_RETRIES from config)
  * @returns {Promise<string>} - Enterprise ID
  * @throws {Error} - If account creation fails after retries
  */
-async function createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetries = 3) {
+async function createEnterpriseAccountWithRetry(accountData, quoteRef, quoteData, maxRetries = MAX_RETRIES) {
   let attempts = 0;
+
+  // Check idempotency - if enterprise document already exists, skip creation
+  const enterpriseRef = db.collection('enterprise').doc(accountData.enterpriseId);
+  const enterpriseDoc = await enterpriseRef.get();
+  if (enterpriseDoc.exists) {
+    console.log(`✅ Enterprise document already exists: ${accountData.enterpriseId} - skipping creation`);
+    // Still update quote status if needed
+    const quoteDoc = await quoteRef.get();
+    if (quoteDoc.exists && quoteDoc.data().quoteStatus !== 'paid') {
+      await quoteRef.update({
+        quoteStatus: 'paid',
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    return accountData.enterpriseId;
+  }
 
   while (attempts < maxRetries) {
     try {
@@ -579,6 +600,10 @@ async function createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetrie
 
       // Set account data
       batch.set(accountRef, accountData);
+
+      // Build and set enterprise document data
+      const enterpriseData = buildEnterpriseDocumentData(accountData, quoteData);
+      batch.set(enterpriseRef, enterpriseData);
 
       // Update quote status to 'paid'
       batch.update(quoteRef, {
@@ -590,7 +615,7 @@ async function createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetrie
       // Commit atomic transaction
       await batch.commit();
 
-      console.log(`✅ Enterprise account created: ${accountData.enterpriseId}`);
+      console.log(`✅ Enterprise account and document created: ${accountData.enterpriseId}`);
       return accountData.enterpriseId;
     } catch (error) {
       attempts++;
@@ -609,10 +634,36 @@ async function createEnterpriseAccountWithRetry(accountData, quoteRef, maxRetrie
       });
 
       if (attempts === maxRetries) {
+        // All retries exhausted - log for manual intervention and send emails
+        console.error(`🚨 All retry attempts exhausted for ${accountData.enterpriseId}. Manual intervention required.`);
+        
+        // Log manual intervention (non-blocking - don't fail if this errors)
+        try {
+          await logManualInterventionRequired(
+            accountData.enterpriseId,
+            accountData,
+            quoteData,
+            error.message,
+            attempts
+          );
+        } catch (logError) {
+          console.error('Failed to log manual intervention:', logError.message);
+          // Continue - don't fail if logging fails
+        }
+        
+        // Send emails (non-blocking - don't fail if this errors)
+        try {
+          await sendManualInterventionEmails(accountData.enterpriseId, accountData, quoteData);
+        } catch (emailError) {
+          console.error('Failed to send manual intervention emails:', emailError.message);
+          // Continue - don't fail if emails fail
+        }
+        
+        // Still throw error (preserve existing error handling)
         throw new Error(`Failed to create enterprise account after ${maxRetries} attempts: ${error.message}`);
       }
 
-      // Exponential backoff: 1s, 2s, 4s
+      // Exponential backoff: 1s, 2s, 4s, 8s, etc.
       const backoffDelay = 1000 * Math.pow(2, attempts - 1);
       console.log(`Retrying account creation in ${backoffDelay}ms...`);
       await new Promise(resolve => setTimeout(resolve, backoffDelay));

@@ -295,6 +295,104 @@ function validateCurrency(currency) {
 }
 
 /**
+ * Validate billing address
+ * 
+ * Rules:
+ * - Required
+ * - Must be an object with required fields
+ * 
+ * @param {Object} address - Billing address object
+ * @returns {{isValid: boolean, error?: string}} - Validation result
+ */
+function validateBillingAddress(address) {
+  if (!address || typeof address !== 'object') {
+    return {
+      isValid: false,
+      error: 'Billing address is required'
+    };
+  }
+
+  const requiredFields = ['street', 'city', 'postalCode', 'country'];
+  const missing = requiredFields.filter(field => !address[field] || typeof address[field] !== 'string' || address[field].trim().length === 0);
+
+  if (missing.length > 0) {
+    return {
+      isValid: false,
+      error: `Billing address missing required fields: ${missing.join(', ')}`
+    };
+  }
+
+  // Validate field lengths
+  if (address.street && address.street.trim().length > 200) {
+    return {
+      isValid: false,
+      error: 'Street address must be 200 characters or less'
+    };
+  }
+
+  if (address.city && address.city.trim().length > 100) {
+    return {
+      isValid: false,
+      error: 'City must be 100 characters or less'
+    };
+  }
+
+  if (address.postalCode && address.postalCode.trim().length > 20) {
+    return {
+      isValid: false,
+      error: 'Postal code must be 20 characters or less'
+    };
+  }
+
+  if (address.country && address.country.trim().length > 100) {
+    return {
+      isValid: false,
+      error: 'Country must be 100 characters or less'
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validate VAT number
+ * 
+ * Rules:
+ * - Optional
+ * - If provided, must be a non-empty string
+ * - Max 50 characters
+ * 
+ * @param {string} vatNumber - VAT number
+ * @returns {{isValid: boolean, error?: string}} - Validation result
+ */
+function validateVATNumber(vatNumber) {
+  // VAT number is optional
+  if (!vatNumber) {
+    return { isValid: true };
+  }
+
+  if (typeof vatNumber !== 'string') {
+    return {
+      isValid: false,
+      error: 'VAT number must be a string'
+    };
+  }
+
+  if (vatNumber.trim().length === 0) {
+    return { isValid: true }; // Empty string treated as no VAT number
+  }
+
+  if (vatNumber.trim().length > 50) {
+    return {
+      isValid: false,
+      error: 'VAT number must be 50 characters or less'
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
  * Validate complete enterprise quote data
  * 
  * Validates all fields required for quote generation.
@@ -304,6 +402,8 @@ function validateCurrency(currency) {
  * @param {string} data.contactName - Contact person name
  * @param {string} data.contactEmail - Contact email
  * @param {number} data.numberOfEmployees - Number of employees
+ * @param {Object} data.billingAddress - Billing address (required)
+ * @param {string} [data.vatNumber] - VAT number (optional)
  * @param {string} [data.currency] - Currency code (optional, defaults to 'ZAR')
  * @returns {{isValid: boolean, errors: string[]}} - Validation result with array of errors
  */
@@ -334,6 +434,18 @@ function validateEnterpriseQuote(data) {
     errors.push(employeesResult.error);
   }
 
+  // Validate billing address (required)
+  const addressResult = validateBillingAddress(data.billingAddress);
+  if (!addressResult.isValid) {
+    errors.push(addressResult.error);
+  }
+
+  // Validate VAT number (optional)
+  const vatResult = validateVATNumber(data.vatNumber);
+  if (!vatResult.isValid) {
+    errors.push(vatResult.error);
+  }
+
   // Validate currency (optional)
   const currencyResult = validateCurrency(data.currency);
   if (!currencyResult.isValid) {
@@ -352,6 +464,8 @@ module.exports = {
   validateEmail,
   validateNumberOfEmployees,
   validateCurrency,
+  validateBillingAddress,
+  validateVATNumber,
   validateEnterpriseQuote
 };
 

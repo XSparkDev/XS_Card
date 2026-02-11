@@ -1,0 +1,410 @@
+{
+	"info": {
+		"_postman_id": "enterprise-phase1-crud-activitylogs",
+		"name": "Enterprise Phase 1 - CRUD & Activity Logs",
+		"description": "Postman collection for testing Phase 1 enterprise features:\n- Activity Log endpoints\n- Enterprise CRUD operations\n\nPrerequisites:\n- Server running on http://localhost:8383\n- Valid enterprise user with enterpriseId\n- Authentication token from SignIn endpoint",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8383",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "enterpriseId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Sign In",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const responseJson = pm.response.json();",
+									"    pm.collectionVariables.set('authToken', responseJson.token);",
+									"    pm.collectionVariables.set('userId', responseJson.user.uid);",
+									"    if (responseJson.user.enterpriseRef) {",
+									"        pm.collectionVariables.set('enterpriseId', responseJson.user.enterpriseRef.id);",
+									"    } else if (responseJson.user.enterpriseId) {",
+									"        pm.collectionVariables.set('enterpriseId', responseJson.user.enterpriseId);",
+									"    }",
+									"    console.log('Auth token saved:', responseJson.token);",
+									"    console.log('User ID saved:', responseJson.user.uid);",
+									"    console.log('Enterprise ID saved:', pm.collectionVariables.get('enterpriseId') || 'None');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"pule@xspark.co.za\",\n    \"password\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/SignIn",
+							"host": ["{{baseUrl}}"],
+							"path": ["SignIn"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Activity Logs",
+			"item": [
+				{
+					"name": "Get Activities by Action",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/activity-logs/action/view?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "activity-logs", "action", "view"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "order",
+									"value": "desc",
+									"disabled": true
+								},
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								},
+								{
+									"key": "resource",
+									"value": "enterprise",
+									"disabled": true
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Activities by Resource",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/activity-logs/resource/enterprise?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "activity-logs", "resource", "enterprise"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "action",
+									"value": "view",
+									"disabled": true
+								},
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Activities by User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/activity-logs/user/{{userId}}?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "activity-logs", "user", "{{userId}}"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Activities by Enterprise",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/activity-logs/enterprise/{{enterpriseId}}?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "activity-logs", "enterprise", "{{enterpriseId}}"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Activities by Time Range",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/activity-logs/time-range?startTime=2024-01-01T00:00:00.000Z&endTime=2024-12-31T23:59:59.999Z&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "activity-logs", "time-range"],
+							"query": [
+								{
+									"key": "startTime",
+									"value": "2024-01-01T00:00:00.000Z"
+								},
+								{
+									"key": "endTime",
+									"value": "2024-12-31T23:59:59.999Z"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Export Activities (CSV)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/activity-logs/export?limit=100",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "activity-logs", "export"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "100"
+								},
+								{
+									"key": "action",
+									"value": "view",
+									"disabled": true
+								},
+								{
+									"key": "resource",
+									"value": "enterprise",
+									"disabled": true
+								},
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								},
+								{
+									"key": "enterpriseId",
+									"value": "{{enterpriseId}}",
+									"disabled": true
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Enterprise CRUD",
+			"item": [
+				{
+					"name": "Get All Enterprises",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise"]
+						}
+					}
+				},
+				{
+					"name": "Get Enterprise by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise/{{enterpriseId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise", "{{enterpriseId}}"]
+						}
+					}
+				},
+				{
+					"name": "Get Enterprise Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise/{{enterpriseId}}/stats",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise", "{{enterpriseId}}", "stats"]
+						}
+					}
+				},
+				{
+					"name": "Update Enterprise",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"description\": \"Updated description - Test\",\n    \"industry\": \"Technology\",\n    \"website\": \"https://example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise/{{enterpriseId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise", "{{enterpriseId}}"]
+						}
+					}
+				},
+				{
+					"name": "Delete Enterprise (DESTRUCTIVE)",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise/{{enterpriseId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise", "{{enterpriseId}}"]
+						},
+						"description": "⚠️ WARNING: This is a destructive operation. Only use for testing."
+					}
+				}
+			]
+		},
+		{
+			"name": "Authorization Tests",
+			"item": [
+				{
+					"name": "Unauthorized Access (No Token)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise/{{enterpriseId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise", "{{enterpriseId}}"]
+						}
+					}
+				},
+				{
+					"name": "Unauthorized Access (Invalid Token)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer invalid_token_here"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/enterprise/{{enterpriseId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "enterprise", "{{enterpriseId}}"]
+						}
+					}
+				}
+			]
+		}
+	]
+}

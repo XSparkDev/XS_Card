@@ -53,6 +53,7 @@ const apkRoutes = require('./routes/apkRoutes'); // Add APK routes
 const iosVersionRoutes = require('./routes/iosVersionRoutes'); // Add iOS version routes
 const eventRoutes = require('./routes/eventRoutes'); // Add event routes
 const testRoutes = require('./routes/testRoutes'); // Add test routes for debugging
+const testQuotePdfRoute = require('./routes/testQuotePdfRoute'); // Test quote PDF route (ONE-TIME)
 const ticketRoutes = require('./routes/ticketRoutes'); // Add ticket routes
 const eventOrganiserRoutes = require('./routes/eventOrganiserRoutes'); // Add event organiser routes
 const bulkRegistrationRoutes = require('./routes/bulkRegistrationRoutes'); // Add bulk registration routes
@@ -703,6 +704,10 @@ app.get('/profile-image/:userId/:cardIndex', async (req, res) => {
 
 // OAuth routes MUST be first (POOP) - No auth required, must match before other routes
 app.use('/oauth', oauthRoutes);
+
+// Test quote PDF route (ONE-TIME - must be before other routes to avoid auth middleware)
+// Mount at /test explicitly to avoid conflicts
+app.use('/test', testQuotePdfRoute);
 
 // Enterprise routes (public - no auth required for quote generation)
 app.use('/', enterpriseRoutes);
