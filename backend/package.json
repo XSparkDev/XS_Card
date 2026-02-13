@@ -9,6 +9,9 @@
     "migrate-user": "node scripts/migrateImages.js --userId",
     "migrate-firestore": "node scripts/migrate-firestore.js",
     "migrate-firestore:dry": "node scripts/migrate-firestore.js --dry-run",
+    "read-user-from-db": "node scripts/read-user-from-db.js",
+    "migrate-user-between-dbs": "node scripts/migrate-user-between-dbs.js",
+    "set-staging-user-password": "node scripts/set-staging-user-password.js",
     "check-anonymized": "node jobs/checkAnonymizedData.js",
     "android": "expo run:android",
     "ios": "expo run:ios"

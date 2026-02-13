@@ -17,26 +17,25 @@ const { sendMailWithStatus } = require('../public/Utils/emailService');
  */
 async function sendSubscriptionEmail(type, enterpriseAccount, data = {}) {
   try {
-    // For welcome emails, send to TEST_EMAIL if set (for testing)
-    const testEmail = process.env.TEST_EMAIL;
-    const email = (type === 'welcome' && testEmail) ? testEmail : enterpriseAccount.contactEmail;
+    // Always use the contact person's email (from quote/account)
+    const email = enterpriseAccount.contactEmail;
     const companyName = enterpriseAccount.companyName;
     
     if (!email) {
       throw new Error('Contact email is required');
     }
-    
-    if (type === 'welcome' && testEmail) {
-      console.log(`📧 Sending welcome email to TEST_EMAIL (${testEmail}) for testing`);
-    }
 
     let subject, htmlBody, textBody;
 
     switch (type) {
-      case 'welcome':
-        const enterpriseWebsiteUrl = 'https://staging.xscard.co.za';
-        const registrationFormUrl = `${enterpriseWebsiteUrl}/enterprise-registration.html?enterpriseId=${encodeURIComponent(enterpriseAccount.enterpriseId)}&enterpriseName=${encodeURIComponent(companyName)}`;
-        
+      case 'welcome': {
+        // Base URL for registration form (backend-hosted page)
+        const enterpriseWebsiteUrl = process.env.ENTERPRISE_WEBSITE_URL || 'https://staging.xscard.co.za';
+        // App URL for "Open enterprise app" link (e.g. http://localhost:5173 for E2E, or staging/prod app)
+        const enterpriseAppUrl = process.env.ENTERPRISE_APP_URL || 'https://staging.xscard.co.za';
+        const openAppUrl = `${enterpriseAppUrl.replace(/\/$/, '')}/contacts`;
+        const registrationFormUrl = `${enterpriseWebsiteUrl.replace(/\/$/, '')}/enterprise-registration.html?enterpriseId=${encodeURIComponent(enterpriseAccount.enterpriseId)}&enterpriseName=${encodeURIComponent(companyName)}&redirectUrl=${encodeURIComponent(openAppUrl)}`;
+
         subject = `Welcome to Enterprise Subscription - ${companyName}`;
         htmlBody = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -65,8 +64,12 @@ async function sendSubscriptionEmail(type, enterpriseAccount, data = {}) {
                 <p style="text-align: center; margin: 20px 0;">
                   <a href="${registrationFormUrl}" style="display: inline-block; padding: 12px 24px; background-color: #ff4b6e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">Create Admin Account</a>
                 </p>
+                <p style="color: #333; margin-top: 15px;">Then open your enterprise app:</p>
+                <p style="text-align: center; margin: 10px 0;">
+                  <a href="${openAppUrl}" style="display: inline-block; padding: 12px 24px; background-color: #1B2B5B; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">Open Enterprise App</a>
+                </p>
                 <p style="color: #666; font-size: 13px; margin-top: 15px;">
-                  Or visit: <a href="${enterpriseWebsiteUrl}" style="color: #ff4b6e;">${enterpriseWebsiteUrl}</a>
+                  Or visit: <a href="${openAppUrl}" style="color: #ff4b6e;">${openAppUrl}</a>
                 </p>
               </div>
               
@@ -85,8 +88,9 @@ async function sendSubscriptionEmail(type, enterpriseAccount, data = {}) {
             </div>
           </div>
         `;
-        textBody = `Welcome to Enterprise Subscription!\n\nDear ${enterpriseAccount.contactName},\n\nYour enterprise subscription for ${companyName} has been activated successfully.\n\nSubscription Details:\n- Number of Employees: ${enterpriseAccount.numberOfEmployees}\n- Subscription Type: Annual\n- Status: Active\n- Next Billing Date: ${enterpriseAccount.nextBillingDate?.toDate().toLocaleDateString() || 'N/A'}\n\nNext Steps:\nTo complete your enterprise account setup, please create your admin account:\n${registrationFormUrl}\n\nOr visit: ${enterpriseWebsiteUrl}\n\nThank you for choosing our enterprise solution!`;
+        textBody = `Welcome to Enterprise Subscription!\n\nDear ${enterpriseAccount.contactName},\n\nYour enterprise subscription for ${companyName} has been activated successfully.\n\nSubscription Details:\n- Number of Employees: ${enterpriseAccount.numberOfEmployees}\n- Subscription Type: Annual\n- Status: Active\n- Next Billing Date: ${enterpriseAccount.nextBillingDate?.toDate().toLocaleDateString() || 'N/A'}\n\nNext Steps:\nTo complete your enterprise account setup, please create your admin account:\n${registrationFormUrl}\n\nThen open your enterprise app: ${openAppUrl}\n\nThank you for choosing our enterprise solution!`;
         break;
+      }
 
       case 'payment_succeeded':
         subject = `Payment Successful - ${companyName} Enterprise Subscription`;

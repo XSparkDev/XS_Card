@@ -42,3 +42,17 @@ All data used must be real, valid, and representative of actual production scena
 - No placeholder values or mock objects
 
 ---
+
+## Rule #4: Preserve Current Behaviour (Mobile & Marketing)
+**Current behaviour—especially for mobile and marketing—must remain preserved.**
+
+Any change (new routes, middleware order, auth, APIs, or config) must not break or alter existing behaviour for:
+- **Mobile app** – Sign-in, API contracts, token usage, and all existing flows must keep working as they do today.
+- **Marketing / web** – Public pages, landing flows, and any existing web behaviour must stay unchanged.
+
+**When adding or changing backend behaviour:**
+- Prefer adding new routes or handlers rather than changing existing ones.
+- If route or middleware order changes, ensure public and existing entry points (e.g. `/SignIn`, `/AddUser`) still work and are not gated by auth or new middleware.
+- Verify that the same request (URL, method, body, headers) that works today still works after the change; only add or extend, don’t remove or break.
+
+---

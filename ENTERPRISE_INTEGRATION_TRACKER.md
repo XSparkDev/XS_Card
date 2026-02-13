@@ -217,6 +217,22 @@ See `ENTERPRISE_INTEGRATION_IMPLEMENTATION_PLAN.md` for detailed implementation 
 
 ---
 
+## Group 2: Organizational Structure (Departments, Teams, Employees)
+
+**Status:** Implemented and mounted.
+
+**Done:**
+- Stubs: `invalidateEnterpriseCache`, `getEffectiveTemplateForCardCreation` (enterprise controller dir).
+- Shared helper: `createDefaultCardForUser` for addEmployee/new-user card creation.
+- `departmentsController.js` and `teamsController.js` ported and adapted (employees subcollection, enterprise users doc on addEmployee).
+- `exportController.js` ported with inline CSV (no csv-stringify dependency).
+- `backend/routes/departmentRoutes.js` created with all department/team/employee/export routes; uses `authenticateUser`.
+- Routes mounted in `server.js` at `/` (paths: `/api/enterprise/:enterpriseId/departments/...`, `/api/enterprise/:enterpriseId/employees`, `/api/enterprise/:enterpriseId/cards`, etc.).
+
+**Not done this phase:** Invite flow, pending employees; no changes to payment/subscription or free/premium.
+
+---
+
 ## Testing Status
 
 > Testing status for each completed phase will be tracked here.

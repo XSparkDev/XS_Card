@@ -217,10 +217,11 @@
     </div>
     
     <script>
-        // Get enterpriseId from URL query parameter
+        // Get enterpriseId and optional redirect from URL query
         const urlParams = new URLSearchParams(window.location.search);
         const enterpriseId = urlParams.get('enterpriseId');
         const enterpriseName = urlParams.get('enterpriseName');
+        const redirectUrl = urlParams.get('redirectUrl'); // From welcome email (ENTERPRISE_APP_URL/contacts)
         
         if (enterpriseId) {
             document.getElementById('enterpriseId').value = enterpriseId;
@@ -258,7 +259,7 @@
             };
             
             try {
-                const response = await fetch('/api/users/AddUser', {
+                const response = await fetch('/AddUser', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -273,9 +274,10 @@
                     document.getElementById('successMessage').style.display = 'block';
                     document.getElementById('registrationForm').style.display = 'none';
                     
-                    // Redirect after 2 seconds
+                    // Redirect after 2 seconds to enterprise app (from email link, or default)
+                    const afterLoginUrl = redirectUrl && redirectUrl.startsWith('http') ? redirectUrl : 'https://staging.xscard.co.za';
                     setTimeout(() => {
-                        window.location.href = 'https://staging.xscard.co.za';
+                        window.location.href = afterLoginUrl;
                     }, 2000);
                 } else {
                     // Error

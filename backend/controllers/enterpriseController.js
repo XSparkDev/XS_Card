@@ -1142,10 +1142,19 @@ exports.handlePaymentCallback = async (req, res) => {
         });
       }
       
-      // Send welcome email (non-blocking)
-      sendSubscriptionEmail('welcome', accountData).catch(error => {
-        console.warn('Failed to send welcome email:', error.message);
-      });
+      // Send welcome email (non-blocking) – always to contact person
+      console.log(`📧 Sending welcome email to contact: ${accountData.contactEmail}`);
+      sendSubscriptionEmail('welcome', accountData)
+        .then(result => {
+          if (result && result.success) {
+            console.log(`✅ Welcome email sent to ${accountData.contactEmail}`);
+          } else {
+            console.warn(`⚠️ Welcome email failed for ${accountData.contactEmail}:`, result?.error || 'unknown');
+          }
+        })
+        .catch(error => {
+          console.warn('Failed to send welcome email:', error.message);
+        });
 
       // Generate receipt from quote (non-blocking for user)
       try {
@@ -1953,10 +1962,19 @@ async function handleSubscriptionCreated(webhookData) {
       });
     }
     
-    // Send welcome email (non-blocking)
-    sendSubscriptionEmail('welcome', accountData).catch(error => {
-      console.warn('Failed to send welcome email:', error.message);
-    });
+    // Send welcome email (non-blocking) – always to contact person
+    console.log(`📧 [Webhook] Sending welcome email to contact: ${accountData.contactEmail}`);
+    sendSubscriptionEmail('welcome', accountData)
+      .then(result => {
+        if (result && result.success) {
+          console.log(`✅ [Webhook] Welcome email sent to ${accountData.contactEmail}`);
+        } else {
+          console.warn(`⚠️ [Webhook] Welcome email failed for ${accountData.contactEmail}:`, result?.error || 'unknown');
+        }
+      })
+      .catch(error => {
+        console.warn('[Webhook] Failed to send welcome email:', error.message);
+      });
 
   } catch (error) {
     console.error('Error handling subscription.create webhook:', error);

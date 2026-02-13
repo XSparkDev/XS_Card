@@ -62,6 +62,7 @@ const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple 
 const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 const oauthRoutes = require('./routes/oauthRoutes'); // NEW: Add OAuth routes (POOP)
 const enterpriseRoutes = require('./routes/enterpriseRoutes'); // Enterprise payment routes
+const departmentRoutes = require('./routes/departmentRoutes'); // Group 2: departments, teams, employees
 const billingRoutes = require('./routes/billingRoutes'); // Billing routes (Phase 4A)
 
 // Middleware to capture raw body for webhook signature verification
@@ -711,6 +712,9 @@ app.use('/test', testQuotePdfRoute);
 
 // Enterprise routes (public - no auth required for quote generation)
 app.use('/', enterpriseRoutes);
+// User routes (SignIn, AddUser, etc.) MUST be before departmentRoutes so /SignIn is not gated by auth
+app.use('/', userRoutes);
+app.use('/', departmentRoutes);
 
 app.use('/', paymentRoutes); // Add this line before protected routes
 app.use('/', subscriptionRoutes); // Add subscription routes
@@ -719,7 +723,6 @@ app.use('/api/apple-receipt', appleReceiptRoutes); // Add Apple receipt validati
 app.use('/', apkRoutes); // Add APK routes for public download
 app.use('/', iosVersionRoutes); // Add iOS version routes for public version checking
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
-app.use('/', userRoutes); // Move user routes to public section so SignIn works
 app.use('/', contactRoutes); // Move contact routes to public section to keep save contact public
 app.use('/api/feature-videos', videoRoutes); // Add video routes BEFORE other /api routes
 app.use('/api', contactRequestRoutes); // Add contact request routes

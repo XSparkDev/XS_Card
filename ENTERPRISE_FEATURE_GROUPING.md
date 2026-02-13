@@ -204,6 +204,46 @@
 
 ---
 
+## Final integration rules (don't forget)
+
+These rules are fixed for the integration; implement and enforce them so we don't forget.
+
+### Invoices & dunning
+- **Pro forma:** One per billing cycle (e.g. 30 days before `nextBillingDate`), not every calendar month for annual plans.
+- **Dunning:** All-channel (email + in-app + on invoice). Never dunning by email only for opted-in accounts.
+- **!utd overrides !oi:** If the account is **not up to date** on payments (!utd), they **WILL** receive dunning (email + in-app + on invoice) regardless of invoice-email opt-out. Critical payment/account-status communications are never suppressed by opt-out.
+
+### Cancellation
+- **Cannot cancel while in arrears.** An account must be **up to date on payments** before cancellation is allowed. An account in grace period or suspended cannot be cancelled until the outstanding amount is paid (or otherwise resolved). Enforce this in the cancellation flow and in any API that sets subscription/account to cancelled.
+
+---
+
+## Invoices, dunning & cron – implementation checklist
+
+Use this list so we don’t forget what’s done and what’s left. Refer to **Final integration rules** above for the business rules (pro forma, dunning channels, !utd overrides !oi, no cancel in arrears).
+
+### Implemented
+- **First-payment receipt:** Create receipt in `enterprise_invoices` and email PDF to contact (`generateReceiptFromQuote` in payment callback).
+- **Per-invoice APIs:** `GET /api/enterprise/invoices/:invoiceId`, `GET .../pdf`, `POST .../email` (authenticated).
+- **One-off payment_failed email:** On `invoice.payment_failed` webhook, send “payment failed – update payment method before &lt;grace end&gt;” via `sendSubscriptionEmail('payment_failed', ...)`.
+- **Suspended handling:** When grace lapses, set `accountStatus = 'suspended'` and send suspended email.
+- **In-app dunning data (backend):** `getSubscriptionStatus` (or equivalent) returns `accountStatus`, `warningBanner`, `gracePeriodEndDate` so the app can show banner/section.
+- **Pro forma building block:** `generateInvoiceFromAccount(account)` creates an unpaid invoice in `enterprise_invoices` and can produce PDF (no send flow yet).
+- **Schema:** `enterprise_invoices` has e.g. `invoiceStatus: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled'`.
+
+### Not implemented (do not forget)
+- **List invoices by enterprise:** Add `GET /api/enterprise/:enterpriseId/invoices` (or equivalent) so the app can list invoices/receipts for the enterprise and then open PDF.
+- **Opt-in for invoice emails:** Add field (e.g. `receiveInvoicesByEmail` or `billingEmails`) on account/enterprise; use it so pro forma / statement emails are sent only when opted in (dunning still follows !utd-overrides-!oi).
+- **!utd overrides !oi:** When sending dunning, if account is not up to date, send regardless of opt-out; implement in the same place that sends dunning emails.
+- **Block cancel when in arrears:** In `cancelSubscription` (and any other cancel path), reject if `accountStatus === 'suspended'` or if in grace period (e.g. `gracePeriodEndDate` in the future). Return clear message: must be up to date before cancelling.
+- **Dunning on PDF:** Ensure invoice/receipt PDF shows “Overdue” / “Pay by &lt;date&gt;” when applicable (schema supports `overdue`; confirm PDF generator renders it).
+- **Renewal receipt:** On `invoice.payment_succeeded` webhook, create a receipt doc in `enterprise_invoices` and email receipt PDF to contact (same pattern as first payment).
+- **Pro forma / statement send:** Trigger (e.g. cron) that, for opted-in and up-to-date accounts, sends pro forma (or statement) once per billing cycle (e.g. 30 days before `nextBillingDate`). Use `generateInvoiceFromAccount` or equivalent; send email with PDF or link.
+- **Cron – dunning:** Scheduled job that finds accounts in grace or suspended and sends dunning (email + ensure in-app and on-invoice are covered). Respect: !utd overrides !oi (always send dunning when !utd). Throttle as needed (e.g. don’t send same dunning email daily).
+- **Cron – pro forma:** Scheduled job that finds accounts that are active, up to date, and opted in, with `nextBillingDate` in the window (e.g. next 30 days), and sends one pro forma per billing cycle (e.g. once per year for annual).
+
+---
+
 ## Notes
 
 - **Group 1** is the foundation - all other groups depend on it
@@ -213,3 +253,15 @@
 - **Group 5** depends on enterprise users subcollection (✅ already implemented)
 - **Group 6** can be integrated independently
 - **Group 7** is already partially implemented in current server
+
+---
+
+## Deferred / End of pipeline (not part of integration)
+
+These items are agreed for later implementation. They are **not** in the other server and were always intended for future.
+
+### Role-based CRUD for departments and teams (F4)
+
+- **What:** Restrict who can create/read/update/delete departments and teams by role (admin = full CRUD all; manager = RUD own department and its teams only; director = full CRUD; employee = read-only).
+- **Why deferred:** The other server (XS_Backend - Copy) has **no** role checks on department/team CRUD—only `authenticateUser`. So this is not part of “copy and adapt” integration; it is an enhancement for after Group 2 is integrated.
+- **When:** Implement after Group 2 integration is stable. See **GROUP2_INTEGRATION_QUESTIONS.md** F4 Decision for the agreed matrix.

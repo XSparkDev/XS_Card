@@ -17,6 +17,14 @@ exports.authenticateUser = async (req, res, next) => {
                 message: 'Authentication token is empty.'
             });
         }
+
+        // Test token bypass (from other server) - commented out; re-enable only for local/testing if needed.
+        // if (token.startsWith('test_token_') || token.includes('test_user_curl_')) {
+        //     req.user = { uid: '...', email: '...', name: '...' };
+        //     req.token = token;
+        //     next();
+        //     return;
+        // }
         
         // Check if token is blacklisted
         const blacklistDoc = await db.collection('tokenBlacklist').doc(token).get();

@@ -551,6 +551,17 @@ exports.signIn = async (req, res) => {
                 });
             }
 
+            // Block sign-in for deactivated accounts (aligned with other server)
+            if (userData.active === false) {
+                console.log(`[SignIn] Blocking login for deactivated user: ${userData.email}`);
+                return res.status(403).send({
+                    message: 'Your account has been deactivated. Please contact your administrator for assistance.',
+                    accountDeactivated: true,
+                    uid: localId,
+                    deactivatedAt: userData.deactivatedAt
+                });
+            }
+
             console.log(`[SignIn] Email verified user ${localId} (${userData.email}) signing in successfully`);
 
             res.status(200).send({
