@@ -135,11 +135,13 @@ const checkCardPermissions = async (userId, enterpriseId, targetDepartmentId = n
     }
 };
 
-// Get all departments for an enterprise
+// Get all departments for an enterprise (L1: limit default 50 max 100, optional startAfter)
 exports.getAllDepartments = async (req, res) => {
     try {
         const { enterpriseId } = req.params;
-        
+        let limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+        const startAfter = req.query.startAfter;
+
         if (!enterpriseId) {
             return sendError(res, 400, 'Enterprise ID is required');
         }
@@ -147,28 +149,28 @@ exports.getAllDepartments = async (req, res) => {
         const departmentsRef = db.collection('enterprise')
             .doc(enterpriseId)
             .collection('departments');
-            
-        const snapshot = await departmentsRef.get();
-        
-        if (snapshot.empty) {
-            return res.status(200).send({ 
-                success: true,
-                departments: [],
-                message: 'No departments found for this enterprise'
-            });
+
+        let query = departmentsRef.orderBy(admin.firestore.FieldPath.documentId()).limit(limit);
+        if (startAfter && typeof startAfter === 'string') {
+            const cursorSnap = await departmentsRef.doc(startAfter).get();
+            if (cursorSnap.exists) query = query.startAfter(cursorSnap);
         }
+        const snapshot = await query.get();
 
         const departments = [];
         snapshot.forEach(doc => {
-            departments.push({
-                id: doc.id,
-                ...doc.data()
-            });
+            departments.push({ id: doc.id, ...doc.data() });
         });
+
+        const nextPageToken = snapshot.docs.length === limit && snapshot.docs.length > 0
+            ? snapshot.docs[snapshot.docs.length - 1].id
+            : null;
 
         res.status(200).send({
             success: true,
-            departments
+            departments,
+            count: departments.length,
+            ...(nextPageToken && { nextPageToken })
         });
     } catch (error) {
         sendError(res, 500, 'Error fetching departments', error);
@@ -901,55 +903,47 @@ exports.getEmployeeCard = async (req, res) => {
     }
 };
 
-// Get all employees in a department
+// Get all employees in a department (L1: limit default 50 max 100, optional startAfter)
 exports.getDepartmentEmployees = async (req, res) => {
     try {
         const { enterpriseId, departmentId } = req.params;
-        
+        let limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+        const startAfter = req.query.startAfter;
+
         if (!enterpriseId || !departmentId) {
             return sendError(res, 400, 'Enterprise ID and Department ID are required');
         }
 
-        // Query the employees collection
-        const employeesSnapshot = await db.collection('enterprise')
+        const employeesRef = db.collection('enterprise')
             .doc(enterpriseId)
             .collection('departments')
             .doc(departmentId)
-            .collection('employees')
-            .get();
-            
-        if (employeesSnapshot.empty) {
-            return res.status(200).send({
-                success: true,
-                employees: [],
-                message: 'No employees found in this department'
-            });
-        }
+            .collection('employees');
 
-        // Process the employees data
+        let query = employeesRef.orderBy(admin.firestore.FieldPath.documentId()).limit(limit);
+        if (startAfter && typeof startAfter === 'string') {
+            const cursorSnap = await employeesRef.doc(startAfter).get();
+            if (cursorSnap.exists) query = query.startAfter(cursorSnap);
+        }
+        const employeesSnapshot = await query.get();
+
         const employees = [];
         employeesSnapshot.forEach(doc => {
             const employee = doc.data();
-            
-            // Format timestamps and references
-            if (employee.createdAt) {
-                employee.createdAt = employee.createdAt.toDate().toISOString();
-            }
-            
-            if (employee.cardsRef && typeof employee.cardsRef.path === 'string') {
-                employee.cardsRef = employee.cardsRef.path;
-            }
-            
-            employees.push({
-                id: doc.id,
-                ...employee
-            });
+            if (employee.createdAt) employee.createdAt = employee.createdAt.toDate().toISOString();
+            if (employee.cardsRef && typeof employee.cardsRef.path === 'string') employee.cardsRef = employee.cardsRef.path;
+            employees.push({ id: doc.id, ...employee });
         });
+
+        const nextPageToken = employeesSnapshot.docs.length === limit && employeesSnapshot.docs.length > 0
+            ? employeesSnapshot.docs[employeesSnapshot.docs.length - 1].id
+            : null;
 
         res.status(200).send({
             success: true,
             employees,
-            count: employees.length
+            count: employees.length,
+            ...(nextPageToken && { nextPageToken })
         });
     } catch (error) {
         sendError(res, 500, 'Error fetching department employees', error);

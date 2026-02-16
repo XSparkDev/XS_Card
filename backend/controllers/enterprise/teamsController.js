@@ -116,45 +116,36 @@ exports.createTeam = async (req, res) => {
     }
 };
 
-// Get all teams in a department
+// Get all teams in a department (L1: limit default 50 max 100, optional startAfter)
 exports.getAllTeams = async (req, res) => {
     try {
         const { enterpriseId, departmentId } = req.params;
-        
+        let limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+        const startAfter = req.query.startAfter;
+
         if (!enterpriseId || !departmentId) {
             return sendError(res, 400, 'Enterprise ID and Department ID are required');
         }
 
-        // Check if department exists
         const departmentRef = db.collection('enterprise')
             .doc(enterpriseId)
             .collection('departments')
             .doc(departmentId);
-            
         const departmentDoc = await departmentRef.get();
-        
-        if (!departmentDoc.exists) {
-            return sendError(res, 404, 'Department not found');
-        }
+        if (!departmentDoc.exists) return sendError(res, 404, 'Department not found');
 
-        // Get all teams in this department
-        const teamsSnapshot = await departmentRef.collection('teams').get();
-        
-        if (teamsSnapshot.empty) {
-            return res.status(200).send({ 
-                success: true,
-                teams: [],
-                message: 'No teams found in this department'
-            });
+        const teamsRef = departmentRef.collection('teams');
+        let query = teamsRef.orderBy(admin.firestore.FieldPath.documentId()).limit(limit);
+        if (startAfter && typeof startAfter === 'string') {
+            const cursorSnap = await teamsRef.doc(startAfter).get();
+            if (cursorSnap.exists) query = query.startAfter(cursorSnap);
         }
+        const teamsSnapshot = await query.get();
 
-        // Process teams data
         const teams = [];
         teamsSnapshot.forEach(doc => {
             const team = doc.data();
-            
-            // Format timestamps and references for the response
-            const formattedTeam = {
+            teams.push({
                 id: doc.id,
                 name: team.name,
                 description: team.description,
@@ -165,15 +156,18 @@ exports.getAllTeams = async (req, res) => {
                 memberCount: team.memberCount || 0,
                 createdAt: team.createdAt ? team.createdAt.toDate().toISOString() : null,
                 updatedAt: team.updatedAt ? team.updatedAt.toDate().toISOString() : null
-            };
-            
-            teams.push(formattedTeam);
+            });
         });
+
+        const nextPageToken = teamsSnapshot.docs.length === limit && teamsSnapshot.docs.length > 0
+            ? teamsSnapshot.docs[teamsSnapshot.docs.length - 1].id
+            : null;
 
         res.status(200).send({
             success: true,
             teams,
-            count: teams.length
+            count: teams.length,
+            ...(nextPageToken && { nextPageToken })
         });
     } catch (error) {
         sendError(res, 500, 'Error fetching teams', error);
@@ -504,53 +498,40 @@ exports.deleteTeam = async (req, res) => {
     }
 };
 
-// Get all members of a team
+// Get all members of a team (L1: limit default 50 max 100, optional startAfter)
 exports.getTeamMembers = async (req, res) => {
     try {
         const { enterpriseId, departmentId, teamId } = req.params;
-        
+        let limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+        const startAfter = req.query.startAfter;
+
         if (!enterpriseId || !departmentId || !teamId) {
             return sendError(res, 400, 'Enterprise ID, Department ID, and Team ID are required');
         }
 
-        // Check if department exists
         const departmentRef = db.collection('enterprise')
             .doc(enterpriseId)
             .collection('departments')
             .doc(departmentId);
-            
         const departmentDoc = await departmentRef.get();
-        
-        if (!departmentDoc.exists) {
-            return sendError(res, 404, 'Department not found');
-        }
+        if (!departmentDoc.exists) return sendError(res, 404, 'Department not found');
 
-        // Check if team exists
         const teamRef = departmentRef.collection('teams').doc(teamId);
         const teamDoc = await teamRef.get();
-        
-        if (!teamDoc.exists) {
-            return sendError(res, 404, 'Team not found');
-        }
+        if (!teamDoc.exists) return sendError(res, 404, 'Team not found');
 
-        // Get team members directly from the team's employees subcollection
-        const membersSnapshot = await teamRef.collection('employees').get();
-            
-        if (membersSnapshot.empty) {
-            return res.status(200).send({
-                success: true,
-                members: [],
-                message: 'No members found in this team'
-            });
+        const membersRef = teamRef.collection('employees');
+        let query = membersRef.orderBy(admin.firestore.FieldPath.documentId()).limit(limit);
+        if (startAfter && typeof startAfter === 'string') {
+            const cursorSnap = await membersRef.doc(startAfter).get();
+            if (cursorSnap.exists) query = query.startAfter(cursorSnap);
         }
+        const membersSnapshot = await query.get();
 
-        // Process members data
         const members = [];
         membersSnapshot.forEach(doc => {
             const member = doc.data();
-            
-            // Format timestamps and references
-            const formattedMember = {
+            members.push({
                 id: doc.id,
                 firstName: member.firstName,
                 lastName: member.lastName,
@@ -561,15 +542,18 @@ exports.getTeamMembers = async (req, res) => {
                 departmentId: member.departmentId,
                 mainEmployeeRef: member.mainEmployeeRef ? member.mainEmployeeRef.path : null,
                 createdAt: member.createdAt ? member.createdAt.toDate().toISOString() : null
-            };
-            
-            members.push(formattedMember);
+            });
         });
+
+        const nextPageToken = membersSnapshot.docs.length === limit && membersSnapshot.docs.length > 0
+            ? membersSnapshot.docs[membersSnapshot.docs.length - 1].id
+            : null;
 
         res.status(200).send({
             success: true,
             members,
-            count: members.length
+            count: members.length,
+            ...(nextPageToken && { nextPageToken })
         });
     } catch (error) {
         sendError(res, 500, 'Error fetching team members', error);

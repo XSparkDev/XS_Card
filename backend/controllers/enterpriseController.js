@@ -2600,11 +2600,32 @@ exports.getEnterpriseStats = async (req, res) => {
       return data.status === 'active' || !data.status;
     }).length;
 
-    // TODO: Add departments count when departments feature is integrated
+    // Group 2: departments, teams, employees counts (H2)
+    const enterpriseRef = db.collection('enterprise').doc(enterpriseId);
+    const departmentsSnapshot = await enterpriseRef.collection('departments').get();
+    const departmentsCount = departmentsSnapshot.size;
+    let teamsCount = 0;
+    let employeesCount = 0;
+    if (!departmentsSnapshot.empty) {
+      const countPromises = departmentsSnapshot.docs.map(async (deptDoc) => {
+        const deptRef = deptDoc.ref;
+        const [teamsSnap, employeesSnap] = await Promise.all([
+          deptRef.collection('teams').get(),
+          deptRef.collection('employees').get()
+        ]);
+        return { teams: teamsSnap.size, employees: employeesSnap.size };
+      });
+      const counts = await Promise.all(countPromises);
+      teamsCount = counts.reduce((s, c) => s + c.teams, 0);
+      employeesCount = counts.reduce((s, c) => s + c.employees, 0);
+    }
+
     const stats = {
       totalUsers,
       activeUsers,
-      departments: 0, // Placeholder until departments feature is integrated
+      departments: departmentsCount,
+      teams: teamsCount,
+      employees: employeesCount,
       lastActivity: new Date().toISOString()
     };
 

@@ -62,13 +62,13 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| D1 | For `parentDepartment`, does the other server store a reference (e.g. Firestore ref) or an ID string? What is the exact field name? | Must match or consciously diverge. | *(Read from XS_Backend - Copy.)* | |
-| D2 | How many levels of department hierarchy does the other server support (flat, one parent level, or arbitrary tree)? | Affects validation and queries. | At least one level (parent/child); avoid deep nesting in Firestore. | |
-| D3 | Who can create, update, and delete departments? (e.g. any user in the enterprise, or only certain roles such as admin/director?) | Affects authorization in every department endpoint. | Only admin (and optionally director). | |
-| D4 | On `deleteDepartment`, should we hard-delete all employees and teams in that department, block delete if any exist, or soft-delete (e.g. `deleted: true`)? | Affects data model and restore/audit needs. | Hard delete: remove teams and employees subcollections, then department doc. | |
-| D5 | Does the other server have a “manager” (or similar) per department? If yes, what is the field name and type (userId, employeeId, ref)? | Affects department document shape. | Optional `managerId` or `managerRef`. | |
-| D6 | What are the exact Firestore collection/subcollection names for departments and employees in the other server? (e.g. `enterprise/{id}/departments/{id}/employees`) | We must match or consciously diverge. | *(Read from XS_Backend - Copy.)* | |
-| D7 | What fields are required when creating a department in the other server (e.g. `name` only, or also `description`, `parentDepartment`)? | Affects validation. | *(Read from XS_Backend - Copy.)* | |
+| D1 | For `parentDepartment`, does the other server store a reference (e.g. Firestore ref) or an ID string? What is the exact field name? | Must match or consciously diverge. | *(Read from XS_Backend - Copy.)* | **From XS_Backend - Copy.** Field name **`parentDepartmentId`**; type **string** (department ID). Stored in department doc (default null). |
+| D2 | How many levels of department hierarchy does the other server support (flat, one parent level, or arbitrary tree)? | Affects validation and queries. | At least one level (parent/child); avoid deep nesting in Firestore. | **From XS_Backend - Copy.** One parent level (parent/child). Delete blocks if any child departments exist. No deep tree. |
+| D3 | Who can create, update, and delete departments? (e.g. any user in the enterprise, or only certain roles such as admin/director?) | Affects authorization in every department endpoint. | Only admin (and optionally director). | **From XS_Backend - Copy.** No role check for department CRUD; routes use **authenticateUser** only. Match other server. F4 defers role matrix. |
+| D4 | On `deleteDepartment`, should we hard-delete all employees and teams in that department, block delete if any exist, or soft-delete (e.g. `deleted: true`)? | Affects data model and restore/audit needs. | Hard delete: remove teams and employees subcollections, then department doc. | **From XS_Backend - Copy.** **Block delete** if department has employees or child departments (409). If empty, delete department doc only. No cascade. |
+| D5 | Does the other server have a “manager” (or similar) per department? If yes, what is the field name and type (userId, employeeId, ref)? | Affects department document shape. | Optional `managerId` or `managerRef`. | **From XS_Backend - Copy.** **`managers`**: array of DocumentReference to `users/{userId}`. Create/update accept `managers` (array of user IDs); stored as refs. Those users are added as employees with role `manager`. |
+| D6 | What are the exact Firestore collection/subcollection names for departments and employees in the other server? (e.g. `enterprise/{id}/departments/{id}/employees`) | We must match or consciously diverge. | *(Read from XS_Backend - Copy.)* | **From XS_Backend - Copy.** `enterprise/{eid}/departments/{did}`; `.../departments/{did}/employees`; `.../departments/{did}/teams`. |
+| D7 | What fields are required when creating a department in the other server (e.g. `name` only, or also `description`, `parentDepartment`)? | Affects validation. | *(Read from XS_Backend - Copy.)* | **From XS_Backend - Copy.** **Required:** `name`. **Optional:** `description` (default ''), `parentDepartmentId` (default null), `managers` (array of user IDs, default []). Doc ID = slug of name. |
 
 ---
 
@@ -76,12 +76,12 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| E1 | When adding a team member (`addTeamMember`), does the other server accept an **employeeId** (from that department’s employees) or a **userId**? If userId, does the backend resolve it to an employee in that department? | Affects API contract and implementation. | Accept employeeId; optionally also accept userId and resolve to employee in same department. | |
-| E2 | Where are team members stored in the other server? (e.g. subcollection `teams/{teamId}/members` with fields like `employeeId`, `userId`, `role`?) | Affects Firestore structure. | Subcollection `teams/{teamId}/members/{memberId}` with employeeId, userId, role. | |
-| E3 | Can the same employee be in multiple teams within the same department? | Affects validation and UI. | Yes. | |
-| E4 | Who can create, update, delete teams and manage team members? Same rules as departments or different (e.g. department manager)? | Affects authorization. | Same as departments: admin (and optionally director) for now. | |
-| E5 | What are the exact Firestore paths for teams in the other server? (e.g. `enterprise/{eid}/departments/{did}/teams/{tid}`?) | Must match or consciously diverge. | *(Read from XS_Backend - Copy.)* | |
-| E6 | What fields are required when creating a team? What are the allowed values for team member role (e.g. leader, member)? | Affects validation and `updateTeamMemberRole`. | *(Read from XS_Backend - Copy.)* | |
+| E1 | When adding a team member (`addTeamMember`), does the other server accept an **employeeId** (from that department’s employees) or a **userId**? If userId, does the backend resolve it to an employee in that department? | Affects API contract and implementation. | Accept employeeId; optionally also accept userId and resolve to employee in same department. | **From XS_Backend - Copy.** Accepts **employeeId** in req.body (department employee doc ID = userId per A4). Does not accept userId or resolve; employee must exist at departments/{did}/employees/{employeeId}. |
+| E2 | Where are team members stored in the other server? (e.g. subcollection `teams/{teamId}/members` with fields like `employeeId`, `userId`, `role`?) | Affects Firestore structure. | Subcollection `teams/{teamId}/members/{memberId}` with employeeId, userId, role. | **From XS_Backend - Copy.** Subcollection **teams/{teamId}/employees** (not "members"). Doc ID auto-generated. Fields: employeeRef, userId, name, surname, role, position, addedAt. |
+| E3 | Can the same employee be in multiple teams within the same department? | Affects validation and UI. | Yes. | **From XS_Backend - Copy.** **No.** If employee already has teamRef, add returns 409 "Employee is already a member of team X. Remove them from that team first." One team per employee per department. |
+| E4 | Who can create, update, delete teams and manage team members? Same rules as departments or different (e.g. department manager)? | Affects authorization. | Same as departments: admin (and optionally director) for now. | **From XS_Backend - Copy.** No role check; **authenticateUser** only (same as departments). Match other server. F4 defers role matrix. |
+| E5 | What are the exact Firestore paths for teams in the other server? (e.g. `enterprise/{eid}/departments/{did}/teams/{tid}`?) | Must match or consciously diverge. | *(Read from XS_Backend - Copy.)* | **From XS_Backend - Copy.** `enterprise/{eid}/departments/{did}/teams/{tid}`; team members: `.../teams/{tid}/employees` (auto-generated doc IDs). |
+| E6 | What fields are required when creating a team? What are the allowed values for team member role (e.g. leader, member)? | Affects validation and `updateTeamMemberRole`. | *(Read from XS_Backend - Copy.)* | **From XS_Backend - Copy.** **Required:** name. **Optional:** description (default ''), leaderId (default null; must be department employee doc ID). No separate team-member role enum: team has leaderId/leaderRef on team doc; members in team/employees get role copied from department employee. updateEmployeeRole (department employee) exists; no updateTeamMemberRole. |
 
 ---
 
@@ -128,7 +128,7 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| J1 | Do existing Firestore security rules need to be updated so that `enterprise/{enterpriseId}/departments/...` (and subcollections) are only readable/writable by authenticated users with the correct enterprise (and optionally role)? | New data paths. | Yes; add rules for new paths and document in same place as existing rules. | **Agreed.** Yes; add Firestore rules for the new Group 2 paths so only authenticated users with the correct enterprise (and optionally role) can read/write; document in same place as existing rules. |
+| J1 | Do existing Firestore security rules need to be updated so that `enterprise/{enterpriseId}/departments/...` (and subcollections) are only readable/writable by authenticated users with the correct enterprise (and optionally role)? | New data paths. | Yes; add rules for new paths and document in same place as existing rules. | **Agreed.** Yes; add Firestore rules for the new Group 2 paths so only authenticated users with the correct enterprise (and optionally role) can read/write; document in same place as existing rules. **Deferred for launch:** Ignore rules for now; ship to public; implement rules retroactively. All instances where rules are needed are listed in § "Firestore rules – deferred" below. |
 | J2 | Should we document required composite indexes (e.g. for listing departments by enterprise, employees by department, teams by department) in a file like `backend/firestore-indexes.md` as we add queries? | Phase 1 guide had a step for index documentation. | Yes; add a Phase 2 (Group 2) section. | **Agreed.** Yes; document required composite indexes (e.g. in `backend/firestore-indexes.md` or equivalent) as we add Group 2 queries; add a Group 2 section. |
 
 ---
@@ -137,9 +137,9 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| K1 | Within Group 2, in what order should we implement? (e.g. (1) Department CRUD only, (2) Department employees, (3) Invite + getEmployeeInvitations, (4) Team CRUD, (5) Team members – or different?) | Dependencies: teams depend on departments and employees. | Order above: dept CRUD → dept employees → invite → team CRUD → team members. | |
-| K2 | Should we copy behavior from XS_Backend - Copy as-is and then adapt (imports, response format, authz), or design minimal APIs first and take from the other server only where it fits? | Phase 1 was copy-and-adapt. | Copy from other server and adapt (imports, response format, authz, activity logging). | |
-| K3 | Do we implement and ship departments first, then teams (two steps), or both in one implementation phase? | Affects PRs and testing. | *(No assumption; must be decided.)* | |
+| K1 | Within Group 2, in what order should we implement? (e.g. (1) Department CRUD only, (2) Department employees, (3) Invite + getEmployeeInvitations, (4) Team CRUD, (5) Team members – or different?) | Dependencies: teams depend on departments and employees. | Order above: dept CRUD → dept employees → invite → team CRUD → team members. | **Agreed.** Order: (1) Department CRUD, (2) Department employees (addEmployee, no invite per A2/B), (3) Team CRUD, (4) Team members. Invite/getEmployeeInvitations deferred. Implementation already followed this order. |
+| K2 | Should we copy behavior from XS_Backend - Copy as-is and then adapt (imports, response format, authz), or design minimal APIs first and take from the other server only where it fits? | Phase 1 was copy-and-adapt. | Copy from other server and adapt (imports, response format, authz, activity logging). | **Agreed.** Copy from XS_Backend - Copy and adapt (imports, firebase path, response shape, authz, activity logging). Already done for departmentsController, teamsController, exportController. |
+| K3 | Do we implement and ship departments first, then teams (two steps), or both in one implementation phase? | Affects PRs and testing. | *(No assumption; must be decided.)* | **Agreed.** Both in one implementation phase: departments and teams in the same router (departmentRoutes.js), same mount. Already done. |
 
 ---
 
@@ -147,9 +147,9 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| L1 | Should list endpoints (e.g. getAllDepartments, getAllTeams, getAllEmployees) support pagination (e.g. `limit`, `startAfter` or cursor) from day one? | Prevents large reads. | Yes: e.g. limit (default 50, max 100) and optional startAfter. | |
-| L2 | Do we need soft delete (e.g. `deleted: true`, `deletedAt`) for departments, teams, or employees, or is hard delete sufficient for now? | Affects schema and restore/audit. | Hard delete for Phase 2. | |
-| L3 | Should `getAllDepartments` (and similarly team list) return a flat list or a tree (nested by parentDepartment)? | Affects API shape and client. | Flat list; client (or a separate endpoint later) can build tree. | |
+| L1 | Should list endpoints (e.g. getAllDepartments, getAllTeams, getAllEmployees) support pagination (e.g. `limit`, `startAfter` or cursor) from day one? | Prevents large reads. | Yes: e.g. limit (default 50, max 100) and optional startAfter. | **Agreed.** Add pagination: `limit` (default 50, max 100) and optional `startAfter` (cursor) for list endpoints. Implement when touching those endpoints if not already present in ported code. |
+| L2 | Do we need soft delete (e.g. `deleted: true`, `deletedAt`) for departments, teams, or employees, or is hard delete sufficient for now? | Affects schema and restore/audit. | Hard delete for Phase 2. | **Agreed.** Hard delete for now (matches D4 and ported behaviour). No soft-delete fields. |
+| L3 | Should `getAllDepartments` (and similarly team list) return a flat list or a tree (nested by parentDepartment)? | Affects API shape and client. | Flat list; client (or a separate endpoint later) can build tree. | **Agreed.** Flat list; client (or a separate endpoint later) can build tree. Matches ported behaviour. |
 
 ---
 
@@ -157,10 +157,10 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| M1 | For create/update endpoints, what are the required and optional fields for department, team, and employee in the other server? What validation rules (e.g. max length, allowed characters)? | Must be defined for validation. | *(Read from XS_Backend - Copy or define explicitly.)* | |
-| M2 | Should we add rate limiting on create/invite endpoints (e.g. limit invites per enterprise per hour)? | Prevents abuse. | *(No assumption; must be decided.)* | |
-| M3 | How will Group 2 be tested: unit tests only, E2E only, or both? Same approach as Phase 1? | Rule #3: real data only; no mocks. | *(No assumption; must be decided.)* | |
-| M4 | If we need to roll back Group 2 after deployment, is it sufficient to remove new routes and controller code, or do we need a plan for Firestore data (e.g. leave data in place vs. migration)? | Affects rollout and rollback. | *(No assumption; must be decided.)* | |
+| M1 | For create/update endpoints, what are the required and optional fields for department, team, and employee in the other server? What validation rules (e.g. max length, allowed characters)? | Must be defined for validation. | *(Read from XS_Backend - Copy or define explicitly.)* | **Agreed.** Follow ported controllers from XS_Backend - Copy: department (name required, description optional); team (name required, description optional); employee per A4. Validation: match other server where defined; otherwise sensible defaults (e.g. name 1–200 chars). Document in API/README when documenting Group 2. |
+| M2 | Should we add rate limiting on create/invite endpoints (e.g. limit invites per enterprise per hour)? | Prevents abuse. | *(No assumption; must be decided.)* | **Agreed.** No rate limiting on Group 2 endpoints for now. Add per-enterprise or per-IP limits later if abuse appears. |
+| M3 | How will Group 2 be tested: unit tests only, E2E only, or both? Same approach as Phase 1? | Rule #3: real data only; no mocks. | *(No assumption; must be decided.)* | **Agreed.** E2E with real data (same as Phase 1); no mocks. Use existing E2E script (test-e2e-enterprise-full-flow.js) and manual flows; add Postman/README as needed. |
+| M4 | If we need to roll back Group 2 after deployment, is it sufficient to remove new routes and controller code, or do we need a plan for Firestore data (e.g. leave data in place vs. migration)? | Affects rollout and rollback. | *(No assumption; must be decided.)* | **Agreed.** Rollback = remove new routes and Group 2 controller code only. Leave Firestore data in place (no migration). Data can be re-used if we re-enable later. |
 
 ---
 
@@ -168,15 +168,65 @@
 
 | ID | Question | Context | Proposed (for discussion) | Decision |
 |----|----------|---------|---------------------------|----------|
-| N1 | Where should the new Group 2 API be documented (e.g. README in backend, Postman collection, OpenAPI, or other)? | Phase 1 had Postman collection. | Same as Phase 1 (e.g. add to Postman) and/or backend README. | |
-| N2 | Is there a frontend in this repo that will call these APIs when Group 2 is implemented, or is this backend-only for now? | Affects contract stability and prioritization. | *(No assumption; must be stated.)* | |
+| N1 | Where should the new Group 2 API be documented (e.g. README in backend, Postman collection, OpenAPI, or other)? | Phase 1 had Postman collection. | Same as Phase 1 (e.g. add to Postman) and/or backend README. | **Agreed.** Same as Phase 1: add Group 2 to Postman collection and/or backend README (e.g. E2E_ENTERPRISE_FULL_FLOW.md, ENTERPRISE_INTEGRATION_TRACKER.md). |
+| N2 | Is there a frontend in this repo that will call these APIs when Group 2 is implemented, or is this backend-only for now? | Affects contract stability and prioritization. | *(No assumption; must be stated.)* | **Agreed.** Frontend exists (enterprise app / website); it will call Group 2 APIs. Maintain contract stability for that consumer. |
 
 ---
 
 ## Summary
 
 - **Total questions:** 42 (A1–A4, B1–B4, C1–C3, D1–D7, E1–E6, F1–F4, G1–G3, H1–H2, I1–I2, J1–J2, K1–K3, L1–L3, M1–M4, N1–N2).
-- **Questions that require reading XS_Backend - Copy (no proposed answer):** A4, B1, D1, D6, D7, E5, E6, I2, M1.
-- **Questions left with “No assumption” for you to decide:** B4, F4, K3, M2, M3, M4, N2.
+- **Questions that require reading XS_Backend - Copy (no proposed answer):** A4, B1 (D1–D7, E1–E6, I2, M1 now decided from scan).
+- **Questions left with “No assumption” for you to decide:** B4, F4 (K3, M2, M3, M4, N2 now decided).
 
 After each question is discussed and decided, record the **Decision** in the table. Agreed items can then be moved into a separate **Group 2 Implementation Plan** document and tracked there.
+
+---
+
+## Group 2 integration progress (reassessed from decisions in this doc)
+
+**Decided and implemented (core):** A, B, C, F1–F3, G, I, J, K, L, M, N. Routes and controllers ported (departments, teams, employees, export); welcome email and registration redirect use ENTERPRISE_APP_URL; SignIn not gated by department auth.
+
+**H1 (delete enterprise):** Decision in table: **enterprises are never deleted**; they are deactivated and archived. **No change to deleteEnterprise** for Group 2 (block delete if ever used, or leave as-is). So H1 needs **no implementation**—no cascade delete, no new delete behaviour. Current CEMENT stays as-is.
+
+**H2 (getEnterpriseStats):** Decision: add departments, teams, and employees counts. **Implemented.** Stats now return real `departments`, `teams`, and `employees` counts.
+
+**L1 (pagination):** Decision: add limit (default 50, max 100) and optional startAfter for list endpoints. **Implemented** on getAllDepartments, getAllTeams, getDepartmentEmployees, getTeamMembers (query params: `limit`, `startAfter`; response includes `nextPageToken` when there are more).
+
+**Still open (need decision or read from other server):** None. E1–E6 are now decided from the same XS_Backend - Copy scan as D1–D7. F4 deferred.
+
+**What’s left for integration (actionable before public launch):**
+- **J2 (Index docs):** Document required composite indexes for Group 2 queries (e.g. in `backend/firestore-indexes.md` or equivalent) when adding list/pagination queries.
+- **F4 (roles):** Deferred to end of pipeline—not part of Group 2 integration.
+- **Optional:** Record F1, F2, F3, G1, G2, G3 in the Decision column (already followed in implementation).
+
+**Deferred (post-launch, implement retroactively):**
+- **J1 (Firestore rules):** Every path where rules will be needed is listed in **`FIRESTORE_RULES_DEFERRED.md`** (and in § "Firestore rules – deferred" below).
+
+---
+
+### Firestore rules – deferred (where to add rules later)
+
+**Goal when we implement:** Only authenticated users who belong to the same enterprise can read/write these paths (so Enterprise A cannot access Enterprise B's org data). Implement in Firebase `firestore.rules` and document where rules live.
+
+| # | Path | Notes |
+|---|------|--------|
+| 1 | `enterprise/{eid}` | Enterprise doc; may already have rules. Ensure only users in this enterprise (e.g. in `enterprise/{eid}/users/{uid}` or with `enterpriseRef`) can read/write. |
+| 2 | `enterprise/{eid}/departments` | Collection: list/create departments. Restrict to same enterprise. |
+| 3 | `enterprise/{eid}/departments/{did}` | Department doc: read/update/delete. Restrict to same enterprise. |
+| 4 | `enterprise/{eid}/departments/{did}/employees` | Subcollection: list/add employees. Restrict to same enterprise. |
+| 5 | `enterprise/{eid}/departments/{did}/employees/{employeeId}` | Employee doc: read/update/delete (e.g. deactivate). Restrict to same enterprise. |
+| 6 | `enterprise/{eid}/departments/{did}/teams` | Subcollection: list/create teams. Restrict to same enterprise. |
+| 7 | `enterprise/{eid}/departments/{did}/teams/{tid}` | Team doc: read/update/delete. Restrict to same enterprise. |
+| 8 | `enterprise/{eid}/departments/{did}/teams/{tid}/employees` | Subcollection: team members. Restrict to same enterprise. |
+
+*If clients never hit Firestore directly (only the Node API does), rules can deny all client access and rely on server (Admin SDK); the list above still marks what to lock down for consistency or future direct access.*
+
+---
+
+### Decided, not yet implemented (list and approach)
+
+| Item | What | Status |
+|------|------|--------|
+| **H2** | Add departments, teams, and employees counts to `getEnterpriseStats` | **Done.** Implemented in `enterpriseController.js`: real counts via departments snapshot and per-department teams/employees sums. |
+| **L1** | Pagination (limit default 50, max 100; optional startAfter) on list endpoints | **Done.** Implemented on `getAllDepartments`, `getAllTeams`, `getDepartmentEmployees`, `getTeamMembers`: query params `limit` (default 50, max 100), `startAfter` (doc id); response includes `nextPageToken` when more results exist. |
