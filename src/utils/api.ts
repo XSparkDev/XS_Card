@@ -46,22 +46,18 @@ export const setGlobalAuthContextRef = (ref: any) => {
   globalAuthContextRef = ref;
 };
 
-// Helper function to get the appropriate base URL
-
-const getBaseUrl = () => {
-  // For production, use the deployed server
-  //return 'https://xscard-app-8ign.onrender.com';
-  // return 'https://baseurl.xscard.co.za';
-   // return 'https://apistaging.xscard.co.za'
-
-
-  // For development, try multiple local addresses
-  // You can uncomment the appropriate line for your network setup
-  
-  // Common localhost addresses
-   return 'http://192.168.0.193:8383';
- // return 'https://846084eede03.ngrok-free.app';
-  
+/**
+ * Single source of truth for the API base URL.
+ * - Set EXPO_PUBLIC_API_BASE_URL in .env for staging/production (e.g. https://apistaging.xscard.co.za).
+ * - If unset, uses development fallback (local backend).
+ * Used by buildUrl(), and by getImageUrl() in utils/imageUtils for profile/logo image URLs.
+ */
+const getBaseUrl = (): string => {
+  const fromEnv = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (fromEnv && typeof fromEnv === 'string' && fromEnv.trim() !== '') {
+    return fromEnv.trim().replace(/\/+$/, '');
+  }
+  return 'http://localhost:8383';
 };
 
 export const API_BASE_URL = getBaseUrl();

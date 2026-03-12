@@ -8,9 +8,25 @@ const router = express.Router();
 const departmentsController = require('../controllers/enterprise/departmentsController');
 const teamsController = require('../controllers/enterprise/teamsController');
 const exportController = require('../controllers/enterprise/exportController');
+const contactAggregationController = require('../controllers/enterprise/contactAggregationController');
 const { authenticateUser } = require('../middleware/auth');
 
 router.use(authenticateUser);
+
+// Group 3: Contact aggregation & cache (global cache routes first so "cache" is not matched as enterpriseId)
+router.get('/api/enterprise/cache/stats', contactAggregationController.getCacheStats);
+router.delete('/api/enterprise/cache/clear', contactAggregationController.clearAllCache);
+router.delete('/api/enterprise/cache/departments/clear', contactAggregationController.invalidateAllDepartmentCaches);
+router.post('/api/enterprise/cache/warm', contactAggregationController.warmCacheForEnterprises);
+router.put('/api/enterprise/cache/config', contactAggregationController.updateCacheConfig);
+router.get('/api/enterprise/cache/config', contactAggregationController.getCacheConfig);
+router.get('/api/enterprise/cache/analytics', contactAggregationController.getCacheAnalytics);
+
+// Group 3: Contact aggregation (enterprise/department scoped)
+router.get('/api/enterprise/:enterpriseId/contacts/summary', contactAggregationController.getEnterpriseContactsSummary);
+router.get('/api/enterprise/:enterpriseId/departments/:departmentId/contacts/summary', contactAggregationController.getDepartmentContactsSummary);
+router.get('/api/enterprise/:enterpriseId/contacts/details', contactAggregationController.getEnterpriseContactsWithDetails);
+router.get('/api/enterprise/:enterpriseId/departments/:departmentId/contacts/details', contactAggregationController.getDepartmentContactsWithDetails);
 
 // Departments
 router.get('/api/enterprise/:enterpriseId/departments', departmentsController.getAllDepartments);

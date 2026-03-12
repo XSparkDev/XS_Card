@@ -168,30 +168,25 @@ export const pickImage = async (useCamera: boolean = false): Promise<string | nu
 };
 
 /**
- * Gets the correct image URL regardless of storage location
- * Works with both Firebase Storage URLs and local server paths
- * 
- * @param {string} imageUri - The image URI from the database
- * @returns {string|null} - The full URL to the image or null if no image
+ * Canonical helper for profile image and company logo display URLs.
+ * Use this everywhere profileImage or companyLogo is shown (cards, settings, contacts, etc.).
+ *
+ * - Full URLs (http/https): returned as-is (e.g. Firebase Storage).
+ * - Paths (e.g. /profiles/userId/filename.jpg): prepended with API_BASE_URL so the request
+ *   goes to the backend that serves static files, not the app origin.
+ *
+ * @param imageUri - Value from API (profileImage, companyLogo, or contact image URL/path)
+ * @returns Full URL for <Image source={{ uri }} /> or null if missing
  */
 export const getImageUrl = (imageUri: string | undefined | null): string | null => {
-  // Handle null, undefined, or empty string
   if (!imageUri || typeof imageUri !== 'string' || imageUri.trim() === '') {
     return null;
   }
-  
-  // Trim whitespace to prevent URI parsing issues
   const cleanUri = imageUri.trim();
-  
-  // If it's already a full URL (Firebase Storage), return as is
   if (cleanUri.startsWith('http://') || cleanUri.startsWith('https://')) {
     return cleanUri;
   }
-  
-  // Otherwise, it's a local path, prepend the API base URL
-  // Ensure we don't double-slash
-  const basePath = API_BASE_URL.endsWith('/') ? API_BASE_URL : `${API_BASE_URL}/`;
-  const imagePath = cleanUri.startsWith('/') ? cleanUri.slice(1) : cleanUri;
-  
-  return `${basePath}${imagePath}`;
+  const base = API_BASE_URL.endsWith('/') ? API_BASE_URL : `${API_BASE_URL}/`;
+  const path = cleanUri.startsWith('/') ? cleanUri.slice(1) : cleanUri;
+  return `${base}${path}`;
 };

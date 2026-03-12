@@ -23,6 +23,7 @@ const { linkContactToXsCardUser } = require('./utils/contactLinking');
 const { handleSingleUpload } = require('./middleware/fileUpload');
 const { getContactConfirmationEmail } = require('./constants/emailTemplates');
 const { getOwnerName } = require('./utils/contactEmailHelpers');
+const { invalidateEnterpriseCache } = require('./controllers/enterprise/contactAggregationController');
 const app = express();
 const port = 8383;
 
@@ -219,6 +220,9 @@ const addContactHandler = async (req, res) => {
                                 userId: db.doc(`users/${userId}`),
                                 contactList: updatedContacts
                             }, { merge: true });
+                            if (userData.enterpriseRef && userData.enterpriseRef.id) {
+                                try { invalidateEnterpriseCache(userData.enterpriseRef.id); } catch (e) { console.error('Cache invalidation error:', e); }
+                            }
                             console.log('Contact updated with linking info');
                         }
                     } catch (linkingError) {
@@ -241,7 +245,16 @@ const addContactHandler = async (req, res) => {
             userId: db.doc(`users/${userId}`),
             contactList: currentContacts
         }, { merge: true });
-        
+
+        if (userData.enterpriseRef && userData.enterpriseRef.id) {
+            try {
+                invalidateEnterpriseCache(userData.enterpriseRef.id);
+                console.log(`Cache invalidated for enterprise ${userData.enterpriseRef.id} due to contact addition by user ${userId}`);
+            } catch (cacheErr) {
+                console.error('Cache invalidation error:', cacheErr);
+            }
+        }
+
         // Send email notification if user has email (non-blocking)
         if (userData.email) {
             // Send email in background - don't wait for it

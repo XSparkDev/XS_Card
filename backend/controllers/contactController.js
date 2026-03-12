@@ -3,7 +3,22 @@ const { transporter, sendMailWithStatus } = require('../public/Utils/emailServic
 const { formatDate } = require('../utils/dateFormatter');
 const { getContactConfirmationEmail } = require('../constants/emailTemplates');
 const { getOwnerName } = require('../utils/contactEmailHelpers');
+const { invalidateEnterpriseCache } = require('./enterprise/contactAggregationController');
 // Note: Contact linking functionality moved to server.js /AddContact endpoint
+
+/** Invalidate enterprise contact cache if user belongs to an enterprise (Group 3). Do not fail the request on error. */
+async function invalidateCacheForUser(userId) {
+    try {
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.data();
+        if (userData && userData.enterpriseRef && userData.enterpriseRef.id) {
+            invalidateEnterpriseCache(userData.enterpriseRef.id);
+            console.log(`Cache invalidated for enterprise ${userData.enterpriseRef.id} due to contact change by user ${userId}`);
+        }
+    } catch (err) {
+        console.error('Contact aggregation cache invalidation error:', err);
+    }
+}
 
 // Add constant for free plan limit
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -139,7 +154,9 @@ exports.addContact = async (req, res) => {
             userId: db.doc(`users/${userId}`),
             contactList: currentContacts
         }, { merge: true });
-        
+
+        await invalidateCacheForUser(userId);
+
         res.status(201).send({ 
             message: 'Contact added successfully',
             contactList: currentContacts.map(contact => ({
@@ -240,6 +257,8 @@ exports.saveContactInfo = async (req, res) => {
             userId: db.doc(`users/${userId}`),
             contactList: existingContacts
         }, { merge: true });
+
+        await invalidateCacheForUser(userId);
 
         // Send email notification if user has email
         if (userData.email) {
@@ -382,6 +401,8 @@ exports.updateContact = async (req, res) => {
             contactList: currentContacts
         });
 
+        await invalidateCacheForUser(id);
+
         res.status(200).send({ 
             message: 'Contact list updated successfully',
             updatedContacts: currentContacts
@@ -407,6 +428,7 @@ exports.deleteContact = async (req, res) => {
         }
         
         await contactRef.delete();
+        await invalidateCacheForUser(id);
         res.status(200).send({ 
             message: 'Contact list deleted successfully',
             deletedContactId: id
@@ -454,6 +476,8 @@ exports.deleteContactFromList = async (req, res) => {
         await contactRef.update({
             contactList: currentContacts // Note: using contactList, not contactsList
         });
+
+        await invalidateCacheForUser(id);
 
         console.log('Contact deleted successfully');
         res.status(200).send({ 
@@ -510,6 +534,8 @@ exports.deleteMultipleContacts = async (req, res) => {
         await contactRef.update({
             contactList: currentContacts
         });
+
+        await invalidateCacheForUser(id);
 
         res.status(200).send({
             message: 'Contacts deleted successfully',

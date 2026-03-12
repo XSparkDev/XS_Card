@@ -104,7 +104,7 @@ Only these need a decision. Everything else is in "From scan" above.
 
 ---
 
-## Group 3 integration progress (placeholder)
+## Group 3 integration progress
 
-- **Status:** Not started. Stub `contactAggregationController.js` (invalidateEnterpriseCache no-op) and call sites in departmentsController are in place.
-- **Next:** Resolve G3-Q1–G3-Q3, then port `contactAggregationController.js` and routes from XS_Backend - Copy; add invalidation to contact write paths in current server (contactController, any server.js contact save).
+- **Status:** **Done.** Full `contactAggregationController.js` ported; all 11 endpoints wired in `departmentRoutes.js`; cache invalidation on employee changes (departmentsController) and on contact writes (contactController + server.js addContactHandler). G3-Q1–Q3 applied (same router, global cache, in-memory).
+- **Remaining:** None for Group 3.

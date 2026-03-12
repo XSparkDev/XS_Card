@@ -37,6 +37,7 @@ import {
 import { formatTimestamp } from '../../utils/dateFormatter';
 import { AuthManager } from '../../utils/authManager';
 import GradientAvatar from '../../components/GradientAvatar';
+import { getImageUrl as resolveImageUrl } from '../../utils/imageUtils';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -105,21 +106,11 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
   const viewRef = useRef<View>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Get the appropriate image URL
+  // Resolve image URL (path → API base URL; full URL → as-is). Use shared getImageUrl for consistency.
   const getImageUrl = useCallback(() => {
     if (!contact.isXsCardUser) return null;
-    
-    // Prefer new structure with multiple sizes
-    if (contact.profileImageUrls?.thumbnail) {
-      return contact.profileImageUrls.thumbnail;
-    }
-    
-    // Fallback to legacy single URL
-    if (contact.profileImageUrl) {
-      return contact.profileImageUrl;
-    }
-    
-    return null;
+    const raw = contact.profileImageUrls?.thumbnail ?? contact.profileImageUrl ?? null;
+    return raw ? resolveImageUrl(raw) : null;
   }, [contact]);
 
   // Check if component is visible on screen

@@ -66,3 +66,6 @@ a n d r o i d - c o r r u p t e d /
 
 # Temporary reference copy for code transfer
 XS_Backend - Copy/
+
+# Runtime uploads (should not be committed)
+backend/public/profiles/

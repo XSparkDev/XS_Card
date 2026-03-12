@@ -95,7 +95,7 @@
   - `getCacheConfig` - Get cache config
   - `getCacheAnalytics` - Advanced analytics
 - **Performance:** 500x improvement (5-10s → 0.01s)
-- **Status:** Not implemented
+- **Status:** Implemented (contact aggregation + cache routes; invalidation on employee/contact writes)
 - **Integration Phase:** Phase 3
 
 ---
@@ -180,6 +180,24 @@
   - `submitEnterpriseInquiry` - General inquiries
 - **Status:** Partially implemented (invoices may need integration)
 - **Integration Phase:** Future (if needed)
+
+---
+
+## Gap audit: Other-server features not in Groups 1–7
+
+The groups above were defined from an initial view of the other server, so some features (e.g. contact location, email signatures, card templates) were not included. This section lists everything on **XS_Backend - Copy** that does **not** belong to Groups 1–7, so the grouping is not assumed complete and nothing is missed by default. This section lists **features that exist on XS_Backend - Copy but were not assigned to any group**. Use it to decide what to add to the grouping, defer, or track separately.
+
+| Feature area | What exists on other server | In grouping? |
+|--------------|-----------------------------|--------------|
+| **Contact location (IP → location)** | On contact add: capture IP, then (async) geocode via `locationService.getLocationFromIp`, write `contact.location` (lat/long, city, country, etc.). Uses `contactMiddleware.js` (enrichContactWithIp, processContactLocation), `locationQueue.js`, `locationService.js`. Optional Bull/Redis queue. | **No** |
+| **Location analytics (heatmap)** | `GET /api/analytics/locations` – aggregate contacts with `contact.location` for heatmap; filter by date. `locationRoutes.js`. | **No** (depends on contact location above) |
+| **Email signatures** | Signature templates (public), preview, test, bulk update per enterprise. `emailSignatureController.js`, `emailSignatureRoutes.js`. User-level signature in userRoutes. | **No** |
+| **Card templates** | Enterprise/department card templates CRUD, effective template (inheritance), preview. `cardTemplateController.js`, `cardTemplateRoutes.js`. | **No** |
+| **Notification preferences** | Get/update/reset notification preferences per user; admin get other user prefs; notification statistics. `notificationController.js`, `notificationRoutes.js`. | **No** |
+| **Contact permissions (enterprise)** | `PUT /enterprise/:eid/users/:userId/contact-permissions` in contactRoutes – update user contact permissions. | **No** (could sit under Group 5 Access Control or alongside contacts) |
+| **Activity log routes** | activityLogRoutes.js – health/test endpoints; full activity log API may be in activityLogController. | Group 1 lists activity logging but route-level audit not done here |
+
+**Recommendation:** Decide for each row: (1) add to an existing group or a new group, (2) explicitly defer, or (3) leave as “other server only” for now. Then keep this table updated so the grouping stays the single source of truth.
 
 ---
 
