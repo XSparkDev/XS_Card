@@ -51,7 +51,7 @@ export const setGlobalAuthContextRef = (ref: any) => {
 const getBaseUrl = () => {
   // For production, use the deployed server
   //return 'https://xscard-app-8ign.onrender.com';
-   return 'https://baseurl.xscard.co.za';
+   return 'https://apistaging.xscard.co.za';
 
   // For development, try multiple local addresses
   // You can uncomment the appropriate line for your network setup
