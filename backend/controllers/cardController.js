@@ -513,19 +513,10 @@ exports.updateCardColor = async (req, res) => {
 exports.createWalletPass = async (req, res) => {
     const { userId, cardIndex = 0 } = req.params;
     const { skipImages } = req.query;
+    const useNative = process.env.USE_NATIVE_WALLET === 'true';
 
     try {
-        // Log configuration before making the request
-        logPasscreatorConfig();
         console.log('\nCreating wallet pass for:', { userId, cardIndex });
-
-        // Validate required environment variables
-        if (!process.env.PASSCREATOR_BASE_URL || 
-            !process.env.PASSCREATOR_TEMPLATE_ID || 
-            !process.env.PASSCREATOR_API_KEY || 
-            !config.PASSCREATOR_PUBLIC_URL) {
-            throw new Error('Missing required Passcreator configuration');
-        }
 
         const cardRef = db.collection('cards').doc(userId);
         const cardDoc = await cardRef.get();
@@ -542,7 +533,69 @@ exports.createWalletPass = async (req, res) => {
         }
 
         const card = cardsData.cards[cardIndex];
-        
+
+        // Detect platform from User-Agent (default to android for safety)
+        const userAgent = req.get('User-Agent') || '';
+        const platform = (userAgent.includes('iPhone') || userAgent.includes('iPad')) ? 'ios' : 'android';
+
+        // Native wallet pass path (Android and iOS)
+        if (useNative) {
+            try {
+                const WalletPassService = require('../services/walletPassService');
+                const walletService = new WalletPassService();
+
+                const saveContactUrl = `${req.protocol}://${req.get('host')}/saveContact?userId=${userId}&cardIndex=${cardIndex}`;
+                const passResult = await walletService.generatePass(
+                    platform,
+                    card,
+                    userId,
+                    parseInt(cardIndex, 10),
+                    saveContactUrl
+                );
+
+                // iOS: Return .pkpass file as binary
+                if (platform === 'ios') {
+                    res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+                    res.setHeader('Content-Disposition', `attachment; filename="xscard_${cardIndex}.pkpass"`);
+                    return res.status(200).send(passResult);
+                }
+
+                // Android: Return JSON with save URL
+                return res.status(200).send({
+                    message: 'Google Wallet pass created successfully',
+                    passPageUrl: passResult,
+                    cardIndex: cardIndex,
+                    platform: 'android'
+                });
+            } catch (nativeError) {
+                console.error(`Error creating native ${platform} wallet pass:`, nativeError);
+
+                // Return specific error messages for configuration issues
+                if (nativeError.message.includes('service account not properly configured') ||
+                    nativeError.message.includes('certificates not properly configured')) {
+                    return res.status(500).send({
+                        message: `${platform === 'ios' ? 'Apple' : 'Google'} Wallet not configured`,
+                        error: nativeError.message
+                    });
+                }
+
+                // Fall through to Passcreator as a safety net
+                console.log(`Falling back to Passcreator due to native ${platform} error`);
+            }
+        }
+
+        // Existing Passcreator implementation (fallback and for iOS)
+        // Log configuration before making the request
+        logPasscreatorConfig();
+
+        // Validate required environment variables
+        if (!process.env.PASSCREATOR_BASE_URL || 
+            !process.env.PASSCREATOR_TEMPLATE_ID || 
+            !process.env.PASSCREATOR_API_KEY || 
+            !config.PASSCREATOR_PUBLIC_URL) {
+            throw new Error('Missing required Passcreator configuration');
+        }
+
         // Check if we should skip images
         const isLocalIp = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(config.PASSCREATOR_PUBLIC_URL);
         const shouldSkipImages = skipImages === 'true' || isLocalIp;
@@ -602,7 +655,7 @@ exports.createWalletPass = async (req, res) => {
             config: error.config
         });
 
-        // Check if error is due to image access issue
+        // Check if error is due to image access issue (Passcreator)
         if (error.response?.data?.ErrorMessage === 'Thumbnail could not be imported from given URL') {
             try {
                 // Try again without images
@@ -661,7 +714,7 @@ exports.createWalletPass = async (req, res) => {
                 detailedError = JSON.stringify(error.response.data);
             }
         }
-
+        
         // Send a more user-friendly error response
         res.status(500).send({
             message: errorMessage,

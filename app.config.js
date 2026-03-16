@@ -31,14 +31,7 @@ export default {
       favicon: "./assets/icons/favicon.png"
     },
     // Disable react-native-reanimated on Windows
-    plugins: [
-      [
-        "expo-dev-client",
-        {
-          addGeneratedScheme: false
-        }
-      ]
-    ],
+    plugins: [],
     extra: {
       // Disable reanimated completely for Windows builds
       REACT_NATIVE_REANIMATED_DISABLE_AUTOLINK: "1",
@@ -50,7 +43,10 @@ export default {
       EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "xscard-dev",
       EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "xscard-dev.appspot.com",
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-      EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
+      EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+      eas: {
+        projectId: "4235e235-536e-42af-8c32-5fb9508a7ab1"
+      }
     }
   }
 };
