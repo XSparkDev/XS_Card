@@ -167,7 +167,8 @@ exports.addUser = async (req, res) => {
         status = 'active',
         termsAccepted = false,
         privacyAccepted = false,
-        legalAcceptedAt
+        legalAcceptedAt,
+        conferenceCode
     } = req.body;
     
     try {
@@ -214,6 +215,12 @@ exports.addUser = async (req, res) => {
             privacyAccepted: true,
             legalAcceptedAt: legalAcceptedTimestamp
         };
+
+        // Optionally tag conference registrations without affecting normal users
+        const configuredConferenceCode = process.env.CONFERENCE_CODE;
+        if (conferenceCode && configuredConferenceCode && conferenceCode === configuredConferenceCode) {
+            userData.conferenceCode = conferenceCode;
+        }
 
         const responseData = {
             ...userData,
