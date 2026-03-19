@@ -6,6 +6,7 @@ require('dotenv').config();
 const { AUTH_ENDPOINTS, EMAIL_TEMPLATES, AUTH_CONSTANTS } = require('../constants/auth');
 const { formatDate } = require('../utils/dateFormatter');
 const { normalizePhone, ensurePhoneAvailable, PHONE_ERROR_CODE } = require('../utils/phoneUtils');
+const { markEmailVerifiedAdmin } = require('../utils/markEmailVerifiedAdmin');
 
 const sendVerificationEmail = async (userData, req) => {
     const now = Date.now();
@@ -364,6 +365,41 @@ exports.resendVerification = async (req, res) => {
         res.status(500).send({ 
             message: 'Failed to resend verification email',
             error: error.message 
+        });
+    }
+};
+
+/**
+ * Admin endpoint:
+ * POST /admin/mark-email-verified
+ * Body: { email } OR { uid }
+ *
+ * Updates Firebase Auth and Firestore so the mobile app stops showing
+ * "Verify Your Email" and the resend button reports "Email already verified".
+ */
+exports.adminMarkEmailVerified = async (req, res) => {
+    try {
+        const { email, uid } = req.body || {};
+
+        if (!email && !uid) {
+            return res.status(400).json({
+                message: 'Provide `email` or `uid` in request body'
+            });
+        }
+
+        const result = await markEmailVerifiedAdmin({ email, uid });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Email marked as verified',
+            ...result
+        });
+    } catch (error) {
+        console.error('[adminMarkEmailVerified] error:', error);
+        const code = error.message?.toLowerCase?.().includes('not found') ? 404 : 400;
+        return res.status(code).json({
+            success: false,
+            message: error.message || 'Failed to mark email as verified'
         });
     }
 };
