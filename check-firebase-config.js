@@ -2,7 +2,7 @@
 
 /**
  * Firebase Configuration Checker
- * Verifies that all Firebase environment variables are set correctly for xscard-dev
+ * Verifies that all Firebase environment variables are set correctly.
  */
 
 require('dotenv').config();
@@ -20,6 +20,8 @@ console.log('🔍 Checking Firebase Configuration...\n');
 
 let allValid = true;
 const issues = [];
+const expectedProjectId = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'xscard-addd4';
+const expectedAuthDomain = `${expectedProjectId}.firebaseapp.com`;
 
 // Check each required variable
 for (const [varName, displayName] of Object.entries(requiredVars)) {
@@ -32,9 +34,9 @@ for (const [varName, displayName] of Object.entries(requiredVars)) {
   } else {
     // Validate project ID
     if (varName === 'EXPO_PUBLIC_FIREBASE_PROJECT_ID') {
-      if (value !== 'xscard-dev') {
-        console.log(`⚠️  ${displayName}: "${value}" (Expected: "xscard-dev")`);
-        issues.push(`Project ID should be "xscard-dev" but got "${value}"`);
+      if (value !== expectedProjectId) {
+        console.log(`⚠️  ${displayName}: "${value}" (Expected: "${expectedProjectId}")`);
+        issues.push(`Project ID should be "${expectedProjectId}" but got "${value}"`);
         allValid = false;
       } else {
         console.log(`✅ ${displayName}: ${value}`);
@@ -42,46 +44,19 @@ for (const [varName, displayName] of Object.entries(requiredVars)) {
     }
     // Validate auth domain
     else if (varName === 'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN') {
-      if (!value.includes('xscard-dev')) {
-        console.log(`⚠️  ${displayName}: "${value}" (Should contain "xscard-dev")`);
-        issues.push(`Auth domain should be for "xscard-dev" project`);
-        allValid = false;
-      } else {
-        console.log(`✅ ${displayName}: ${value}`);
-      }
-    }
-    // Check for old API key (from xscard-addd4)
-    else if (varName === 'EXPO_PUBLIC_FIREBASE_API_KEY') {
-      if (value === 'AIzaSyA1cmFJD61yxZ36hEOXF48r145ZdWA3Pjo') {
-        console.log(`⚠️  ${displayName}: "${value.substring(0, 20)}..." (This is the OLD API key from xscard-addd4!)`);
-        issues.push('API Key is from the old project (xscard-addd4). You need the API key from xscard-dev');
-        allValid = false;
-      } else {
-        console.log(`✅ ${displayName}: ${value.substring(0, 20)}...`);
-      }
-    }
-    // Check for old messaging sender ID
-    else if (varName === 'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID') {
-      if (value === '628567737496') {
-        console.log(`⚠️  ${displayName}: "${value}" (This is from the OLD project!)`);
-        issues.push('Messaging Sender ID is from the old project');
-        allValid = false;
-      } else {
-        console.log(`✅ ${displayName}: ${value}`);
-      }
-    }
-    // Check for old app ID
-    else if (varName === 'EXPO_PUBLIC_FIREBASE_APP_ID') {
-      if (value.includes('628567737496')) {
-        console.log(`⚠️  ${displayName}: "${value}" (This is from the OLD project!)`);
-        issues.push('App ID is from the old project');
+      if (value !== expectedAuthDomain) {
+        console.log(`⚠️  ${displayName}: "${value}" (Expected: "${expectedAuthDomain}")`);
+        issues.push(`Auth domain should be "${expectedAuthDomain}"`);
         allValid = false;
       } else {
         console.log(`✅ ${displayName}: ${value}`);
       }
     }
     else {
-      console.log(`✅ ${displayName}: ${value}`);
+      const safeValue = varName === 'EXPO_PUBLIC_FIREBASE_API_KEY'
+        ? `${value.substring(0, 20)}...`
+        : value;
+      console.log(`✅ ${displayName}: ${safeValue}`);
     }
   }
 }
@@ -100,10 +75,10 @@ if (allValid) {
     console.log(`   ${i + 1}. ${issue}`);
   });
   console.log('\n📝 To fix:');
-  console.log('   1. Go to Firebase Console → xscard-dev project');
+  console.log(`   1. Go to Firebase Console → ${expectedProjectId} project`);
   console.log('   2. Project Settings → Your apps → Web app');
   console.log('   3. Copy the config values and update your .env file');
-  console.log('   4. Make sure all values are for "xscard-dev" project');
+  console.log(`   4. Make sure all values are for "${expectedProjectId}" project`);
   console.log('   5. Rebuild: npx expo start --clear');
 }
 

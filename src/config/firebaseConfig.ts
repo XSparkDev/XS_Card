@@ -2,9 +2,8 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 
-// Firebase configuration for XSCard App
-// This should match your Firebase project (same as backend)
-// MIGRATED: Now using xscard-dev project (previously xscard-addd4)
+// Firebase configuration for XSCard App.
+// This must match the backend Firebase project to avoid auth mismatches.
 const firebaseConfig = {
     apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
     authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -33,12 +32,6 @@ if (missingFields.length > 0) {
     console.error(`  - ${envVarMap[field] || `EXPO_PUBLIC_FIREBASE_${field.toUpperCase()}`}`);
   });
   throw new Error(`Missing Firebase configuration: ${missingFields.join(', ')}`);
-}
-
-// Validate project ID matches expected value
-if (firebaseConfig.projectId && firebaseConfig.projectId !== 'xscard-dev') {
-  console.warn(`⚠️  Warning: Firebase project ID is "${firebaseConfig.projectId}", expected "xscard-dev"`);
-  console.warn('   Make sure you have migrated to the correct Firebase project.');
 }
 
 // Initialize Firebase with error handling
@@ -83,12 +76,8 @@ try {
   console.log('   Project:', firebaseConfig.projectId);
   console.log('   Auth instance created');
   
-  // Verify the project ID matches
-  if (firebaseConfig.projectId !== 'xscard-dev') {
-    console.error('❌ [Firebase Config] CRITICAL: Project ID mismatch!');
-    console.error('   Expected: xscard-dev');
-    console.error('   Got:', firebaseConfig.projectId);
-    console.error('   This will cause authentication failures!');
+  if (firebaseConfig.projectId) {
+    console.log('   Firebase Project ID:', firebaseConfig.projectId);
   }
   
   // Note: Firebase will show a warning about memory persistence

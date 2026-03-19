@@ -49,14 +49,14 @@ export const setGlobalAuthContextRef = (ref: any) => {
 // Helper function to get the appropriate base URL
 
 const getBaseUrl = () => {
-  // Primary: configured via environment (recommended for dev/staging/prod)
-  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-  if (envUrl && typeof envUrl === 'string') {
-    return envUrl;
+  const envBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+
+  if (envBaseUrl) {
+    return envBaseUrl;
   }
 
-  // Fallback (safe default)
-  return 'https://apistaging.xscard.co.za';
+  // Safe fallback to production backend to avoid accidental local defaults.
+  return 'https://baseurl.xscard.co.za';
 };
 
 export const API_BASE_URL = getBaseUrl();
