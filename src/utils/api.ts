@@ -56,7 +56,7 @@ const getBaseUrl = () => {
   }
 
   // Safe fallback to production backend to avoid accidental local defaults.
-  return 'https://baseurl.xscard.co.za';
+  return 'https://apistaging.xscard.co.za';
 };
 
 export const API_BASE_URL = getBaseUrl();
