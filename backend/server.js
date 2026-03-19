@@ -58,6 +58,7 @@ const revenueCatRoutes = require('./routes/revenueCatRoutes'); // Add RevenueCat
 const appleReceiptRoutes = require('./routes/appleReceiptRoutes'); // Add Apple receipt validation routes
 const videoRoutes = require('./routes/videoRoutes'); // Add video routes
 const oauthRoutes = require('./routes/oauthRoutes'); // NEW: Add OAuth routes (POOP)
+const conferenceRoutes = require('./routes/conferenceRoutes'); // Conference integration routes
 
 app.use(express.json());
 
@@ -590,6 +591,7 @@ app.use('/api/apple-receipt', appleReceiptRoutes); // Add Apple receipt validati
 app.use('/', apkRoutes); // Add APK routes for public download
 app.use('/', iosVersionRoutes); // Add iOS version routes for public version checking
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
+app.use('/', conferenceRoutes); // Conference-specific public API (guarded by API key)
 app.use('/', userRoutes); // Move user routes to public section so SignIn works
 app.use('/', contactRoutes); // Move contact routes to public section to keep save contact public
 app.use('/api/feature-videos', videoRoutes); // Add video routes BEFORE other /api routes
