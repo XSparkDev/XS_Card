@@ -9,15 +9,7 @@
  * - iOS     → AppleWalletService (returns .pkpass buffer)
  */
 
-const GoogleWalletService = require('./googleWalletService');
-const AppleWalletService = require('./appleWalletService');
-
 class WalletPassService {
-  constructor() {
-    this.googleService = new GoogleWalletService();
-    this.appleService = new AppleWalletService();
-  }
-
   /**
    * Generate a wallet pass based on platform.
    *
@@ -32,10 +24,14 @@ class WalletPassService {
    */
   async generatePass(platform, cardData, userId, cardIndex, saveContactUrl) {
     if (platform === 'android') {
-      if (!this.googleService.validateServiceAccount()) {
+      // Lazy-require so Android doesn't require iOS-only deps (e.g. passkit-generator).
+      const GoogleWalletService = require('./googleWalletService');
+      const googleService = new GoogleWalletService();
+
+      if (!googleService.validateServiceAccount()) {
         throw new Error('Google Wallet service account not properly configured');
       }
-      return await this.googleService.generatePass(
+      return await googleService.generatePass(
         cardData,
         userId,
         cardIndex,
@@ -44,10 +40,14 @@ class WalletPassService {
     }
 
     if (platform === 'ios') {
-      if (!this.appleService.validateCertificates()) {
+      // Lazy-require so iOS deps are only needed for iOS requests.
+      const AppleWalletService = require('./appleWalletService');
+      const appleService = new AppleWalletService();
+
+      if (!appleService.validateCertificates()) {
         throw new Error('Apple Wallet certificates not properly configured. Please check certificate paths in environment variables.');
       }
-      return await this.appleService.generatePass(
+      return await appleService.generatePass(
         cardData,
         userId,
         cardIndex,
