@@ -12,7 +12,7 @@ import {
 import { ErrorHandler, ERROR_CODES, handleAuthError, handleStorageError, createAppError } from '../utils/errorHandler';
 // Firebase integration
 import { auth } from '../config/firebaseConfig';
-import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser, sendEmailVerification } from 'firebase/auth';
 // API utilities for data recovery
 import { buildUrl, ENDPOINTS, setGlobalAuthContextRef } from '../utils/api';
 
@@ -548,7 +548,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       // Use Firebase's built-in resend verification
-      const { sendEmailVerification } = await import('firebase/auth');
       await sendEmailVerification(currentUser);
       console.log('AuthProvider: Verification email sent');
       
@@ -632,4 +631,4 @@ export default AuthContext;
 
 
 
-export default AuthContext; 
+// export default AuthContext; (duplicate default export removed)
