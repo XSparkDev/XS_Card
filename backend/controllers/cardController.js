@@ -538,68 +538,19 @@ exports.createWalletPass = async (req, res) => {
         const userAgent = req.get('User-Agent') || '';
         const platform = (userAgent.includes('iPhone') || userAgent.includes('iPad')) ? 'ios' : 'android';
 
-        // Passcreator is only used for iOS.
-        // Android uses Google Wallet native only (no Passcreator fallback).
+        // iOS: Native Apple Wallet generation via public .pkpass URL (no Passcreator).
         if (platform === 'ios') {
-            // Log configuration before making the request
-            logPasscreatorConfig();
+            // If the client requests it (e.g., local environment), omit image downloads during pass creation.
+            const shouldSkipImages = skipImages === 'true';
 
-            // Validate required environment variables
-            if (!process.env.PASSCREATOR_BASE_URL || 
-                !process.env.PASSCREATOR_TEMPLATE_ID || 
-                !process.env.PASSCREATOR_API_KEY || 
-                !config.PASSCREATOR_PUBLIC_URL) {
-                throw new Error('Missing required Passcreator configuration');
-            }
-
-            // Check if we should skip images
-            const isLocalIp = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(config.PASSCREATOR_PUBLIC_URL);
-            const shouldSkipImages = skipImages === 'true' || isLocalIp;
-            
-            // Prepare pass data
-            const passData = {
-                name: `${card.name} ${card.surname}`,
-                company: card.company,
-                jobTitle: card.occupation,
-                barcodeValue: `${config.PASSCREATOR_PUBLIC_URL}/saveContact?userId=${userId}&cardIndex=${cardIndex}`
-            };
-
-            // Add images only if we shouldn't skip them
-            if (!shouldSkipImages) {
-                if (card.profileImage) {
-                    passData.urlToThumbnail = card.profileImage;
-                }
-                if (card.companyLogo) {
-                    passData.urlToLogo = card.companyLogo;
-                }
-            }
-
-            // Make a single API call with the correct data
-            const response = await axios.post(
-                `${process.env.PASSCREATOR_BASE_URL}/api/pass?passtemplate=${process.env.PASSCREATOR_TEMPLATE_ID}&zapierStyle=true`,
-                passData,
-                {
-                    headers: {
-                        'Authorization': process.env.PASSCREATOR_API_KEY,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            console.log('Passcreator API Response:', {
-                uri: response.data.uri,
-                fileUrl: response.data.linkToPassFile,
-                pageUrl: response.data.linkToPassPage,
-                identifier: response.data.identifier
-            });
+            const passPageUrl = `${req.protocol}://${req.get('host')}/wallet-passes/${userId}/${cardIndex}.pkpass` +
+                (shouldSkipImages ? '?skipImages=true' : '');
 
             return res.status(200).send({
-                message: 'Wallet pass created successfully',
-                passUri: response.data.uri,
-                passFileUrl: response.data.linkToPassFile,
-                passPageUrl: response.data.linkToPassPage,
-                identifier: response.data.identifier,
+                message: 'Apple Wallet pass created successfully',
+                passPageUrl,
                 cardIndex: cardIndex,
+                platform: 'ios',
                 imagesIncluded: !shouldSkipImages,
                 warning: shouldSkipImages ? 'Images were skipped due to local development environment or query parameter.' : null
             });

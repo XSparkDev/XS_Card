@@ -40,3 +40,7 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Apple Wallet pass certificates (never commit)
+certs/
+certs/**
