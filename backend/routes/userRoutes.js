@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
 const { authenticateUser } = require('../middleware/auth');
+const { adminAuth } = require('../middleware/adminAuth');
 const { handleSingleUpload, handleMultipleUploads } = require('../middleware/fileUpload');
 const path = require('path');
 
@@ -31,6 +32,9 @@ router.get('/reset-password', (req, res) => {
 });
 router.get('/reset-user-info', userController.getResetUserInfo);
 router.post('/public/resend-verification', userController.resendVerificationPublic);
+
+// Admin routes must be registered BEFORE router.use(authenticateUser)
+router.post('/admin/mark-email-verified', adminAuth, userController.adminMarkEmailVerified);
 
 // All routes below this middleware will require authentication
 router.use(authenticateUser);

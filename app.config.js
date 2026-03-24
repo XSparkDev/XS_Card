@@ -31,26 +31,23 @@ export default {
       favicon: "./assets/icons/favicon.png"
     },
     // Disable react-native-reanimated on Windows
-    plugins: [
-      [
-        "expo-dev-client",
-        {
-          addGeneratedScheme: false
-        }
-      ]
-    ],
+    plugins: [],
     extra: {
       // Disable reanimated completely for Windows builds
       REACT_NATIVE_REANIMATED_DISABLE_AUTOLINK: "1",
-      // Firebase configuration for xscard-dev project
-      // These values are read from environment variables at build time
-      // Set them in a .env file or as system environment variables
+      // Firebase configuration is read from environment variables at build time.
+      // Keep production-safe defaults aligned with backend (xscard-addd4) so
+      // debug builds do not silently point at an incompatible Firebase project.
       EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-      EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "xscard-dev.firebaseapp.com",
-      EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "xscard-dev",
-      EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "xscard-dev.appspot.com",
+      EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "xscard-addd4.firebaseapp.com",
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "xscard-addd4",
+      EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "xscard-addd4.firebasestorage.app",
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-      EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
+      EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+      EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL || "https://baseurl.xscard.co.za",
+      eas: {
+        projectId: "4235e235-536e-42af-8c32-5fb9508a7ab1"
+      }
     }
   }
 };
