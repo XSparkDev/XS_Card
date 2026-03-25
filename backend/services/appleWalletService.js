@@ -40,9 +40,14 @@ class AppleWalletService {
     }
 
     try {
+      const serialNumber = `${userId}_${cardIndex}_${Date.now()}`;
+
       // Create pass instance
+      // PKPass signature: new PKPass(buffers, certificates, props)
+      // We provide pass "props" as the 3rd argument (not the 2nd), then set certificates in loadCertificates().
       const pass = new PKPass(
         {},
+        undefined,
         {
           // Pass type identifier and team identifier
           passTypeIdentifier: this.passTypeId,
@@ -55,59 +60,62 @@ class AppleWalletService {
           foregroundColor: 'rgb(255, 255, 255)',
           backgroundColor: 'rgb(27, 43, 91)', // #1B2B5B
           labelColor: 'rgb(255, 255, 255)',
+          // Note: passkit-generator v3 expects serialNumber to be part of the pass props.
+          serialNumber,
         }
       );
 
-      // Set serial number (unique identifier)
-      pass.serialNumber = `${userId}_${cardIndex}_${Date.now()}`;
+      // Fields API is only available after setting a supported pass type.
+      // For simplicity we use eventTicket (generic business-card data fits field-wise).
+      pass.type = 'eventTicket';
 
       // Primary field: Name
-      pass.addPrimaryField({
+      pass.primaryFields.push({
         key: 'name',
         label: 'Name',
-        value: `${cardData.name || ''} ${cardData.surname || ''}`.trim() || 'XS Card',
+        value: `${cardData.name || ''} ${cardData.surname || ''}`.trim() || 'XS Card'
       });
 
       // Secondary fields: Company and Occupation
       if (cardData.company) {
-        pass.addSecondaryField({
+        pass.secondaryFields.push({
           key: 'company',
           label: 'Company',
-          value: cardData.company,
+          value: cardData.company
         });
       }
 
       if (cardData.occupation) {
-        pass.addSecondaryField({
+        pass.secondaryFields.push({
           key: 'occupation',
           label: 'Title',
-          value: cardData.occupation,
+          value: cardData.occupation
         });
       }
 
       // Auxiliary fields: Email and Phone
       if (cardData.email) {
-        pass.addAuxiliaryField({
+        pass.auxiliaryFields.push({
           key: 'email',
           label: 'Email',
-          value: cardData.email,
+          value: cardData.email
         });
       }
 
       if (cardData.phone) {
-        pass.addAuxiliaryField({
+        pass.auxiliaryFields.push({
           key: 'phone',
           label: 'Phone',
-          value: cardData.phone,
+          value: cardData.phone
         });
       }
 
       // Add QR code barcode
-      pass.addBarcode({
+      pass.setBarcodes({
         message: saveContactUrl,
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
-        altText: 'Scan to save contact',
+        altText: 'Scan to save contact'
       });
 
       // Add images if available
@@ -117,9 +125,7 @@ class AppleWalletService {
       await this.loadCertificates(pass);
 
       // Generate .pkpass file
-      const passBuffer = await pass.generate();
-
-      return passBuffer;
+      return pass.getAsBuffer();
     } catch (error) {
       console.error('Error generating Apple Wallet pass:', error);
       throw new Error(`Failed to generate Apple Wallet pass: ${error.message}`);
@@ -198,21 +204,28 @@ class AppleWalletService {
         throw new Error(`Pass certificate not found at: ${this.certPath}`);
       }
       const certBuffer = fs.readFileSync(this.certPath);
-      pass.certificate = certBuffer;
 
       // Load pass private key
       if (!fs.existsSync(this.keyPath)) {
         throw new Error(`Pass private key not found at: ${this.keyPath}`);
       }
       const keyBuffer = fs.readFileSync(this.keyPath);
-      pass.privateKey = keyBuffer;
 
       // Load WWDR (Apple Worldwide Developer Relations) certificate
       if (!fs.existsSync(this.wwdrPath)) {
         throw new Error(`WWDR certificate not found at: ${this.wwdrPath}`);
       }
       const wwdrBuffer = fs.readFileSync(this.wwdrPath);
-      pass.wwdr = wwdrBuffer;
+
+      // passkit-generator expects a single certificates object:
+      // { wwdr, signerCert, signerKey, signerKeyPassphrase? }
+      pass.certificates = {
+        wwdr: wwdrBuffer,
+        signerCert: certBuffer,
+        signerKey: keyBuffer,
+        // Optional: if your pass private key is encrypted, provide this env var.
+        signerKeyPassphrase: process.env.APPLE_PASS_KEY_PASSPHRASE
+      };
     } catch (error) {
       console.error('Error loading Apple Wallet certificates:', error);
       throw new Error(`Failed to load Apple Wallet certificates: ${error.message}`);

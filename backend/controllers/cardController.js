@@ -534,9 +534,28 @@ exports.createWalletPass = async (req, res) => {
 
         const card = cardsData.cards[cardIndex];
 
-        // Detect platform from User-Agent (default to android for safety)
-        const userAgent = req.get('User-Agent') || '';
-        const platform = (userAgent.includes('iPhone') || userAgent.includes('iPad')) ? 'ios' : 'android';
+        // Detect platform from User-Agent.
+        // Heuristic approach because React Native iOS requests often don't include 'iPhone'/'iPad'.
+        const userAgent = (req.get('User-Agent') || req.headers['user-agent'] || '').toString();
+        const uaLower = userAgent.toLowerCase();
+
+        // Be conservative about classifying Android vs iOS.
+        // React Native (especially iOS) can use HTTP clients that look like "okhttp"/"reactnative"
+        // even on iOS, so treat as Android only when UA explicitly includes "android".
+        const isAndroid = uaLower.includes('android');
+
+        // Default to iOS when UA is missing/ambiguous to avoid misclassifying iOS as Android.
+        const platform = isAndroid ? 'android' : 'ios';
+
+        // Debug log to confirm platform detection during testing.
+        console.log(
+            '[WalletPass] User-Agent:',
+            userAgent ? `${userAgent.slice(0, 160)}...` : '(empty)',
+            '| isAndroid:',
+            isAndroid,
+            '| => platform:',
+            platform
+        );
 
         // iOS: Native Apple Wallet generation via public .pkpass URL (no Passcreator).
         if (platform === 'ios') {

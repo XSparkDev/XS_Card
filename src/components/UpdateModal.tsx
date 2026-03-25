@@ -34,9 +34,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   };
 
   const handleDismiss = () => {
-    if (!forceUpdate && onDismiss) {
-      onDismiss();
-    }
+    // For now, allow dismissing even when the backend flags the update as "forceUpdate".
+    // This prevents the modal from being permanently blocking during development/testing.
+    onDismiss?.();
   };
 
   return (
@@ -44,7 +44,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={forceUpdate ? undefined : handleDismiss}
+      onRequestClose={handleDismiss}
     >
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
@@ -86,15 +86,13 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               <Text style={styles.updateButtonText}>Update Now</Text>
             </TouchableOpacity>
 
-            {!forceUpdate && (
-              <TouchableOpacity
-                style={[styles.button, styles.laterButton]}
-                onPress={handleDismiss}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.laterButtonText}>Later</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.button, styles.laterButton]}
+              onPress={handleDismiss}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.laterButtonText}>Later</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
