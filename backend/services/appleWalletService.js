@@ -78,10 +78,10 @@ class AppleWalletService {
           description: 'Digital Business Card',
           logoText: 'XS Card',
           // Colors (iOS pass)
-          // The app brand used to be blue; switch to a greyish background for a calmer look.
-          foregroundColor: 'rgb(255, 255, 255)',
-          backgroundColor: 'rgb(85, 85, 85)', // greyish
-          labelColor: 'rgb(255, 255, 255)',
+          // Template 1 card preview uses a white background and dark text.
+          foregroundColor: 'rgb(0, 0, 0)',
+          backgroundColor: 'rgb(255, 255, 255)',
+          labelColor: 'rgb(0, 0, 0)',
           // Note: passkit-generator v3 expects serialNumber to be part of the pass props.
           serialNumber,
         }
@@ -94,24 +94,25 @@ class AppleWalletService {
       // Primary field: Name
       pass.primaryFields.push({
         key: 'name',
-        label: 'Name',
+        // Template 1 shows just the name (no "Name" label).
+        label: '',
         value: `${cardData.name || ''} ${cardData.surname || ''}`.trim() || 'XS Card'
       });
 
-      // Secondary fields: Company and Occupation
-      if (cardData.company) {
+      // Secondary fields: Position then Company (Template 1 order)
+      if (cardData.occupation) {
         pass.secondaryFields.push({
-          key: 'company',
-          label: 'Company',
-          value: cardData.company
+          key: 'position',
+          label: '',
+          value: cardData.occupation || ''
         });
       }
 
-      if (cardData.occupation) {
+      if (cardData.company) {
         pass.secondaryFields.push({
-          key: 'occupation',
-          label: 'Title',
-          value: cardData.occupation
+          key: 'company',
+          label: '',
+          value: cardData.company
         });
       }
 
@@ -119,7 +120,7 @@ class AppleWalletService {
       if (cardData.email) {
         pass.auxiliaryFields.push({
           key: 'email',
-          label: 'Email',
+          label: '',
           value: cardData.email
         });
       }
@@ -127,9 +128,24 @@ class AppleWalletService {
       if (cardData.phone) {
         pass.auxiliaryFields.push({
           key: 'phone',
-          label: 'Phone',
+          label: '',
           value: cardData.phone
         });
+      }
+
+      // Social links (Template 1 shows socials using the card theme color as icons; passkit can't render icons)
+      // So we include the social values as additional text rows.
+      const socials = cardData.socials && typeof cardData.socials === 'object' ? cardData.socials : {};
+      const socialOrder = ['whatsapp', 'x', 'facebook', 'linkedin', 'website', 'tiktok', 'instagram'];
+      for (const platformKey of socialOrder) {
+        const socialValue = socials[platformKey];
+        if (typeof socialValue === 'string' && socialValue.trim()) {
+          pass.auxiliaryFields.push({
+            key: `social_${platformKey}`,
+            label: '',
+            value: socialValue.trim()
+          });
+        }
       }
 
       // Add QR code barcode
