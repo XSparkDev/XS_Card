@@ -403,14 +403,9 @@ app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
             saveContactUrl
         );
 
-        // inline: Mobile Safari + Wallet handle this; attachment often triggers a broken "download" flow.
-        const safeName = `pass-${String(cardIndexNum)}.pkpass`.replace(/[^\w.\-]/g, '_');
         res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
-        res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
-        res.setHeader('Content-Length', passBuffer.length);
-        res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.status(200).end(passBuffer);
+        res.setHeader('Content-Disposition', 'attachment; filename="pass.pkpass"');
+        res.status(200).send(passBuffer);
     } catch (error) {
         console.error('Error generating pkpass:', error);
         res.status(500).send({
