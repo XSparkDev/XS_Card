@@ -357,6 +357,61 @@ app.get('/public/cards/:id', async (req, res) => {
     }
 });
 
+// Public Apple Wallet endpoint for generated .pkpass files.
+// This must be public because the mobile app opens it via Linking.openURL().
+app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
+    const { userId, cardIndex } = req.params;
+    const cardIndexNum = parseInt(cardIndex, 10);
+    const shouldSkipImages = req.query.skipImages === 'true';
+
+    if (!userId || isNaN(cardIndexNum) || cardIndexNum < 0) {
+        return res.status(400).send({ message: 'Invalid userId or cardIndex' });
+    }
+
+    try {
+        const cardRef = db.collection('cards').doc(userId);
+        const cardDoc = await cardRef.get();
+
+        if (!cardDoc.exists || !cardDoc.data()?.cards || !cardDoc.data().cards[cardIndexNum]) {
+            return res.status(404).send({ message: 'Card not found' });
+        }
+
+        const card = cardDoc.data().cards[cardIndexNum];
+
+        // Generate saveContact URL for the barcode in the pass
+        const saveContactUrl = `${req.protocol}://${req.get('host')}/saveContact?userId=${userId}&cardIndex=${cardIndexNum}`;
+
+        // If requested, omit image URLs so passkit-generator doesn't try to download them.
+        const cardForPass = shouldSkipImages
+            ? { ...card, companyLogo: undefined, profileImage: undefined }
+            : card;
+
+        const WalletPassService = require('./services/walletPassService');
+        const walletService = new WalletPassService();
+
+        const passBuffer = await walletService.generatePass(
+            'ios',
+            cardForPass,
+            userId,
+            cardIndexNum,
+            saveContactUrl
+        );
+
+        res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="${userId}_${cardIndexNum}.pkpass"`
+        );
+        res.status(200).send(passBuffer);
+    } catch (error) {
+        console.error('Error generating pkpass:', error);
+        res.status(500).send({
+            message: 'Failed to generate Apple Wallet pass',
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
 // Add scan tracking endpoint as public
 app.post('/track-scan', async (req, res) => {
     const { userId, cardIndex = 0, scanType = 'save' } = req.body;
