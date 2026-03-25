@@ -54,6 +54,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes'); // Add subscription routes
 const apkRoutes = require('./routes/apkRoutes'); // Add APK routes
 const iosVersionRoutes = require('./routes/iosVersionRoutes'); // Add iOS version routes
+const walletPassesViewRoutes = require('./routes/walletPassesViewRoutes'); // iOS Safari landing for Wallet passes
 const eventRoutes = require('./routes/eventRoutes'); // Add event routes
 const testRoutes = require('./routes/testRoutes'); // Add test routes for debugging
 const ticketRoutes = require('./routes/ticketRoutes'); // Add ticket routes
@@ -425,55 +426,6 @@ app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
     }
 });
 
-/*
-================================================================================
-  !!!  APPLE WALLET — iOS Safari landing (manual open)  !!!
-================================================================================
-  This route exists only to improve the UX in iOS Safari.
-  Safari rendering a raw `.pkpass` URL looks like a blank tab.
-
-  This route returns HTML with a manual "Open in Wallet" link to:
-    GET /wallet-passes/:userId/:cardIndex.pkpass
-
-  IMPORTANT: Keep the binary pkpass route untouched.
-================================================================================
-*/
-app.get('/wallet-passes-view/:userId/:cardIndex', async (req, res) => {
-    const { userId, cardIndex } = req.params;
-    const cardIndexNum = parseInt(cardIndex, 10);
-    const shouldSkipImages = req.query.skipImages === 'true';
-
-    if (!userId || isNaN(cardIndexNum) || cardIndexNum < 0) {
-        return res.status(400).send({ message: 'Invalid userId or cardIndex' });
-    }
-
-    const base = getPublicBaseUrl(req);
-    const pkpassUrl = `${base}/wallet-passes/${encodeURIComponent(userId)}/${cardIndexNum}.pkpass` +
-        (shouldSkipImages ? '?skipImages=true' : '');
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-
-    res.status(200).send(`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XS Card Pass</title>
-  </head>
-  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 24px;">
-    <h2 style="margin: 0 0 12px 0;">Ready to add to Apple Wallet</h2>
-    <p style="margin: 0 0 20px 0; color: #555;">Tap below to open the pass.</p>
-    <a href="${pkpassUrl}" style="display: inline-block; padding: 12px 16px; background: #111; color: white; text-decoration: none; border-radius: 10px;">
-      Open in Wallet
-    </a>
-    <p style="margin-top: 18px; color: #666; font-size: 12px;">
-      If Wallet did not open, you can try again.
-    </p>
-  </body>
-</html>`);
-});
-
 // Add scan tracking endpoint as public
 app.post('/track-scan', async (req, res) => {
     const { userId, cardIndex = 0, scanType = 'save' } = req.body;
@@ -707,6 +659,7 @@ app.use('/api/revenuecat', revenueCatRoutes); // Add RevenueCat routes
 app.use('/api/apple-receipt', appleReceiptRoutes); // Add Apple receipt validation routes
 app.use('/', apkRoutes); // Add APK routes for public download
 app.use('/', iosVersionRoutes); // Add iOS version routes for public version checking
+app.use('/', walletPassesViewRoutes); // iOS Safari landing for Wallet passes
 app.use('/', eventRoutes); // Move event routes to public section for /api/events/public
 app.use('/', conferenceRoutes); // Conference-specific public API (guarded by API key)
 app.use('/', userRoutes); // Move user routes to public section so SignIn works

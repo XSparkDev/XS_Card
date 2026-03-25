@@ -570,7 +570,7 @@ exports.createWalletPass = async (req, res) => {
           ONLY aesthetic: tweak success message strings, not URL shape or flow.
         ========================================================================
         */
-        // iOS: native .pkpass URL (Passcreator removed).
+        // iOS: HTML landing page (opens the real .pkpass for Wallet).
         if (platform === 'ios') {
             // If the client requests it (e.g., local environment), omit image downloads during pass creation.
             const shouldSkipImages = skipImages === 'true';

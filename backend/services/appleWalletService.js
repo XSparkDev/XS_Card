@@ -132,7 +132,7 @@ class AppleWalletService {
         message: saveContactUrl,
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
-        altText: 'Scan to save contact',
+        // altText intentionally omitted so Wallet does not render a caption under the QR.
       });
 
       await this.addPassImages(pass, cardData);
