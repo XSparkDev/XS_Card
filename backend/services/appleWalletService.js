@@ -1,12 +1,30 @@
+/*
+================================================================================
+  !!!  READ BEFORE EDITING — APPLE WALLET (.pkpass) PRODUCTION LOCK  !!!
+================================================================================
+
+  ANY CHANGE HERE THAT IS NOT **PURELY AESTHETIC** CAN BREAK SAFARI / WALLET.
+
+  Non-aesthetic changes (layout tweaks, new fields, swapping image pipeline,
+  removing sharp/PNG conversion, changing pass type, barcode, certs, or URLs)
+  RISK "SAFARI CAN'T DOWNLOAD THIS FILE" AND INVALID PASSES.
+
+  **ONLY SAFE WITHOUT REVIEW:** copy/labels, spacing in field text, logoText
+  wording, resize dimensions that stay within Apple guidelines, comment typos.
+
+  **DO NOT "SIMPLIFY" AWAY:** sharp → PNG for all raster assets; required
+  icon.png / icon@2x.png; HTTPS-aware URLs via getPublicBaseUrl (see server.js).
+
+  If an AI or reviewer suggests a refactor: STOP — confirm behavior-only diff
+  is zero or get explicit human sign-off.
+
+================================================================================
+*/
+
 /**
- * Apple Wallet Service
+ * Apple Wallet Service — passkit-generator + sharp (JPEG/WebP → real PNG).
  *
- * Uses passkit-generator. Pass assets must be real PNGs; JPEG/WebP URLs (common from Firebase)
- * are converted with sharp — invalid images are a frequent cause of Safari "can't download".
- *
- * Required env vars:
- * - APPLE_PASS_TYPE_ID, APPLE_TEAM_ID
- * - Certificates: file paths or APPLE_PASS_*_PEM (see README in repo / .env)
+ * Env: APPLE_PASS_TYPE_ID, APPLE_TEAM_ID, certs (paths or *_PEM in .env).
  */
 
 const { PKPass } = require('passkit-generator');
@@ -143,6 +161,25 @@ class AppleWalletService {
   }
 
   /**
+   * Profile thumbnail: square cover resize, then circular alpha mask (PNG).
+   * Aesthetic-only vs prior square thumbnail; still real PNG output for Wallet.
+   */
+  async circularThumbnail(pngBuffer, size) {
+    const s = Math.round(size);
+    const svg = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}">` +
+        `<circle cx="${s / 2}" cy="${s / 2}" r="${s / 2}" fill="#fff"/>` +
+        `</svg>`
+    );
+    return sharp(pngBuffer)
+      .resize(s, s, { fit: 'cover', position: 'centre' })
+      .ensureAlpha()
+      .composite([{ input: svg, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+  }
+
+  /**
    * Required: icon.png / icon@2x.png (PNG). Optional: logo*, thumbnail*.
    */
   async addPassImages(pass, cardData) {
@@ -183,14 +220,9 @@ class AppleWalletService {
     }
 
     if (profilePng) {
-      const t1 = await sharp(profilePng)
-        .resize(90, 90, { fit: 'cover', position: 'centre' })
-        .png()
-        .toBuffer();
-      const t2 = await sharp(profilePng)
-        .resize(180, 180, { fit: 'cover', position: 'centre' })
-        .png()
-        .toBuffer();
+      // Slightly larger than legacy 90/180; circular crop for pass strip.
+      const t1 = await this.circularThumbnail(profilePng, 108);
+      const t2 = await this.circularThumbnail(profilePng, 216);
       pass.addBuffer('thumbnail.png', t1);
       pass.addBuffer('thumbnail@2x.png', t2);
     }

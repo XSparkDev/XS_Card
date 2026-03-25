@@ -1,3 +1,8 @@
+/*
+  !!!  USED FOR APPLE WALLET passPageUrl + QR LINKS — DO NOT "SIMPLIFY"  !!!
+  Breaking X-Forwarded-Proto / host detection => http:// URLs => Safari / Wallet fail.
+  Changes here are NOT purely aesthetic; get human review.
+*/
 /**
  * Public base URL (scheme + host) as seen by the client, including behind reverse proxies
  * (Render, Heroku, nginx, etc.) where req.protocol stays "http" unless trust proxy is set.

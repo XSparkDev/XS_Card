@@ -1,12 +1,12 @@
+/*
+================================================================================
+  !!!  WALLET ROUTER — iOS PATH TOUCHES APPLE WALLET LOCK (appleWalletService)  !!!
+================================================================================
+  Non-aesthetic changes to iOS routing or generatePass args can break .pkpass.
+================================================================================
+*/
 /**
- * Wallet Pass Service
- *
- * Minimal unified service to route wallet pass generation
- * to the appropriate platform-specific implementation.
- *
- * Supports:
- * - Android → GoogleWalletService (returns save URL)
- * - iOS     → AppleWalletService (returns .pkpass buffer)
+ * Wallet Pass Service — routes Android (Google) vs iOS (Apple .pkpass buffer).
  */
 
 class WalletPassService {

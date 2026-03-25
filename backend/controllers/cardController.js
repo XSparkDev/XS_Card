@@ -558,7 +558,16 @@ exports.createWalletPass = async (req, res) => {
             platform
         );
 
-        // iOS: Native Apple Wallet generation via public .pkpass URL (no Passcreator).
+        /*
+        ========================================================================
+          !!!  APPLE WALLET iOS — passPageUrl MUST STAY HTTPS + THIS PATH  !!!
+        ========================================================================
+          LOCKED: Non-aesthetic edits break Safari. passPageUrl must point at
+          GET /wallet-passes/.../card.pkpass (see server.js). Use getPublicBaseUrl.
+          ONLY aesthetic: tweak success message strings, not URL shape or flow.
+        ========================================================================
+        */
+        // iOS: native .pkpass URL (Passcreator removed).
         if (platform === 'ios') {
             // If the client requests it (e.g., local environment), omit image downloads during pass creation.
             const shouldSkipImages = skipImages === 'true';

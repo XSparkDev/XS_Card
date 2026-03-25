@@ -24,7 +24,7 @@ const { handleSingleUpload } = require('./middleware/fileUpload');
 const app = express();
 const port = 8383;
 
-// Behind HTTPS terminators, req.protocol must reflect the client-facing scheme (Safari / Wallet).
+// !!! WALLET / passPageUrl: do not remove — needed with getPublicBaseUrl for HTTPS behind proxies.
 app.set('trust proxy', 1);
 
 const { getPublicBaseUrl } = require('./utils/publicBaseUrl');
@@ -362,8 +362,18 @@ app.get('/public/cards/:id', async (req, res) => {
     }
 });
 
-// Public Apple Wallet endpoint for generated .pkpass files.
-// This must be public because the mobile app opens it via Linking.openURL().
+/*
+================================================================================
+  !!!  APPLE WALLET — PUBLIC .pkpass DOWNLOAD (DO NOT BREAK)  !!!
+================================================================================
+  LOCKED: Any non-aesthetic change can break Safari / "Add to Wallet".
+  OK:    comments, filename string only, purely cosmetic header tweaks IF
+         Content-Type stays application/vnd.apple.pkpass and body stays raw buffer.
+  NOT OK without review: auth on GET, JSON instead of binary, gzip, wrong MIME.
+  See: backend/services/appleWalletService.js (same LOCK banner).
+================================================================================
+*/
+// Public: mobile app opens passPageUrl via Linking.openURL (must stay public GET).
 app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
     const { userId, cardIndex } = req.params;
     const cardIndexNum = parseInt(cardIndex, 10);
