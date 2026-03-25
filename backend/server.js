@@ -24,6 +24,11 @@ const { handleSingleUpload } = require('./middleware/fileUpload');
 const app = express();
 const port = 8383;
 
+// !!! WALLET / passPageUrl: do not remove — needed with getPublicBaseUrl for HTTPS behind proxies.
+app.set('trust proxy', 1);
+
+const { getPublicBaseUrl } = require('./utils/publicBaseUrl');
+
 // Add CORS middleware to allow loading Firebase Storage images
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*'); // Allow requests from any origin
@@ -357,8 +362,18 @@ app.get('/public/cards/:id', async (req, res) => {
     }
 });
 
-// Public Apple Wallet endpoint for generated .pkpass files.
-// This must be public because the mobile app opens it via Linking.openURL().
+/*
+================================================================================
+  !!!  APPLE WALLET — PUBLIC .pkpass DOWNLOAD (DO NOT BREAK)  !!!
+================================================================================
+  LOCKED: Any non-aesthetic change can break Safari / "Add to Wallet".
+  OK:    comments, filename string only, purely cosmetic header tweaks IF
+         Content-Type stays application/vnd.apple.pkpass and body stays raw buffer.
+  NOT OK without review: auth on GET, JSON instead of binary, gzip, wrong MIME.
+  See: backend/services/appleWalletService.js (same LOCK banner).
+================================================================================
+*/
+// Public: mobile app opens passPageUrl via Linking.openURL (must stay public GET).
 app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
     const { userId, cardIndex } = req.params;
     const cardIndexNum = parseInt(cardIndex, 10);
@@ -379,7 +394,8 @@ app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
         const card = cardDoc.data().cards[cardIndexNum];
 
         // Generate saveContact URL for the barcode in the pass
-        const saveContactUrl = `${req.protocol}://${req.get('host')}/saveContact?userId=${userId}&cardIndex=${cardIndexNum}`;
+        const base = getPublicBaseUrl(req);
+        const saveContactUrl = `${base}/saveContact?userId=${encodeURIComponent(userId)}&cardIndex=${cardIndexNum}`;
 
         // If requested, omit image URLs so passkit-generator doesn't try to download them.
         const cardForPass = shouldSkipImages
@@ -398,10 +414,7 @@ app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
         );
 
         res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
-        res.setHeader(
-            'Content-Disposition',
-            `attachment; filename="${userId}_${cardIndexNum}.pkpass"`
-        );
+        res.setHeader('Content-Disposition', 'attachment; filename="pass.pkpass"');
         res.status(200).send(passBuffer);
     } catch (error) {
         console.error('Error generating pkpass:', error);

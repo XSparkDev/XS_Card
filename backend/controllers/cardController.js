@@ -6,6 +6,7 @@ const axios = require('axios');
 const config = require('../config/config');
 const { formatDate } = require('../utils/dateFormatter');
 const { normalizePhone, ensurePhoneAvailable, PHONE_ERROR_CODE } = require('../utils/phoneUtils');
+const { getPublicBaseUrl } = require('../utils/publicBaseUrl');
 
 // Configure storage
 const storage = multer.diskStorage({
@@ -557,12 +558,22 @@ exports.createWalletPass = async (req, res) => {
             platform
         );
 
-        // iOS: Native Apple Wallet generation via public .pkpass URL (no Passcreator).
+        /*
+        ========================================================================
+          !!!  APPLE WALLET iOS — passPageUrl MUST STAY HTTPS + THIS PATH  !!!
+        ========================================================================
+          LOCKED: Non-aesthetic edits break Safari. passPageUrl must point at
+          GET /wallet-passes/.../card.pkpass (see server.js). Use getPublicBaseUrl.
+          ONLY aesthetic: tweak success message strings, not URL shape or flow.
+        ========================================================================
+        */
+        // iOS: native .pkpass URL (Passcreator removed).
         if (platform === 'ios') {
             // If the client requests it (e.g., local environment), omit image downloads during pass creation.
             const shouldSkipImages = skipImages === 'true';
 
-            const passPageUrl = `${req.protocol}://${req.get('host')}/wallet-passes/${userId}/${cardIndex}.pkpass` +
+            const base = getPublicBaseUrl(req);
+            const passPageUrl = `${base}/wallet-passes/${encodeURIComponent(userId)}/${cardIndex}.pkpass` +
                 (shouldSkipImages ? '?skipImages=true' : '');
 
             return res.status(200).send({
@@ -587,7 +598,8 @@ exports.createWalletPass = async (req, res) => {
             const WalletPassService = require('../services/walletPassService');
             const walletService = new WalletPassService();
 
-            const saveContactUrl = `${req.protocol}://${req.get('host')}/saveContact?userId=${userId}&cardIndex=${cardIndex}`;
+            const base = getPublicBaseUrl(req);
+            const saveContactUrl = `${base}/saveContact?userId=${encodeURIComponent(userId)}&cardIndex=${cardIndex}`;
             const passResult = await walletService.generatePass(
                 platform,
                 card,
