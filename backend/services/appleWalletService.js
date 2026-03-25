@@ -77,9 +77,10 @@ class AppleWalletService {
           organizationName: 'XS Card',
           description: 'Digital Business Card',
           logoText: 'XS Card',
-          // Colors (XS Card brand colors)
+          // Colors (iOS pass)
+          // The app brand used to be blue; switch to a greyish background for a calmer look.
           foregroundColor: 'rgb(255, 255, 255)',
-          backgroundColor: 'rgb(27, 43, 91)', // #1B2B5B
+          backgroundColor: 'rgb(85, 85, 85)', // greyish
           labelColor: 'rgb(255, 255, 255)',
           // Note: passkit-generator v3 expects serialNumber to be part of the pass props.
           serialNumber,
