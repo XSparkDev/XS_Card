@@ -7,9 +7,16 @@
  * Required env vars:
  * - APPLE_PASS_TYPE_ID (e.g., "pass.com.xscard.businesscard")
  * - APPLE_TEAM_ID (your Apple Developer Team ID)
- * - APPLE_PASS_CERT_PATH (path to pass certificate .pem file)
- * - APPLE_PASS_KEY_PATH (path to pass private key .pem file)
- * - APPLE_WWDR_CERT_PATH (path to Apple WWDR certificate .pem file)
+ *
+ * Certificate source (either option works):
+ * - FILE paths:
+ *   - APPLE_PASS_CERT_PATH (path to pass certificate .pem file)
+ *   - APPLE_PASS_KEY_PATH (path to pass private key .pem file)
+ *   - APPLE_WWDR_CERT_PATH (path to Apple WWDR certificate .pem file)
+ * - OR PEM contents (recommended for Render):
+ *   - APPLE_PASS_CERT_PEM (full PEM string for pass certificate)
+ *   - APPLE_PASS_KEY_PEM (full PEM string for pass private key)
+ *   - APPLE_WWDR_CERT_PEM (full PEM string for Apple WWDR certificate)
  */
 
 const { PKPass } = require('passkit-generator');
@@ -23,6 +30,20 @@ class AppleWalletService {
     this.certPath = process.env.APPLE_PASS_CERT_PATH;
     this.keyPath = process.env.APPLE_PASS_KEY_PATH;
     this.wwdrPath = process.env.APPLE_WWDR_CERT_PATH;
+
+    // PEM contents (prefer for container/Render because no file system mount needed)
+    this.certPem = process.env.APPLE_PASS_CERT_PEM;
+    this.keyPem = process.env.APPLE_PASS_KEY_PEM;
+    this.wwdrPem = process.env.APPLE_WWDR_CERT_PEM;
+  }
+
+  /**
+   * Normalize an env-provided PEM string.
+   * Render often requires you to store newlines as literal `\n`.
+   */
+  normalizePem(pem) {
+    if (!pem) return pem;
+    return pem.replace(/\\n/g, '\n');
   }
 
   /**
@@ -199,23 +220,33 @@ class AppleWalletService {
    */
   async loadCertificates(pass) {
     try {
-      // Load pass certificate
-      if (!fs.existsSync(this.certPath)) {
-        throw new Error(`Pass certificate not found at: ${this.certPath}`);
-      }
-      const certBuffer = fs.readFileSync(this.certPath);
+      // Option 1: load certs from PEM env vars
+      const usingPem =
+        !!(this.certPem && this.keyPem && this.wwdrPem);
 
-      // Load pass private key
-      if (!fs.existsSync(this.keyPath)) {
-        throw new Error(`Pass private key not found at: ${this.keyPath}`);
-      }
-      const keyBuffer = fs.readFileSync(this.keyPath);
+      let certBuffer;
+      let keyBuffer;
+      let wwdrBuffer;
 
-      // Load WWDR (Apple Worldwide Developer Relations) certificate
-      if (!fs.existsSync(this.wwdrPath)) {
-        throw new Error(`WWDR certificate not found at: ${this.wwdrPath}`);
+      if (usingPem) {
+        certBuffer = Buffer.from(this.normalizePem(this.certPem));
+        keyBuffer = Buffer.from(this.normalizePem(this.keyPem));
+        wwdrBuffer = Buffer.from(this.normalizePem(this.wwdrPem));
+      } else {
+        // Option 2: load certs from filesystem paths
+        if (!this.certPath) throw new Error('(APPLE_PASS_CERT_PATH not set)');
+        if (!fs.existsSync(this.certPath)) throw new Error(`Pass certificate not found at: ${this.certPath}`);
+
+        if (!this.keyPath) throw new Error('(APPLE_PASS_KEY_PATH not set)');
+        if (!fs.existsSync(this.keyPath)) throw new Error(`Pass private key not found at: ${this.keyPath}`);
+
+        if (!this.wwdrPath) throw new Error('(APPLE_WWDR_CERT_PATH not set)');
+        if (!fs.existsSync(this.wwdrPath)) throw new Error(`WWDR certificate not found at: ${this.wwdrPath}`);
+
+        certBuffer = fs.readFileSync(this.certPath);
+        keyBuffer = fs.readFileSync(this.keyPath);
+        wwdrBuffer = fs.readFileSync(this.wwdrPath);
       }
-      const wwdrBuffer = fs.readFileSync(this.wwdrPath);
 
       // passkit-generator expects a single certificates object:
       // { wwdr, signerCert, signerKey, signerKeyPassphrase? }
@@ -242,6 +273,12 @@ class AppleWalletService {
       return false;
     }
 
+    // Option 1: PEM env vars set
+    const usingPem =
+      !!(this.certPem && this.keyPem && this.wwdrPem);
+    if (usingPem) return true;
+
+    // Option 2: filesystem paths exist
     const requiredFiles = [this.certPath, this.keyPath, this.wwdrPath];
     const missingFiles = [];
 
@@ -255,6 +292,7 @@ class AppleWalletService {
 
     if (missingFiles.length > 0) {
       console.error('Missing Apple Wallet certificate files:', missingFiles.join(', '));
+      console.error('Or set APPLE_PASS_CERT_PEM / APPLE_PASS_KEY_PEM / APPLE_WWDR_CERT_PEM instead.');
       return false;
     }
 
