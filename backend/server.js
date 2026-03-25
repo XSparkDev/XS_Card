@@ -24,6 +24,11 @@ const { handleSingleUpload } = require('./middleware/fileUpload');
 const app = express();
 const port = 8383;
 
+// Behind HTTPS terminators, req.protocol must reflect the client-facing scheme (Safari / Wallet).
+app.set('trust proxy', 1);
+
+const { getPublicBaseUrl } = require('./utils/publicBaseUrl');
+
 // Add CORS middleware to allow loading Firebase Storage images
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*'); // Allow requests from any origin
@@ -379,7 +384,8 @@ app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
         const card = cardDoc.data().cards[cardIndexNum];
 
         // Generate saveContact URL for the barcode in the pass
-        const saveContactUrl = `${req.protocol}://${req.get('host')}/saveContact?userId=${userId}&cardIndex=${cardIndexNum}`;
+        const base = getPublicBaseUrl(req);
+        const saveContactUrl = `${base}/saveContact?userId=${encodeURIComponent(userId)}&cardIndex=${cardIndexNum}`;
 
         // If requested, omit image URLs so passkit-generator doesn't try to download them.
         const cardForPass = shouldSkipImages
@@ -397,12 +403,14 @@ app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
             saveContactUrl
         );
 
+        // inline: Mobile Safari + Wallet handle this; attachment often triggers a broken "download" flow.
+        const safeName = `pass-${String(cardIndexNum)}.pkpass`.replace(/[^\w.\-]/g, '_');
         res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
-        res.setHeader(
-            'Content-Disposition',
-            `attachment; filename="${userId}_${cardIndexNum}.pkpass"`
-        );
-        res.status(200).send(passBuffer);
+        res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+        res.setHeader('Content-Length', passBuffer.length);
+        res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.status(200).end(passBuffer);
     } catch (error) {
         console.error('Error generating pkpass:', error);
         res.status(500).send({
