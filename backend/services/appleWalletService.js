@@ -61,7 +61,16 @@ class AppleWalletService {
 
     try {
       const serialNumber = `${userId}_${cardIndex}_${Date.now()}`;
-      const fullName = `${cardData.name || ''} ${cardData.surname || ''}`.trim() || 'Card';
+      const firstName = String(cardData.name || '').trim();
+      const company = String(cardData.company || '').trim();
+
+      // Header row (right of logo): first name | company — not the old "Name" primary field.
+      let headerRight = '';
+      if (firstName && company) {
+        headerRight = `${firstName} | ${company}`;
+      } else {
+        headerRight = firstName || company || 'XS Card';
+      }
 
       const pass = new PKPass(
         {},
@@ -71,7 +80,8 @@ class AppleWalletService {
           teamIdentifier: this.teamId,
           organizationName: 'XS Card',
           description: 'Digital Business Card',
-          logoText: fullName.slice(0, 40),
+          // Leave strip text empty; headerFields + primaryFields carry the layout.
+          logoText: '',
           serialNumber,
         }
       );
@@ -79,25 +89,34 @@ class AppleWalletService {
       // Generic pass fits a business card; avoid eventTicket-specific behaviour.
       pass.type = 'generic';
 
-      pass.primaryFields.push({
-        key: 'name',
-        label: 'Name',
-        value: fullName,
+      pass.headerFields.push({
+        key: 'headerNameCompany',
+        label: '',
+        value: headerRight,
+        textAlignment: 'PKTextAlignmentRight',
       });
 
-      if (cardData.company) {
-        pass.secondaryFields.push({
-          key: 'company',
-          label: 'Company',
-          value: String(cardData.company),
-        });
-      }
+      pass.primaryFields.push({
+        key: 'passProductLabel',
+        label: '',
+        value: 'XS Card Pass',
+        textAlignment: 'PKTextAlignmentRight',
+      });
 
+      // Title and phone on one line (generic pass has no row slots here like eventTicket).
+      const titlePhoneParts = [];
       if (cardData.occupation) {
+        titlePhoneParts.push(String(cardData.occupation).trim());
+      }
+      if (cardData.phone) {
+        titlePhoneParts.push(String(cardData.phone).trim());
+      }
+      if (titlePhoneParts.length) {
         pass.secondaryFields.push({
-          key: 'title',
-          label: 'Title',
-          value: String(cardData.occupation),
+          key: 'titleAndPhone',
+          label: '',
+          value: titlePhoneParts.join(' · '),
+          textAlignment: 'PKTextAlignmentNatural',
         });
       }
 
@@ -106,14 +125,6 @@ class AppleWalletService {
           key: 'email',
           label: 'Email',
           value: String(cardData.email),
-        });
-      }
-
-      if (cardData.phone) {
-        pass.auxiliaryFields.push({
-          key: 'phone',
-          label: 'Phone',
-          value: String(cardData.phone),
         });
       }
 
