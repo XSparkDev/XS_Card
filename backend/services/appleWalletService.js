@@ -62,18 +62,15 @@ class AppleWalletService {
     try {
       const serialNumber = `${userId}_${cardIndex}_${Date.now()}`;
       const firstName = String(cardData.name || '').trim();
-      const company = String(cardData.company || '').trim();
+      const surname = String(cardData.surname || '').trim();
+      const fullName = [firstName, surname].filter(Boolean).join(' ').trim() || 'Card';
+      const companyStr = cardData.company ? String(cardData.company).trim() : '';
+      const nameForHeader = firstName || surname || fullName;
 
-      // Header row (right of logo): first name | company — not the old "Name" primary field.
-      let headerRight = '';
-      if (firstName && company) {
-        headerRight = `${firstName} | ${company}`;
-      } else {
-        headerRight = firstName || company || 'XS Card';
-      }
+      // Header strip (top-right): first name | company, then XS Card Pass — not in logoText.
+      const headerTop =
+        companyStr.length > 0 ? `${nameForHeader} | ${companyStr}` : nameForHeader;
 
-      // Do not set logoText to '' — passkit-generator Joi rejects empty strings.
-      // Omit the key; name/company live in headerFields. If you ever need visible strip text, use a non-empty string (e.g. 'XS Card').
       const pass = new PKPass(
         {},
         undefined,
@@ -82,6 +79,7 @@ class AppleWalletService {
           teamIdentifier: this.teamId,
           organizationName: 'XS Card',
           description: 'Digital Business Card',
+          logoText: '',
           serialNumber,
         }
       );
@@ -90,41 +88,55 @@ class AppleWalletService {
       pass.type = 'generic';
 
       pass.headerFields.push({
-        key: 'headerNameCompany',
+        key: 'hdr_name_company',
         label: '',
-        value: headerRight,
+        value: headerTop,
         textAlignment: 'PKTextAlignmentRight',
       });
-
-      pass.primaryFields.push({
-        key: 'passProductLabel',
+      pass.headerFields.push({
+        key: 'hdr_xs_pass',
         label: '',
         value: 'XS Card Pass',
         textAlignment: 'PKTextAlignmentRight',
       });
 
-      // Title and phone on one line (generic pass has no row slots here like eventTicket).
-      const titlePhoneParts = [];
-      if (cardData.occupation) {
-        titlePhoneParts.push(String(cardData.occupation).trim());
-      }
-      if (cardData.phone) {
-        titlePhoneParts.push(String(cardData.phone).trim());
-      }
-      if (titlePhoneParts.length) {
+      pass.primaryFields.push({
+        key: 'name',
+        label: 'NAME',
+        value: fullName,
+      });
+
+      if (cardData.company) {
         pass.secondaryFields.push({
-          key: 'titleAndPhone',
-          label: '',
-          value: titlePhoneParts.join(' · '),
-          textAlignment: 'PKTextAlignmentNatural',
+          key: 'company',
+          label: 'COMPANY',
+          value: String(cardData.company),
+        });
+      }
+
+      if (cardData.occupation) {
+        pass.secondaryFields.push({
+          key: 'title',
+          label: 'TITLE',
+          value: String(cardData.occupation),
+          textAlignment: 'PKTextAlignmentLeft',
         });
       }
 
       if (cardData.email) {
         pass.auxiliaryFields.push({
           key: 'email',
-          label: 'Email',
+          label: 'EMAIL',
           value: String(cardData.email),
+        });
+      }
+
+      if (cardData.phone) {
+        pass.auxiliaryFields.push({
+          key: 'phone',
+          label: 'NUMBER',
+          value: String(cardData.phone),
+          textAlignment: 'PKTextAlignmentLeft',
         });
       }
 
