@@ -64,13 +64,8 @@ class AppleWalletService {
       const firstName = String(cardData.name || '').trim();
       const surname = String(cardData.surname || '').trim();
       const fullName = [firstName, surname].filter(Boolean).join(' ').trim() || 'Card';
-      const companyStr = cardData.company ? String(cardData.company).trim() : '';
-      const nameForHeader = firstName || surname || fullName;
 
-      // Header strip (top-right): first name | company, then XS Card Pass — not in logoText.
-      const headerTop =
-        companyStr.length > 0 ? `${nameForHeader} | ${companyStr}` : nameForHeader;
-
+      // Do not set logoText: passkit-generator Joi rejects logoText: ''. Omitting the key is valid.
       const pass = new PKPass(
         {},
         undefined,
@@ -79,8 +74,6 @@ class AppleWalletService {
           teamIdentifier: this.teamId,
           organizationName: 'XS Card',
           description: 'Digital Business Card',
-          // passkit-generator Joi rejects logoText: '' — use short brand only (name lives in headerFields).
-          logoText: 'XS Card',
           serialNumber,
         }
       );
@@ -88,12 +81,6 @@ class AppleWalletService {
       // Generic pass fits a business card; avoid eventTicket-specific behaviour.
       pass.type = 'generic';
 
-      pass.headerFields.push({
-        key: 'hdr_name_company',
-        label: '',
-        value: headerTop,
-        textAlignment: 'PKTextAlignmentRight',
-      });
       pass.headerFields.push({
         key: 'hdr_xs_pass',
         label: '',
