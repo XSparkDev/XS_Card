@@ -72,6 +72,8 @@ class AppleWalletService {
         headerRight = firstName || company || 'XS Card';
       }
 
+      // Do not set logoText to '' — passkit-generator Joi rejects empty strings.
+      // Omit the key; name/company live in headerFields. If you ever need visible strip text, use a non-empty string (e.g. 'XS Card').
       const pass = new PKPass(
         {},
         undefined,
@@ -80,8 +82,6 @@ class AppleWalletService {
           teamIdentifier: this.teamId,
           organizationName: 'XS Card',
           description: 'Digital Business Card',
-          // Leave strip text empty; headerFields + primaryFields carry the layout.
-          logoText: '',
           serialNumber,
         }
       );
