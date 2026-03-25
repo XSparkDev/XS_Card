@@ -79,7 +79,8 @@ class AppleWalletService {
           teamIdentifier: this.teamId,
           organizationName: 'XS Card',
           description: 'Digital Business Card',
-          logoText: '',
+          // passkit-generator Joi rejects logoText: '' — use short brand only (name lives in headerFields).
+          logoText: 'XS Card',
           serialNumber,
         }
       );
