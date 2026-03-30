@@ -373,7 +373,6 @@ app.get('/public/cards/:id', async (req, res) => {
   See: backend/services/appleWalletService.js (same LOCK banner).
 ================================================================================
 */
-// Public: mobile app opens passPageUrl via Linking.openURL (must stay public GET).
 app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
     const { userId, cardIndex } = req.params;
     const cardIndexNum = parseInt(cardIndex, 10);
