@@ -563,7 +563,7 @@ exports.createWalletPass = async (req, res) => {
           !!!  APPLE WALLET iOS — passPageUrl MUST STAY HTTPS + THIS PATH  !!!
         ========================================================================
           LOCKED: Non-aesthetic edits break Safari. passPageUrl must point at
-          GET /wallet-passes/.../card.pkpass (see server.js). Use getPublicBaseUrl.
+          GET /wallet-passes/.../.pkpass (see server.js). Use getPublicBaseUrl.
           ONLY aesthetic: tweak success message strings, not URL shape or flow.
         ========================================================================
         */
