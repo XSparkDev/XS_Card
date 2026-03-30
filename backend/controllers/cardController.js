@@ -560,20 +560,23 @@ exports.createWalletPass = async (req, res) => {
 
         /*
         ========================================================================
-          !!!  APPLE WALLET iOS — passPageUrl MUST STAY HTTPS + THIS PATH  !!!
+          !!!  APPLE WALLET iOS — passPageUrl MUST STAY HTTPS + WALLET-PASSES  !!!
         ========================================================================
-          LOCKED: Non-aesthetic edits break Safari. passPageUrl must point at
-          GET /wallet-passes/.../card.pkpass (see server.js). Use getPublicBaseUrl.
-          ONLY aesthetic: tweak success message strings, not URL shape or flow.
+          UX NOTE: iOS/Safari often returns to a blank tab after "Add" succeeds.
+          We therefore point passPageUrl to an HTML landing page:
+            GET /wallet-passes/:userId/:cardIndex
+          which auto-opens the actual .pkpass download:
+            GET /wallet-passes/:userId/:cardIndex.pkpass
+          Both must remain public and HTTPS-aware via getPublicBaseUrl.
         ========================================================================
         */
-        // iOS: native .pkpass URL (Passcreator removed).
+        // iOS: open UX landing page (which triggers the .pkpass).
         if (platform === 'ios') {
             // If the client requests it (e.g., local environment), omit image downloads during pass creation.
             const shouldSkipImages = skipImages === 'true';
 
             const base = getPublicBaseUrl(req);
-            const passPageUrl = `${base}/wallet-passes/${encodeURIComponent(userId)}/${cardIndex}.pkpass` +
+            const passPageUrl = `${base}/wallet-passes/${encodeURIComponent(userId)}/${cardIndex}` +
                 (shouldSkipImages ? '?skipImages=true' : '');
 
             return res.status(200).send({

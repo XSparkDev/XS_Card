@@ -374,6 +374,107 @@ app.get('/public/cards/:id', async (req, res) => {
 ================================================================================
 */
 // Public: mobile app opens passPageUrl via Linking.openURL (must stay public GET).
+// UX landing page: avoids "blank page" after Wallet add flow.
+// It triggers the .pkpass download and then shows instructions to the user.
+app.get('/wallet-passes/:userId/:cardIndex', async (req, res) => {
+    const { userId, cardIndex } = req.params;
+    const cardIndexNum = parseInt(cardIndex, 10);
+    const shouldSkipImages = req.query.skipImages === 'true';
+
+    if (!userId || isNaN(cardIndexNum) || cardIndexNum < 0) {
+        return res.status(400).send('Invalid userId or cardIndex');
+    }
+
+    const base = getPublicBaseUrl(req);
+    const pkpassUrl =
+        `${base}/wallet-passes/${encodeURIComponent(userId)}/${cardIndexNum}.pkpass` +
+        (shouldSkipImages ? '?skipImages=true' : '');
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Add to Apple Wallet</title>
+    <style>
+      :root { --bg:#0b0b0c; --card:#151518; --text:#f2f2f4; --muted:#b7b7c2; --btn:#ffffff; --btnText:#111114; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+             background: radial-gradient(1200px 700px at 20% -10%, rgba(255,255,255,0.12), transparent 55%),
+                         radial-gradient(900px 600px at 110% 10%, rgba(255,255,255,0.08), transparent 50%),
+                         var(--bg);
+             color: var(--text); }
+      .wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+      .card { width: min(520px, 100%); background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+              border: 1px solid rgba(255,255,255,0.10); border-radius: 18px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+      h1 { margin:0 0 8px; font-size: 20px; letter-spacing: 0.2px; }
+      p { margin:0 0 14px; color: var(--muted); line-height: 1.45; }
+      .status { display:flex; gap:12px; align-items:flex-start; padding: 14px; border-radius: 14px;
+                background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.10); margin: 16px 0; }
+      .dot { width:10px; height:10px; margin-top:5px; border-radius:50%; background: #ffd166; box-shadow: 0 0 0 4px rgba(255,209,102,0.15); flex:0 0 auto; }
+      .status strong { display:block; font-size: 14px; margin-bottom: 4px; color: var(--text); }
+      .status span { display:block; font-size: 13px; color: var(--muted); }
+      .btnrow { display:flex; gap:10px; flex-wrap: wrap; margin-top: 14px; }
+      a.button { display:inline-flex; align-items:center; justify-content:center; padding:12px 14px; border-radius: 12px;
+                 background: var(--btn); color: var(--btnText); text-decoration:none; font-weight: 600; }
+      a.link { color: var(--muted); text-decoration: underline; padding: 10px 4px; }
+      .fine { margin-top: 14px; font-size: 12px; color: rgba(255,255,255,0.55); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Apple Wallet</h1>
+        <p>If the pass doesn’t open automatically, tap “Open pass”. After adding, you can close this tab and check your Wallet.</p>
+
+        <div class="status" id="status">
+          <div class="dot" id="dot"></div>
+          <div>
+            <strong id="headline">Opening pass…</strong>
+            <span id="sub">If prompted, tap “Add” in Apple Wallet.</span>
+          </div>
+        </div>
+
+        <div class="btnrow">
+          <a class="button" href="${pkpassUrl}">Open pass</a>
+          <a class="link" href="javascript:location.reload()">Reload</a>
+        </div>
+
+        <div class="fine">
+          Tip: after you tap “Add”, iOS may return you here. That’s normal — your pass will be in Wallet.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        var pkpassUrl = ${JSON.stringify(pkpassUrl)};
+        // Trigger download/navigation quickly to open Apple Wallet UI.
+        setTimeout(function(){ window.location.href = pkpassUrl; }, 50);
+
+        // When the user comes back from Wallet, we can’t detect success reliably,
+        // but we can update the UX to guide them.
+        function onVisible() {
+          if (document.visibilityState === 'visible') {
+            var dot = document.getElementById('dot');
+            var headline = document.getElementById('headline');
+            var sub = document.getElementById('sub');
+            dot.style.background = '#06d6a0';
+            dot.style.boxShadow = '0 0 0 4px rgba(6,214,160,0.18)';
+            headline.textContent = 'Done? Check your Wallet';
+            sub.textContent = 'Close this tab and open the Wallet app to confirm your pass is added.';
+          }
+        }
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('pageshow', onVisible);
+      })();
+    </script>
+  </body>
+</html>`);
+});
+
 app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
     const { userId, cardIndex } = req.params;
     const cardIndexNum = parseInt(cardIndex, 10);
