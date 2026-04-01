@@ -5,11 +5,11 @@ import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
@@ -25,9 +25,22 @@ import WidgetConfigModal from '../../components/widgets/WidgetConfigModal';
 import WidgetCard from '../../components/widgets/WidgetCard';
 import { WidgetManager } from '../../widgets/WidgetManager';
 import { WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
+import { getPlanLimits, getUserPlan as getStoredUserPlan, UserPlan } from '../../utils/userPlan';
+import { useAuth } from '../../context/AuthContext';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
+
+const isSpeakerCardEnabled = (value: unknown): boolean => {
+  return value === true || value === 'true';
+};
+
+const normalizeUserPlan = (plan?: string | null): UserPlan => {
+  const normalizedPlan = String(plan || 'free').toLowerCase();
+  return normalizedPlan === 'premium' || normalizedPlan === 'enterprise'
+    ? normalizedPlan
+    : 'free';
+};
 
 // Update the FormData interface to properly handle social media fields
 interface FormData {
@@ -61,6 +74,7 @@ export default function EditCard() {
   const cardIndex = route.params?.cardIndex ?? 0; // Provide default value of 0
   const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
+  const { user } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -91,7 +105,9 @@ export default function EditCard() {
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState('');
-  const [userPlan, setUserPlan] = useState<string>('free');
+  const [userPlan, setUserPlan] = useState<UserPlan>(
+    normalizeUserPlan(user?.plan)
+  );
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
   const [socialNotification, setSocialNotification] = useState<string | null>(null);
@@ -105,6 +121,10 @@ export default function EditCard() {
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
   const [showAltNumber, setShowAltNumber] = useState(false);
+  const [isSpeakerEngagementCard, setIsSpeakerEngagementCard] = useState(false);
+  const [existingSpeakerCardIndex, setExistingSpeakerCardIndex] = useState<number | null>(null);
+  const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
+  const [speakerConflictLoaded, setSpeakerConflictLoaded] = useState(false);
   
   // Widget state
   const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
@@ -139,13 +159,16 @@ export default function EditCard() {
     // Use passed card data if available, otherwise fall back to API call
     if (cardData) {
       loadCardDataFromProps();
-    } else {
-    loadUserData();
     }
-    getUserPlan();
+    loadUserData();
+    loadUserPlan();
     loadActiveWidgets();
     // Alt number loading is now handled in loadCardDataFromProps and loadUserData
   }, [cardData, cardIndex]);
+
+  useEffect(() => {
+    setUserPlan(normalizeUserPlan(user?.plan));
+  }, [user?.plan]);
   
   // Load alt number from temp file
   const loadAltNumber = async () => {
@@ -214,6 +237,11 @@ export default function EditCard() {
         loadAltNumber();
       }
 
+      setIsSpeakerEngagementCard(isSpeakerCardEnabled(cardData.isSpeakerEngagementCard));
+      setExistingSpeakerCardIndex(null);
+      setExistingSpeakerCardLabel('');
+      setSpeakerConflictLoaded(false);
+
       setLoading(false);
     } catch (error) {
       console.error('Error loading card data from props:', error);
@@ -250,6 +278,11 @@ export default function EditCard() {
       }
       
       if (cardsArray && cardsArray.length > cardIndex) {
+        const activeSpeakerCardIndex = cardsArray.findIndex((card: any, index: number) => (
+          index !== cardIndex && isSpeakerCardEnabled(card?.isSpeakerEngagementCard)
+        ));
+        const activeSpeakerCard = activeSpeakerCardIndex >= 0 ? cardsArray[activeSpeakerCardIndex] : null;
+
         const userData = cardsArray[cardIndex]; 
         console.log('Card data loaded with zoom level:', userData.logoZoomLevel);
         
@@ -296,6 +329,17 @@ export default function EditCard() {
           loadAltNumber();
         }
 
+        setIsSpeakerEngagementCard(isSpeakerCardEnabled(userData.isSpeakerEngagementCard));
+        setExistingSpeakerCardIndex(activeSpeakerCardIndex >= 0 ? activeSpeakerCardIndex : null);
+        setExistingSpeakerCardLabel(
+          activeSpeakerCard?.company?.trim() || (
+            activeSpeakerCard
+              ? `Card ${activeSpeakerCardIndex + 1}`
+              : ''
+          )
+        );
+        setSpeakerConflictLoaded(true);
+
         const existingSocials = Object.entries(userData.socials || {})
           .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
           .map(([key]) => key);
@@ -310,16 +354,138 @@ export default function EditCard() {
     }
   };
 
-  const getUserPlan = async () => {
+  const loadUserPlan = async () => {
     try {
-      const userData = await AsyncStorage.getItem('userData');
-      if (userData) {
-        const { plan } = JSON.parse(userData);
-        setUserPlan(plan);
+      if (user?.plan) {
+        setUserPlan(normalizeUserPlan(user.plan));
+      }
+
+      const cachedUserData = await AsyncStorage.getItem('userData');
+      if (cachedUserData) {
+        const parsedUserData = JSON.parse(cachedUserData);
+        setUserPlan(normalizeUserPlan(parsedUserData?.plan));
+      }
+
+      const userId = await getUserId();
+      if (!userId) {
+        return;
+      }
+
+      const response = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_USER}/${userId}`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        const fallbackPlan = await getStoredUserPlan();
+        setUserPlan(normalizeUserPlan(fallbackPlan));
+        return;
+      }
+
+      const data = await response.json();
+      const actualPlan = normalizeUserPlan(data?.plan);
+      setUserPlan(actualPlan);
+
+      if (cachedUserData) {
+        const parsedUserData = JSON.parse(cachedUserData);
+        if (normalizeUserPlan(parsedUserData?.plan) !== actualPlan) {
+          parsedUserData.plan = actualPlan;
+          await AsyncStorage.setItem('userData', JSON.stringify(parsedUserData));
+        }
       }
     } catch (error) {
       console.error('Error fetching user plan:', error);
     }
+  };
+
+  const hasAdvancedFeatures = getPlanLimits(userPlan as UserPlan).hasAdvancedFeatures;
+
+  const loadSpeakerConflictState = async () => {
+    try {
+      const userId = await getUserId();
+      if (!userId) {
+        throw new Error('User ID not found');
+      }
+
+      const response = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`);
+      const responseData = await response.json();
+
+      let cardsArray: any[] = [];
+      if (Array.isArray(responseData?.cards)) {
+        cardsArray = responseData.cards;
+      } else if (Array.isArray(responseData)) {
+        cardsArray = responseData;
+      }
+
+      const speakerIndex = cardsArray.findIndex((card: any, index: number) => (
+        index !== cardIndex && isSpeakerCardEnabled(card?.isSpeakerEngagementCard)
+      ));
+
+      if (speakerIndex >= 0) {
+        setExistingSpeakerCardIndex(speakerIndex);
+        setExistingSpeakerCardLabel(cardsArray[speakerIndex]?.company?.trim() || `Card ${speakerIndex + 1}`);
+      } else {
+        setExistingSpeakerCardIndex(null);
+        setExistingSpeakerCardLabel('');
+      }
+
+      setSpeakerConflictLoaded(true);
+
+      return speakerIndex >= 0
+        ? {
+            cardIndex: speakerIndex,
+            label: cardsArray[speakerIndex]?.company?.trim() || `Card ${speakerIndex + 1}`
+          }
+        : null;
+    } catch (error) {
+      console.error('Error loading speaker conflict state:', error);
+      Alert.alert('Unable to Check Speaker Card', 'Please try again before changing the speaker card.');
+      return undefined;
+    }
+  };
+
+  const handleSpeakerTogglePress = async () => {
+    if (isSpeakerEngagementCard) {
+      setIsSpeakerEngagementCard(false);
+      return;
+    }
+
+    let conflict = existingSpeakerCardIndex !== null
+      ? { cardIndex: existingSpeakerCardIndex, label: existingSpeakerCardLabel }
+      : null;
+
+    if (!speakerConflictLoaded) {
+      const fetchedConflict = await loadSpeakerConflictState();
+      if (fetchedConflict === undefined) {
+        return;
+      }
+      conflict = fetchedConflict;
+    }
+
+    if (conflict && conflict.cardIndex !== cardIndex) {
+      const conflictLabel = conflict.label || `Card ${conflict.cardIndex + 1}`;
+
+      Alert.alert(
+        'Change Speaker Card?',
+        `${conflictLabel} is already set as your speaker card. If you continue, that card will stop being the speaker card and this card will replace it.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => setIsSpeakerEngagementCard(true)
+          }
+        ]
+      );
+      return;
+    }
+
+    setIsSpeakerEngagementCard(true);
+  };
+
+  const handleSpeakerTooltipPress = () => {
+    Alert.alert(
+      'Speaker and Engagement Card',
+      'Use this to mark the one card you want to use for speaking engagements and event networking. Contacts captured from this card can be identified in your Contacts filter.'
+    );
   };
 
   // Load active widgets for this card
@@ -489,7 +655,8 @@ export default function EditCard() {
         logoZoomLevel: Number(zoomLevel), // Ensure it's a number
         altNumber: altNumber || '',
         altCountryCode: altCountryCode || '+27',
-        showAltNumber: showAltNumber || false
+        showAltNumber: showAltNumber || false,
+        isSpeakerEngagementCard
       } as any;
       cardData.template = template;
 
@@ -511,6 +678,39 @@ export default function EditCard() {
 
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
+
+      if (Array.isArray(result.cards)) {
+        try {
+          await AsyncStorage.setItem('userCards', JSON.stringify(result.cards));
+          await AsyncStorage.setItem(
+            'cachedCards',
+            JSON.stringify({
+              data: result.cards,
+              timestamp: Date.now()
+            })
+          );
+
+          const refreshedCard = result.cards[cardIndex];
+          if (refreshedCard) {
+            setIsSpeakerEngagementCard(isSpeakerCardEnabled(refreshedCard.isSpeakerEngagementCard));
+
+            const activeSpeakerCardIndex = result.cards.findIndex((card: any, index: number) => (
+              index !== cardIndex && isSpeakerCardEnabled(card?.isSpeakerEngagementCard)
+            ));
+            const activeSpeakerCard = activeSpeakerCardIndex >= 0 ? result.cards[activeSpeakerCardIndex] : null;
+
+            setExistingSpeakerCardIndex(activeSpeakerCardIndex >= 0 ? activeSpeakerCardIndex : null);
+            setExistingSpeakerCardLabel(
+              activeSpeakerCard?.company?.trim() || (
+                activeSpeakerCard ? `Card ${activeSpeakerCardIndex + 1}` : ''
+              )
+            );
+            setSpeakerConflictLoaded(true);
+          }
+        } catch (cacheError) {
+          console.error('Error updating local cards cache:', cacheError);
+        }
+      }
       
       // Alt number is now saved to backend, no need for AsyncStorage
       
@@ -1391,6 +1591,37 @@ export default function EditCard() {
                 <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
               </TouchableOpacity>
             </View>
+
+            {hasAdvancedFeatures && (
+              <View style={styles.toggleContainer}>
+                <View style={styles.toggleLabelRow}>
+                  <Text style={styles.toggleLabel}>My Speaker and Engagement Card</Text>
+                  <TouchableOpacity
+                    style={styles.tooltipButton}
+                    onPress={handleSpeakerTooltipPress}
+                    accessibilityRole="button"
+                    accessibilityLabel="Learn more about speaker and engagement cards"
+                  >
+                    <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.toggleSwitch,
+                    isSpeakerEngagementCard && styles.toggleSwitchActive
+                  ]}
+                  onPress={handleSpeakerTogglePress}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={[
+                      styles.toggleThumb,
+                      isSpeakerEngagementCard && styles.toggleThumbActive
+                    ]}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Social Media URL Inputs */}
             {selectedSocials.map((socialId) => (
@@ -2603,6 +2834,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.black,
     flex: 1,
+  },
+  toggleLabelRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  tooltipButton: {
+    marginLeft: 8,
+    padding: 4,
   },
   toggleSwitch: {
     width: 50,

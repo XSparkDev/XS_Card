@@ -58,6 +58,7 @@ interface CardData {
   showAltNumber?: boolean;
   altNumber?: string;
   altCountryCode?: string;
+  isSpeakerEngagementCard?: boolean;
 }
 
 interface ShareOption {

@@ -37,6 +37,54 @@ const validateUserAccess = async (userId, userUid) => {
     }
 };
 
+const normalizeSpeakerCards = (cards = []) => {
+    let speakerCardFound = false;
+    let didNormalize = false;
+
+    const normalizedCards = cards.map((card) => {
+        const isSpeakerCard =
+            card?.isSpeakerEngagementCard === true ||
+            card?.isSpeakerEngagementCard === 'true';
+
+        if (!isSpeakerCard) {
+            if (card?.isSpeakerEngagementCard === 'false') {
+                didNormalize = true;
+                return {
+                    ...card,
+                    isSpeakerEngagementCard: false
+                };
+            }
+
+            return card;
+        }
+
+        if (!speakerCardFound) {
+            speakerCardFound = true;
+
+            if (card?.isSpeakerEngagementCard !== true) {
+                didNormalize = true;
+                return {
+                    ...card,
+                    isSpeakerEngagementCard: true
+                };
+            }
+
+            return card;
+        }
+
+        didNormalize = true;
+        return {
+            ...card,
+            isSpeakerEngagementCard: false
+        };
+    });
+
+    return {
+        normalizedCards,
+        didNormalize
+    };
+};
+
 // Add this function at the top with other helper functions
 const logPasscreatorConfig = () => {
   console.log('=== Passcreator Configuration ===');
@@ -88,8 +136,16 @@ exports.getCardById = async (req, res) => {
         const data = doc.data();
         let cards = [];
         
-        if (data.cards) {
-            cards = data.cards.map(card => ({
+        const { normalizedCards, didNormalize } = normalizeSpeakerCards(data.cards || []);
+
+        if (didNormalize) {
+            await cardRef.update({
+                cards: normalizedCards
+            });
+        }
+
+        if (normalizedCards) {
+            cards = normalizedCards.map(card => ({
                 ...card,
                 createdAt: formatDate(card.createdAt), // Format for display
                 scans: card.scans || 0 // Initialize scans field if missing
@@ -151,6 +207,9 @@ exports.addCard = async (req, res) => {
             });
         }
 
+        const userDoc = await db.collection('users').doc(userId).get();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+
         // Enhanced debug logging
         console.log('Request headers:', req.headers);
         console.log('Request files:', req.files);
@@ -202,6 +261,9 @@ exports.addCard = async (req, res) => {
 
         // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
         const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
+        const isSpeakerEngagementCard =
+            hasSpeakerCardAccess &&
+            (req.body.isSpeakerEngagementCard === 'true' || req.body.isSpeakerEngagementCard === true);
         
         const newCard = {
             company,
@@ -218,14 +280,23 @@ exports.addCard = async (req, res) => {
             companyLogo: companyLogoUrl,
             altNumber: altNumber || '',
             altCountryCode: altCountryCode || '+27',
-            showAltNumber: parsedShowAltNumber || false
+            showAltNumber: parsedShowAltNumber || false,
+            isSpeakerEngagementCard
         };
 
         console.log('Creating new card:', newCard); // Debug log
 
         if (cardDoc.exists) {
+            const existingCards = Array.isArray(cardDoc.data()?.cards) ? [...cardDoc.data().cards] : [];
+            const { normalizedCards: sanitizedExistingCards } = normalizeSpeakerCards(existingCards);
+            const normalizedCards = isSpeakerEngagementCard
+                ? sanitizedExistingCards.map(card => ({ ...card, isSpeakerEngagementCard: false }))
+                : sanitizedExistingCards;
+
+            normalizedCards.push(newCard);
+
             await cardRef.update({
-                cards: admin.firestore.FieldValue.arrayUnion(newCard)
+                cards: normalizedCards
             });
         } else {
             await cardRef.set({
@@ -282,6 +353,9 @@ exports.updateCard = async (req, res) => {
             return res.status(404).send({ message: 'Card not found at specified index' });
         }
 
+        const userDoc = await db.collection('users').doc(userId).get();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+
         let updateData = {};
 
         // Handle file upload using Firebase Storage
@@ -303,12 +377,34 @@ exports.updateCard = async (req, res) => {
             updateData.phoneNormalized = normalizedPhone;
         }
 
+        if (Object.prototype.hasOwnProperty.call(updateData, 'isSpeakerEngagementCard')) {
+            if (hasSpeakerCardAccess) {
+                updateData.isSpeakerEngagementCard =
+                    updateData.isSpeakerEngagementCard === true ||
+                    updateData.isSpeakerEngagementCard === 'true';
+            } else {
+                updateData.isSpeakerEngagementCard = Boolean(cardsData.cards[cardIndex].isSpeakerEngagementCard);
+            }
+        }
+
         // Update the specific card in the array
-        const updatedCards = [...cardsData.cards];
+        const { normalizedCards: sanitizedExistingCards } = normalizeSpeakerCards(cardsData.cards || []);
+        const updatedCards = [...sanitizedExistingCards];
         updatedCards[cardIndex] = {
             ...updatedCards[cardIndex],
             ...updateData
         };
+
+        if (updatedCards[cardIndex].isSpeakerEngagementCard) {
+            for (let i = 0; i < updatedCards.length; i += 1) {
+                if (i !== Number(cardIndex)) {
+                    updatedCards[i] = {
+                        ...updatedCards[i],
+                        isSpeakerEngagementCard: false
+                    };
+                }
+            }
+        }
 
         // Update the document
         await cardRef.update({
@@ -317,7 +413,8 @@ exports.updateCard = async (req, res) => {
 
         res.status(200).send({ 
             message: 'Card updated successfully',
-            updatedCard: updatedCards[cardIndex]
+            updatedCard: updatedCards[cardIndex],
+            cards: updatedCards
         });
     } catch (error) {
         console.error('Update card error:', error);
