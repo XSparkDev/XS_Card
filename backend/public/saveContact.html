@@ -259,8 +259,8 @@
         
         .close-btn {
             position: absolute;
-            bottom: 30px;
-            right: 0px;
+            top: 0;
+            right: 8px;
             background: #ff4757;
             border: none;
             color: white;
@@ -696,7 +696,7 @@
         .form-header {
             text-align: center;
             margin: 30px 0 20px 0;
-            padding: 0 20px;
+            padding: 8px 52px 0 20px;
         }
 
         .form-header h3 {
@@ -1253,6 +1253,14 @@
                         <label for="scannerEmail" class="required">Email</label>
                     </div>
                 </div>
+
+                <!-- Company field -->
+                <div class="form-group">
+                    <div class="floating-label">
+                        <input type="text" id="scannerCompany" placeholder=" ">
+                        <label for="scannerCompany">Company</label>
+                    </div>
+                </div>
                 
                 <div class="form-group">
                     <div class="phone-input-container">
@@ -1277,12 +1285,6 @@
                     <div class="floating-label">
                         <input type="text" id="howWeMet" placeholder=" ">
                         <label for="howWeMet" class="required">How we met</label>
-                    </div>
-                </div>                <!-- Company field -->
-                <div class="form-group">
-                    <div class="floating-label">
-                        <input type="text" id="scannerCompany" placeholder=" ">
-                        <label for="scannerCompany">Company</label>
                     </div>
                 </div>
                 
@@ -2167,6 +2169,7 @@ END:VCARD`;
             
             const payload = {
                 userId: targetUserId,
+                cardIndex,
                 contactInfo: {
                     name: scannerName,
                     surname: scannerSurname,

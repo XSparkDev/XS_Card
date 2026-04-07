@@ -1,10 +1,14 @@
 const { db, admin } = require('../firebase.js');
 const { transporter, sendMailWithStatus } = require('../public/Utils/emailService');
 const { formatDate } = require('../utils/dateFormatter');
-// Note: Contact linking functionality moved to server.js /AddContact endpoint
+// Note: Public contact linking now lives in publicContactController/publicContactService.
 
 // Add constant for free plan limit
 const FREE_PLAN_CONTACT_LIMIT = 20;
+const normalizeSourceCardIndex = (value) => {
+    const parsedValue = Number.parseInt(value, 10);
+    return Number.isInteger(parsedValue) && parsedValue >= 0 ? parsedValue : undefined;
+};
 
 exports.getAllContacts = async (req, res) => {
     try {
@@ -128,6 +132,9 @@ exports.addContact = async (req, res) => {
         const newContact = {
             ...contactInfo,
             email: contactInfo.email || '', // Add email field with fallback
+            ...(normalizeSourceCardIndex(contactInfo.sourceCardIndex) !== undefined
+                ? { sourceCardIndex: normalizeSourceCardIndex(contactInfo.sourceCardIndex) }
+                : {}),
             createdAt: admin.firestore.Timestamp.now()
         };
 
@@ -220,6 +227,9 @@ exports.saveContactInfo = async (req, res) => {
             email: contactEmail, // Explicitly assign email
             company: String(contactInfo.company || ''), // Add company field
             howWeMet: String(contactInfo.howWeMet || ''),
+            ...(normalizeSourceCardIndex(contactInfo.sourceCardIndex) !== undefined
+                ? { sourceCardIndex: normalizeSourceCardIndex(contactInfo.sourceCardIndex) }
+                : {}),
             createdAt: admin.firestore.Timestamp.now()
         };
         

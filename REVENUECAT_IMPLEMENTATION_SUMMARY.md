@@ -412,7 +412,7 @@ curl https://your-domain.com/api/revenuecat/status \
 - **RevenueCat Docs**: https://docs.revenuecat.com
 - **Golden Rules**: `SUBSCRIPTION_GOLDEN_RULES.md`
 
----
+--- 
 
 ## 📞 Support
 
