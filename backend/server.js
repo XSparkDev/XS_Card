@@ -18,11 +18,15 @@ const CAPTCHA_RATE_LIMIT = {
 };
 const { db, admin, storage, bucket } = require('./firebase.js');
 const { sendMailWithStatus } = require('./public/Utils/emailService');
-const { checkUserExistsByEmail } = require('./utils/userDetection');
-const { linkContactToXsCardUser } = require('./utils/contactLinking');
 const { handleSingleUpload } = require('./middleware/fileUpload');
+const publicContactController = require('./controllers/publicContactController');
 const app = express();
 const port = 8383;
+
+// !!! WALLET / passPageUrl: do not remove — needed with getPublicBaseUrl for HTTPS behind proxies.
+app.set('trust proxy', 1);
+
+const { getPublicBaseUrl } = require('./utils/publicBaseUrl');
 
 // Add CORS middleware to allow loading Firebase Storage images
 app.use((req, res, next) => {
@@ -67,178 +71,10 @@ app.use(express.json());
 // Static middleware moved AFTER routes to prevent interference
 // ========================================================================
 
-// Extract handler function for reuse across multiple route aliases
-const addContactHandler = async (req, res) => {
-    const { userId, contactInfo } = req.body;
-    
-    // Detailed logging
-    console.log('Add Contact called - Public endpoint in server.js');
-    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
-    
-    if (!userId || !contactInfo) {
-        return res.status(400).send({ 
-            success: false,
-            message: 'User ID and contact info are required'
-        });
-    }
-
-    // Validate that email is provided (required for user detection)
-    if (!contactInfo.email || !contactInfo.email.trim()) {
-        return res.status(400).send({ 
-            success: false,
-            message: 'Email is required for contact saving'
-        });
-    }
-
-    try {
-        // Get user's plan information
-        const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
-        const userData = userDoc.data();
-
-        if (!userData) {
-            return res.status(404).send({ message: 'User not found' });
-        }
-
-        const contactRef = db.collection('contacts').doc(userId);
-        const doc = await contactRef.get();
-
-        let currentContacts = [];
-        if (doc.exists) {
-            currentContacts = doc.data().contactList || [];
-        }
-
-        // Free plan contact limit
-        const FREE_PLAN_CONTACT_LIMIT = 20;
-
-        // Check if free user has reached contact limit
-        if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
-            console.log(`Contact limit reached for free user ${userId}. Current contacts: ${currentContacts.length}`);
-            return res.status(403).send({
-                message: 'Contact limit reached',
-                error: 'FREE_PLAN_LIMIT_REACHED',
-                currentContacts: currentContacts.length,
-                limit: FREE_PLAN_CONTACT_LIMIT
-            });
-        }
-
-        // Create base contact
-        const baseContact = {
-            ...contactInfo,
-            email: contactInfo.email || '', // Add email field with fallback
-            createdAt: admin.firestore.Timestamp.now()
-        };
-
-        // Check if the contact email belongs to an existing XS Card user
-        let newContact = baseContact;
-        try {
-            console.log('Checking if contact is an XS Card user...');
-            const existingUser = await checkUserExistsByEmail(contactInfo.email);
-            
-            if (existingUser) {
-                console.log(`Contact is XS Card user: ${existingUser.userId}`);
-                // Link the contact to the XS Card user (using card index 0 as primary)
-                // Make linking non-blocking for better performance
-                setImmediate(async () => {
-                    try {
-                        const linkedContact = await linkContactToXsCardUser(baseContact, existingUser.userId, 0);
-                        console.log('Linked contact created in background');
-                        // Update the contact in the database with linking info
-                        const updatedContacts = [...currentContacts];
-                        const contactIndex = updatedContacts.findIndex(c => c.email === baseContact.email);
-                        if (contactIndex !== -1) {
-                            updatedContacts[contactIndex] = linkedContact;
-                            await contactRef.set({
-                                userId: db.doc(`users/${userId}`),
-                                contactList: updatedContacts
-                            }, { merge: true });
-                            console.log('Contact updated with linking info');
-                        }
-                    } catch (linkingError) {
-                        console.error('Error during background linking:', linkingError);
-                    }
-                });
-                console.log('Contact saved, linking will happen in background');
-            } else {
-                console.log('Contact is not an XS Card user, saving as regular contact');
-            }
-        } catch (linkingError) {
-            console.error('Error during user detection (non-blocking):', linkingError);
-            // Continue with regular contact if linking fails
-            newContact = baseContact;
-        }
-
-        currentContacts.push(newContact);
-
-        await contactRef.set({
-            userId: db.doc(`users/${userId}`),
-            contactList: currentContacts
-        }, { merge: true });
-        
-        // Send email notification if user has email (non-blocking)
-        if (userData.email) {
-            // Send email in background - don't wait for it
-            setImmediate(async () => {
-                try {
-                    const mailOptions = {
-                        from: process.env.EMAIL_USER,
-                        to: userData.email,
-                        subject: `${contactInfo.name} Saved Your Contact Information`,
-                        html: `
-                            <h2>New Contact Added</h2>
-                            <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-                            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                                <p><strong>Contact Details:</strong></p>                        <ul style="list-style: none; padding-left: 0;">
-                                    <li><strong>Name:</strong> ${contactInfo.name}</li>
-                                    <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                                    <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
-                                    <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
-                                    ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
-                                    <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
-                                </ul>
-                            </div>
-                            <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-                            ${userData.plan === 'free' ? 
-                                `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>` 
-                                : ''}
-                        `
-                    };
-
-                    const mailResult = await sendMailWithStatus(mailOptions);
-                    if (!mailResult.success) {
-                        console.error('Failed to send email notification:', mailResult.error);
-                    }
-                } catch (emailError) {
-                    console.error('Email sending error:', emailError);
-                }
-            });
-        }
-        
-        res.status(201).send({ 
-            success: true,
-            message: 'Contact added successfully',
-            contactList: currentContacts.map(contact => ({
-                ...contact,
-                createdAt: contact.createdAt ? contact.createdAt.toDate().toISOString() : new Date().toISOString()
-            })),
-            remainingContacts: userData.plan === 'free' ? 
-                FREE_PLAN_CONTACT_LIMIT - currentContacts.length : 
-                'unlimited'
-        });
-    } catch (error) {
-        console.error('Error adding contact:', error);
-        res.status(500).send({ 
-            success: false,
-            message: 'Internal Server Error', 
-            error: error.message 
-        });
-    }
-};
-
 // Mount all aliases for AddContact at TOP (critical for saveContact.html)
-app.post('/AddContact', addContactHandler);
-app.post('/public/saveContact', addContactHandler);
-app.post('/saveContact', addContactHandler);
+app.post('/AddContact', publicContactController.addPublicContact);
+app.post('/public/saveContact', publicContactController.addPublicContact);
+app.post('/saveContact', publicContactController.addPublicContact);
 
 // Define critical public routes FIRST to avoid middleware conflicts
 app.get('/saveContact', (req, res) => {
@@ -353,6 +189,68 @@ app.get('/public/cards/:id', async (req, res) => {
         res.status(500).send({ 
             message: 'Error fetching card', 
             error: error.message 
+        });
+    }
+});
+
+/*
+================================================================================
+  !!!  APPLE WALLET — PUBLIC .pkpass DOWNLOAD (DO NOT BREAK)  !!!
+================================================================================
+  LOCKED: Any non-aesthetic change can break Safari / "Add to Wallet".
+  OK:    comments, filename string only, purely cosmetic header tweaks IF
+         Content-Type stays application/vnd.apple.pkpass and body stays raw buffer.
+  NOT OK without review: auth on GET, JSON instead of binary, gzip, wrong MIME.
+  See: backend/services/appleWalletService.js (same LOCK banner).
+================================================================================
+*/
+app.get('/wallet-passes/:userId/:cardIndex.pkpass', async (req, res) => {
+    const { userId, cardIndex } = req.params;
+    const cardIndexNum = parseInt(cardIndex, 10);
+    const shouldSkipImages = req.query.skipImages === 'true';
+
+    if (!userId || isNaN(cardIndexNum) || cardIndexNum < 0) {
+        return res.status(400).send({ message: 'Invalid userId or cardIndex' });
+    }
+
+    try {
+        const cardRef = db.collection('cards').doc(userId);
+        const cardDoc = await cardRef.get();
+
+        if (!cardDoc.exists || !cardDoc.data()?.cards || !cardDoc.data().cards[cardIndexNum]) {
+            return res.status(404).send({ message: 'Card not found' });
+        }
+
+        const card = cardDoc.data().cards[cardIndexNum];
+
+        // Generate saveContact URL for the barcode in the pass
+        const base = getPublicBaseUrl(req);
+        const saveContactUrl = `${base}/saveContact?userId=${encodeURIComponent(userId)}&cardIndex=${cardIndexNum}`;
+
+        // If requested, omit image URLs so passkit-generator doesn't try to download them.
+        const cardForPass = shouldSkipImages
+            ? { ...card, companyLogo: undefined, profileImage: undefined }
+            : card;
+
+        const WalletPassService = require('./services/walletPassService');
+        const walletService = new WalletPassService();
+
+        const passBuffer = await walletService.generatePass(
+            'ios',
+            cardForPass,
+            userId,
+            cardIndexNum,
+            saveContactUrl
+        );
+
+        res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+        res.setHeader('Content-Disposition', 'attachment; filename="pass.pkpass"');
+        res.status(200).send(passBuffer);
+    } catch (error) {
+        console.error('Error generating pkpass:', error);
+        res.status(500).send({
+            message: 'Failed to generate Apple Wallet pass',
+            error: error instanceof Error ? error.message : String(error)
         });
     }
 });

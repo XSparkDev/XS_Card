@@ -1,20 +1,36 @@
+/*
+================================================================================
+  !!!  READ BEFORE EDITING — APPLE WALLET (.pkpass) PRODUCTION LOCK  !!!
+================================================================================
+
+  ANY CHANGE HERE THAT IS NOT **PURELY AESTHETIC** CAN BREAK SAFARI / WALLET.
+
+  Non-aesthetic changes (layout tweaks, new fields, swapping image pipeline,
+  removing sharp/PNG conversion, changing pass type, barcode, certs, or URLs)
+  RISK "SAFARI CAN'T DOWNLOAD THIS FILE" AND INVALID PASSES.
+
+  **ONLY SAFE WITHOUT REVIEW:** copy/labels, spacing in field text, logoText
+  wording, resize dimensions that stay within Apple guidelines, comment typos.
+
+  **DO NOT "SIMPLIFY" AWAY:** sharp → PNG for all raster assets; required
+  icon.png / icon@2x.png; HTTPS-aware URLs via getPublicBaseUrl (see server.js).
+
+  If an AI or reviewer suggests a refactor: STOP — confirm behavior-only diff
+  is zero or get explicit human sign-off.
+
+================================================================================
+*/
+
 /**
- * Apple Wallet Service
+ * Apple Wallet Service — passkit-generator + sharp (JPEG/WebP → real PNG).
  *
- * Minimal, iOS-first implementation using passkit-generator.
- * Uses environment variables for certificate paths.
- *
- * Required env vars:
- * - APPLE_PASS_TYPE_ID (e.g., "pass.com.xscard.businesscard")
- * - APPLE_TEAM_ID (your Apple Developer Team ID)
- * - APPLE_PASS_CERT_PATH (path to pass certificate .pem file)
- * - APPLE_PASS_KEY_PATH (path to pass private key .pem file)
- * - APPLE_WWDR_CERT_PATH (path to Apple WWDR certificate .pem file)
+ * Env: APPLE_PASS_TYPE_ID, APPLE_TEAM_ID, certs (paths or *_PEM in .env).
  */
 
 const { PKPass } = require('passkit-generator');
 const fs = require('fs');
 const axios = require('axios');
+const sharp = require('sharp');
 
 class AppleWalletService {
   constructor() {
@@ -23,103 +39,106 @@ class AppleWalletService {
     this.certPath = process.env.APPLE_PASS_CERT_PATH;
     this.keyPath = process.env.APPLE_PASS_KEY_PATH;
     this.wwdrPath = process.env.APPLE_WWDR_CERT_PATH;
+
+    this.certPem = process.env.APPLE_PASS_CERT_PEM;
+    this.keyPem = process.env.APPLE_PASS_KEY_PEM;
+    this.wwdrPem = process.env.APPLE_WWDR_CERT_PEM;
+  }
+
+  normalizePem(pem) {
+    if (!pem) return pem;
+    return pem.replace(/\\n/g, '\n');
   }
 
   /**
-   * Generate an Apple Wallet pass and return a .pkpass file buffer
-   * @param {Object} cardData - Card data from Firestore
-   * @param {string} userId - User ID
-   * @param {number} cardIndex - Card index
-   * @param {string} saveContactUrl - URL used in QR code
-   * @returns {Promise<Buffer>} .pkpass file buffer
+   * @param {Object} cardData - Card from Firestore
+   * @param {string} saveContactUrl - QR target URL
    */
   async generatePass(cardData, userId, cardIndex, saveContactUrl) {
-    // Validate certificates before proceeding
     if (!this.validateCertificates()) {
       throw new Error('Apple Wallet certificates not properly configured. Please check certificate paths in environment variables.');
     }
 
     try {
-      // Create pass instance
+      const serialNumber = `${userId}_${cardIndex}_${Date.now()}`;
+      const firstName = String(cardData.name || '').trim();
+      const surname = String(cardData.surname || '').trim();
+      const fullName = [firstName, surname].filter(Boolean).join(' ').trim() || 'Card';
+
+      // Do not set logoText: passkit-generator Joi rejects logoText: ''. Omitting the key is valid.
       const pass = new PKPass(
         {},
+        undefined,
         {
-          // Pass type identifier and team identifier
           passTypeIdentifier: this.passTypeId,
           teamIdentifier: this.teamId,
-          // Organization details
           organizationName: 'XS Card',
           description: 'Digital Business Card',
-          logoText: 'XS Card',
-          // Colors (XS Card brand colors)
-          foregroundColor: 'rgb(255, 255, 255)',
-          backgroundColor: 'rgb(27, 43, 91)', // #1B2B5B
-          labelColor: 'rgb(255, 255, 255)',
+          serialNumber,
         }
       );
 
-      // Set serial number (unique identifier)
-      pass.serialNumber = `${userId}_${cardIndex}_${Date.now()}`;
+      // Generic pass fits a business card; avoid eventTicket-specific behaviour.
+      pass.type = 'generic';
 
-      // Primary field: Name
-      pass.addPrimaryField({
-        key: 'name',
-        label: 'Name',
-        value: `${cardData.name || ''} ${cardData.surname || ''}`.trim() || 'XS Card',
+      pass.headerFields.push({
+        key: 'hdr_xs_pass',
+        label: '',
+        value: 'XS Card Pass',
+        textAlignment: 'PKTextAlignmentRight',
       });
 
-      // Secondary fields: Company and Occupation
+      pass.primaryFields.push({
+        key: 'name',
+        label: 'NAME',
+        value: fullName,
+      });
+
       if (cardData.company) {
-        pass.addSecondaryField({
+        pass.secondaryFields.push({
           key: 'company',
-          label: 'Company',
-          value: cardData.company,
+          label: 'COMPANY',
+          value: String(cardData.company),
         });
       }
 
       if (cardData.occupation) {
-        pass.addSecondaryField({
-          key: 'occupation',
-          label: 'Title',
-          value: cardData.occupation,
+        pass.secondaryFields.push({
+          key: 'title',
+          label: 'TITLE',
+          value: String(cardData.occupation),
+          textAlignment: 'PKTextAlignmentLeft',
         });
       }
 
-      // Auxiliary fields: Email and Phone
       if (cardData.email) {
-        pass.addAuxiliaryField({
+        pass.auxiliaryFields.push({
           key: 'email',
-          label: 'Email',
-          value: cardData.email,
+          label: 'EMAIL',
+          value: String(cardData.email),
         });
       }
 
       if (cardData.phone) {
-        pass.addAuxiliaryField({
+        pass.auxiliaryFields.push({
           key: 'phone',
-          label: 'Phone',
-          value: cardData.phone,
+          label: 'NUMBER',
+          value: String(cardData.phone),
+          textAlignment: 'PKTextAlignmentLeft',
         });
       }
 
-      // Add QR code barcode
-      pass.addBarcode({
+      pass.setBarcodes({
         message: saveContactUrl,
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
         altText: 'Scan to save contact',
       });
 
-      // Add images if available
-      await this.addImages(pass, cardData);
-
-      // Load and set certificates
+      await this.addPassImages(pass, cardData);
       await this.loadCertificates(pass);
 
-      // Generate .pkpass file
-      const passBuffer = await pass.generate();
-
-      return passBuffer;
+      return pass.getAsBuffer();
     } catch (error) {
       console.error('Error generating Apple Wallet pass:', error);
       throw new Error(`Failed to generate Apple Wallet pass: ${error.message}`);
@@ -127,107 +146,162 @@ class AppleWalletService {
   }
 
   /**
-   * Add images to the pass (logo, icon, thumbnail)
-   * @param {PKPass} pass - Pass instance
-   * @param {Object} cardData - Card data
+   * Decode any raster to PNG; Wallet rejects non-PNG data named .png.
    */
-  async addImages(pass, cardData) {
+  async toPng(buffer) {
+    if (!buffer || !buffer.length) return null;
     try {
-      // Add logo (company logo) - required for Apple Wallet
-      if (cardData.companyLogo) {
-        const logoBuffer = await this.downloadImage(cardData.companyLogo);
-        if (logoBuffer) {
-          pass.addBuffer('logo.png', logoBuffer);
-          pass.addBuffer('logo@2x.png', logoBuffer); // Retina version
-        }
-      }
-
-      // Add icon (smaller version, typically same as logo)
-      if (cardData.companyLogo) {
-        const iconBuffer = await this.downloadImage(cardData.companyLogo);
-        if (iconBuffer) {
-          pass.addBuffer('icon.png', iconBuffer);
-          pass.addBuffer('icon@2x.png', iconBuffer); // Retina version
-        }
-      }
-
-      // Add thumbnail (profile image) - optional but nice to have
-      if (cardData.profileImage) {
-        const thumbnailBuffer = await this.downloadImage(cardData.profileImage);
-        if (thumbnailBuffer) {
-          pass.addBuffer('thumbnail.png', thumbnailBuffer);
-          pass.addBuffer('thumbnail@2x.png', thumbnailBuffer); // Retina version
-        }
-      }
-    } catch (error) {
-      console.warn('Warning: Could not add some images to Apple Wallet pass:', error.message);
-      // Continue without images rather than failing completely
-      // Apple Wallet will use default icons if images are missing
-    }
-  }
-
-  /**
-   * Download image from URL and return as buffer
-   * @param {string} imageUrl - Image URL
-   * @returns {Promise<Buffer|null>} Image buffer or null if failed
-   */
-  async downloadImage(imageUrl) {
-    try {
-      if (!imageUrl) return null;
-
-      const response = await axios.get(imageUrl, {
-        responseType: 'arraybuffer',
-        timeout: 10000, // 10 second timeout
-      });
-
-      return Buffer.from(response.data);
-    } catch (error) {
-      console.warn(`Failed to download image from ${imageUrl}:`, error.message);
+      return await sharp(buffer).png().toBuffer();
+    } catch (e) {
+      console.warn('Wallet: could not decode image:', e.message);
       return null;
     }
   }
 
+  async grayPlaceholderPng(size) {
+    return sharp({
+      create: {
+        width: size,
+        height: size,
+        channels: 3,
+        background: { r: 120, g: 120, b: 120 },
+      },
+    })
+      .png()
+      .toBuffer();
+  }
+
   /**
-   * Load certificates for pass signing
-   * @param {PKPass} pass - Pass instance
+   * Profile thumbnail: square cover resize, then circular alpha mask (PNG).
+   * Aesthetic-only vs prior square thumbnail; still real PNG output for Wallet.
    */
+  async circularThumbnail(pngBuffer, size) {
+    const s = Math.round(size);
+    const svg = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}">` +
+        `<circle cx="${s / 2}" cy="${s / 2}" r="${s / 2}" fill="#fff"/>` +
+        `</svg>`
+    );
+    return sharp(pngBuffer)
+      .resize(s, s, { fit: 'cover', position: 'centre' })
+      .ensureAlpha()
+      .composite([{ input: svg, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+  }
+
+  /**
+   * Required: icon.png / icon@2x.png (PNG). Optional: logo*, thumbnail*.
+   */
+  async addPassImages(pass, cardData) {
+    const logoRaw = await this.downloadImage(cardData.companyLogo);
+    const profileRaw = await this.downloadImage(cardData.profileImage);
+
+    const logoPng = await this.toPng(logoRaw);
+    const profilePng = await this.toPng(profileRaw);
+
+    let iconSource = logoPng || profilePng;
+    if (!iconSource) {
+      iconSource = await this.grayPlaceholderPng(29);
+    }
+
+    const icon29 = await sharp(iconSource)
+      .resize(29, 29, { fit: 'cover', position: 'centre' })
+      .png()
+      .toBuffer();
+    const icon58 = await sharp(iconSource)
+      .resize(58, 58, { fit: 'cover', position: 'centre' })
+      .png()
+      .toBuffer();
+
+    pass.addBuffer('icon.png', icon29);
+    pass.addBuffer('icon@2x.png', icon58);
+
+    if (logoPng) {
+      const logo1 = await sharp(logoPng)
+        .resize(160, 50, { fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      const logo2 = await sharp(logoPng)
+        .resize(320, 100, { fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      pass.addBuffer('logo.png', logo1);
+      pass.addBuffer('logo@2x.png', logo2);
+    }
+
+    if (profilePng) {
+      // Slightly larger than legacy 90/180; circular crop for pass strip.
+      const t1 = await this.circularThumbnail(profilePng, 108);
+      const t2 = await this.circularThumbnail(profilePng, 216);
+      pass.addBuffer('thumbnail.png', t1);
+      pass.addBuffer('thumbnail@2x.png', t2);
+    }
+  }
+
+  async downloadImage(imageUrl) {
+    try {
+      if (!imageUrl) return null;
+      const response = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        maxContentLength: 15 * 1024 * 1024,
+        validateStatus: (s) => s >= 200 && s < 300,
+      });
+      return Buffer.from(response.data);
+    } catch (error) {
+      console.warn(`Wallet: failed to download image:`, error.message);
+      return null;
+    }
+  }
+
   async loadCertificates(pass) {
     try {
-      // Load pass certificate
-      if (!fs.existsSync(this.certPath)) {
-        throw new Error(`Pass certificate not found at: ${this.certPath}`);
-      }
-      const certBuffer = fs.readFileSync(this.certPath);
-      pass.certificate = certBuffer;
+      const usingPem = !!(this.certPem && this.keyPem && this.wwdrPem);
 
-      // Load pass private key
-      if (!fs.existsSync(this.keyPath)) {
-        throw new Error(`Pass private key not found at: ${this.keyPath}`);
-      }
-      const keyBuffer = fs.readFileSync(this.keyPath);
-      pass.privateKey = keyBuffer;
+      let certBuffer;
+      let keyBuffer;
+      let wwdrBuffer;
 
-      // Load WWDR (Apple Worldwide Developer Relations) certificate
-      if (!fs.existsSync(this.wwdrPath)) {
-        throw new Error(`WWDR certificate not found at: ${this.wwdrPath}`);
+      if (usingPem) {
+        certBuffer = Buffer.from(this.normalizePem(this.certPem));
+        keyBuffer = Buffer.from(this.normalizePem(this.keyPem));
+        wwdrBuffer = Buffer.from(this.normalizePem(this.wwdrPem));
+      } else {
+        if (!this.certPath) throw new Error('(APPLE_PASS_CERT_PATH not set)');
+        if (!fs.existsSync(this.certPath)) throw new Error(`Pass certificate not found at: ${this.certPath}`);
+
+        if (!this.keyPath) throw new Error('(APPLE_PASS_KEY_PATH not set)');
+        if (!fs.existsSync(this.keyPath)) throw new Error(`Pass private key not found at: ${this.keyPath}`);
+
+        if (!this.wwdrPath) throw new Error('(APPLE_WWDR_CERT_PATH not set)');
+        if (!fs.existsSync(this.wwdrPath)) throw new Error(`WWDR certificate not found at: ${this.wwdrPath}`);
+
+        certBuffer = fs.readFileSync(this.certPath);
+        keyBuffer = fs.readFileSync(this.keyPath);
+        wwdrBuffer = fs.readFileSync(this.wwdrPath);
       }
-      const wwdrBuffer = fs.readFileSync(this.wwdrPath);
-      pass.wwdr = wwdrBuffer;
+
+      pass.certificates = {
+        wwdr: wwdrBuffer,
+        signerCert: certBuffer,
+        signerKey: keyBuffer,
+        signerKeyPassphrase: process.env.APPLE_PASS_KEY_PASSPHRASE,
+      };
     } catch (error) {
       console.error('Error loading Apple Wallet certificates:', error);
       throw new Error(`Failed to load Apple Wallet certificates: ${error.message}`);
     }
   }
 
-  /**
-   * Validate that all required certificate files exist
-   * @returns {boolean} Whether all required certificates exist
-   */
   validateCertificates() {
     if (!this.passTypeId || !this.teamId) {
       console.error('Missing Apple Wallet configuration: APPLE_PASS_TYPE_ID or APPLE_TEAM_ID not set');
       return false;
     }
+
+    const usingPem = !!(this.certPem && this.keyPem && this.wwdrPem);
+    if (usingPem) return true;
 
     const requiredFiles = [this.certPath, this.keyPath, this.wwdrPath];
     const missingFiles = [];
@@ -242,20 +316,16 @@ class AppleWalletService {
 
     if (missingFiles.length > 0) {
       console.error('Missing Apple Wallet certificate files:', missingFiles.join(', '));
+      console.error('Or set APPLE_PASS_CERT_PEM / APPLE_PASS_KEY_PEM / APPLE_WWDR_CERT_PEM instead.');
       return false;
     }
 
     return true;
   }
 
-  /**
-   * Quick config validation for feature-flag checks.
-   */
   validateServiceAccount() {
     return this.validateCertificates();
   }
 }
 
 module.exports = AppleWalletService;
-
-

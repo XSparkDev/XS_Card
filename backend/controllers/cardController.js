@@ -6,6 +6,7 @@ const axios = require('axios');
 const config = require('../config/config');
 const { formatDate } = require('../utils/dateFormatter');
 const { normalizePhone, ensurePhoneAvailable, PHONE_ERROR_CODE } = require('../utils/phoneUtils');
+const { getPublicBaseUrl } = require('../utils/publicBaseUrl');
 
 // Configure storage
 const storage = multer.diskStorage({
@@ -34,6 +35,54 @@ const validateUserAccess = async (userId, userUid) => {
     if (userUid !== userId) {
         throw new Error('Unauthorized access');
     }
+};
+
+const normalizeSpeakerCards = (cards = []) => {
+    let speakerCardFound = false;
+    let didNormalize = false;
+
+    const normalizedCards = cards.map((card) => {
+        const isSpeakerCard =
+            card?.isSpeakerEngagementCard === true ||
+            card?.isSpeakerEngagementCard === 'true';
+
+        if (!isSpeakerCard) {
+            if (card?.isSpeakerEngagementCard === 'false') {
+                didNormalize = true;
+                return {
+                    ...card,
+                    isSpeakerEngagementCard: false
+                };
+            }
+
+            return card;
+        }
+
+        if (!speakerCardFound) {
+            speakerCardFound = true;
+
+            if (card?.isSpeakerEngagementCard !== true) {
+                didNormalize = true;
+                return {
+                    ...card,
+                    isSpeakerEngagementCard: true
+                };
+            }
+
+            return card;
+        }
+
+        didNormalize = true;
+        return {
+            ...card,
+            isSpeakerEngagementCard: false
+        };
+    });
+
+    return {
+        normalizedCards,
+        didNormalize
+    };
 };
 
 // Add this function at the top with other helper functions
@@ -87,8 +136,16 @@ exports.getCardById = async (req, res) => {
         const data = doc.data();
         let cards = [];
         
-        if (data.cards) {
-            cards = data.cards.map(card => ({
+        const { normalizedCards, didNormalize } = normalizeSpeakerCards(data.cards || []);
+
+        if (didNormalize) {
+            await cardRef.update({
+                cards: normalizedCards
+            });
+        }
+
+        if (normalizedCards) {
+            cards = normalizedCards.map(card => ({
                 ...card,
                 createdAt: formatDate(card.createdAt), // Format for display
                 scans: card.scans || 0 // Initialize scans field if missing
@@ -150,6 +207,9 @@ exports.addCard = async (req, res) => {
             });
         }
 
+        const userDoc = await db.collection('users').doc(userId).get();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+
         // Enhanced debug logging
         console.log('Request headers:', req.headers);
         console.log('Request files:', req.files);
@@ -201,6 +261,9 @@ exports.addCard = async (req, res) => {
 
         // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
         const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
+        const isSpeakerEngagementCard =
+            hasSpeakerCardAccess &&
+            (req.body.isSpeakerEngagementCard === 'true' || req.body.isSpeakerEngagementCard === true);
         
         const newCard = {
             company,
@@ -217,14 +280,23 @@ exports.addCard = async (req, res) => {
             companyLogo: companyLogoUrl,
             altNumber: altNumber || '',
             altCountryCode: altCountryCode || '+27',
-            showAltNumber: parsedShowAltNumber || false
+            showAltNumber: parsedShowAltNumber || false,
+            isSpeakerEngagementCard
         };
 
         console.log('Creating new card:', newCard); // Debug log
 
         if (cardDoc.exists) {
+            const existingCards = Array.isArray(cardDoc.data()?.cards) ? [...cardDoc.data().cards] : [];
+            const { normalizedCards: sanitizedExistingCards } = normalizeSpeakerCards(existingCards);
+            const normalizedCards = isSpeakerEngagementCard
+                ? sanitizedExistingCards.map(card => ({ ...card, isSpeakerEngagementCard: false }))
+                : sanitizedExistingCards;
+
+            normalizedCards.push(newCard);
+
             await cardRef.update({
-                cards: admin.firestore.FieldValue.arrayUnion(newCard)
+                cards: normalizedCards
             });
         } else {
             await cardRef.set({
@@ -281,6 +353,9 @@ exports.updateCard = async (req, res) => {
             return res.status(404).send({ message: 'Card not found at specified index' });
         }
 
+        const userDoc = await db.collection('users').doc(userId).get();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+
         let updateData = {};
 
         // Handle file upload using Firebase Storage
@@ -302,12 +377,34 @@ exports.updateCard = async (req, res) => {
             updateData.phoneNormalized = normalizedPhone;
         }
 
+        if (Object.prototype.hasOwnProperty.call(updateData, 'isSpeakerEngagementCard')) {
+            if (hasSpeakerCardAccess) {
+                updateData.isSpeakerEngagementCard =
+                    updateData.isSpeakerEngagementCard === true ||
+                    updateData.isSpeakerEngagementCard === 'true';
+            } else {
+                updateData.isSpeakerEngagementCard = Boolean(cardsData.cards[cardIndex].isSpeakerEngagementCard);
+            }
+        }
+
         // Update the specific card in the array
-        const updatedCards = [...cardsData.cards];
+        const { normalizedCards: sanitizedExistingCards } = normalizeSpeakerCards(cardsData.cards || []);
+        const updatedCards = [...sanitizedExistingCards];
         updatedCards[cardIndex] = {
             ...updatedCards[cardIndex],
             ...updateData
         };
+
+        if (updatedCards[cardIndex].isSpeakerEngagementCard) {
+            for (let i = 0; i < updatedCards.length; i += 1) {
+                if (i !== Number(cardIndex)) {
+                    updatedCards[i] = {
+                        ...updatedCards[i],
+                        isSpeakerEngagementCard: false
+                    };
+                }
+            }
+        }
 
         // Update the document
         await cardRef.update({
@@ -316,7 +413,8 @@ exports.updateCard = async (req, res) => {
 
         res.status(200).send({ 
             message: 'Card updated successfully',
-            updatedCard: updatedCards[cardIndex]
+            updatedCard: updatedCards[cardIndex],
+            cards: updatedCards
         });
     } catch (error) {
         console.error('Update card error:', error);
@@ -534,72 +632,52 @@ exports.createWalletPass = async (req, res) => {
 
         const card = cardsData.cards[cardIndex];
 
-        // Detect platform from User-Agent (default to android for safety)
-        const userAgent = req.get('User-Agent') || '';
-        const platform = (userAgent.includes('iPhone') || userAgent.includes('iPad')) ? 'ios' : 'android';
+        // Detect platform from User-Agent.
+        // Heuristic approach because React Native iOS requests often don't include 'iPhone'/'iPad'.
+        const userAgent = (req.get('User-Agent') || req.headers['user-agent'] || '').toString();
+        const uaLower = userAgent.toLowerCase();
 
-        // Passcreator is only used for iOS.
-        // Android uses Google Wallet native only (no Passcreator fallback).
+        // Be conservative about classifying Android vs iOS.
+        // React Native (especially iOS) can use HTTP clients that look like "okhttp"/"reactnative"
+        // even on iOS, so treat as Android only when UA explicitly includes "android".
+        const isAndroid = uaLower.includes('android');
+
+        // Default to iOS when UA is missing/ambiguous to avoid misclassifying iOS as Android.
+        const platform = isAndroid ? 'android' : 'ios';
+
+        // Debug log to confirm platform detection during testing.
+        console.log(
+            '[WalletPass] User-Agent:',
+            userAgent ? `${userAgent.slice(0, 160)}...` : '(empty)',
+            '| isAndroid:',
+            isAndroid,
+            '| => platform:',
+            platform
+        );
+
+        /*
+        ========================================================================
+          !!!  APPLE WALLET iOS — passPageUrl MUST STAY HTTPS + THIS PATH  !!!
+        ========================================================================
+          LOCKED: Non-aesthetic edits break Safari. passPageUrl must point at
+          GET /wallet-passes/.../.pkpass (see server.js). Use getPublicBaseUrl.
+          ONLY aesthetic: tweak success message strings, not URL shape or flow.
+        ========================================================================
+        */
+        // iOS: native .pkpass URL (Passcreator removed).
         if (platform === 'ios') {
-            // Log configuration before making the request
-            logPasscreatorConfig();
+            // If the client requests it (e.g., local environment), omit image downloads during pass creation.
+            const shouldSkipImages = skipImages === 'true';
 
-            // Validate required environment variables
-            if (!process.env.PASSCREATOR_BASE_URL || 
-                !process.env.PASSCREATOR_TEMPLATE_ID || 
-                !process.env.PASSCREATOR_API_KEY || 
-                !config.PASSCREATOR_PUBLIC_URL) {
-                throw new Error('Missing required Passcreator configuration');
-            }
-
-            // Check if we should skip images
-            const isLocalIp = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(config.PASSCREATOR_PUBLIC_URL);
-            const shouldSkipImages = skipImages === 'true' || isLocalIp;
-            
-            // Prepare pass data
-            const passData = {
-                name: `${card.name} ${card.surname}`,
-                company: card.company,
-                jobTitle: card.occupation,
-                barcodeValue: `${config.PASSCREATOR_PUBLIC_URL}/saveContact?userId=${userId}&cardIndex=${cardIndex}`
-            };
-
-            // Add images only if we shouldn't skip them
-            if (!shouldSkipImages) {
-                if (card.profileImage) {
-                    passData.urlToThumbnail = card.profileImage;
-                }
-                if (card.companyLogo) {
-                    passData.urlToLogo = card.companyLogo;
-                }
-            }
-
-            // Make a single API call with the correct data
-            const response = await axios.post(
-                `${process.env.PASSCREATOR_BASE_URL}/api/pass?passtemplate=${process.env.PASSCREATOR_TEMPLATE_ID}&zapierStyle=true`,
-                passData,
-                {
-                    headers: {
-                        'Authorization': process.env.PASSCREATOR_API_KEY,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            console.log('Passcreator API Response:', {
-                uri: response.data.uri,
-                fileUrl: response.data.linkToPassFile,
-                pageUrl: response.data.linkToPassPage,
-                identifier: response.data.identifier
-            });
+            const base = getPublicBaseUrl(req);
+            const passPageUrl = `${base}/wallet-passes/${encodeURIComponent(userId)}/${cardIndex}.pkpass` +
+                (shouldSkipImages ? '?skipImages=true' : '');
 
             return res.status(200).send({
-                message: 'Wallet pass created successfully',
-                passUri: response.data.uri,
-                passFileUrl: response.data.linkToPassFile,
-                passPageUrl: response.data.linkToPassPage,
-                identifier: response.data.identifier,
+                message: 'Apple Wallet pass created successfully',
+                passPageUrl,
                 cardIndex: cardIndex,
+                platform: 'ios',
                 imagesIncluded: !shouldSkipImages,
                 warning: shouldSkipImages ? 'Images were skipped due to local development environment or query parameter.' : null
             });
@@ -617,7 +695,8 @@ exports.createWalletPass = async (req, res) => {
             const WalletPassService = require('../services/walletPassService');
             const walletService = new WalletPassService();
 
-            const saveContactUrl = `${req.protocol}://${req.get('host')}/saveContact?userId=${userId}&cardIndex=${cardIndex}`;
+            const base = getPublicBaseUrl(req);
+            const saveContactUrl = `${base}/saveContact?userId=${encodeURIComponent(userId)}&cardIndex=${cardIndex}`;
             const passResult = await walletService.generatePass(
                 platform,
                 card,

@@ -37,6 +37,7 @@ import {
 import { formatTimestamp } from '../../utils/dateFormatter';
 import { AuthManager } from '../../utils/authManager';
 import GradientAvatar from '../../components/GradientAvatar';
+import { getPlanLimits, UserPlan } from '../../utils/userPlan';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -78,9 +79,50 @@ interface ContactData {
 
 interface UserData {
   id: string;
-  plan: 'free' | 'premium';
+  plan: UserPlan;
   colorScheme?: string;
 }
+
+interface UserCardFilterOption {
+  cardIndex: number;
+  company: string;
+  label: string;
+  isSpeakerEngagementCard: boolean;
+}
+
+interface UserCardRecord {
+  company?: string;
+  isSpeakerEngagementCard?: boolean;
+}
+
+const isSpeakerCardEnabled = (value: unknown): boolean => {
+  return value === true || value === 'true';
+};
+
+const buildCardFilterOptions = (cards: UserCardRecord[]): UserCardFilterOption[] => {
+  const companyUsage = new Map<string, number>();
+
+  cards.forEach((card, index) => {
+    const companyName = (card.company || '').trim() || `Card ${index + 1}`;
+    companyUsage.set(companyName, (companyUsage.get(companyName) || 0) + 1);
+  });
+
+  const duplicateTracker = new Map<string, number>();
+
+  return cards.map((card, index) => {
+    const companyName = (card.company || '').trim() || `Card ${index + 1}`;
+    const occurrence = (duplicateTracker.get(companyName) || 0) + 1;
+    duplicateTracker.set(companyName, occurrence);
+    const needsSuffix = (companyUsage.get(companyName) || 0) > 1;
+
+    return {
+      cardIndex: index,
+      company: companyName,
+      label: needsSuffix ? `${companyName} (Card ${index + 1})` : companyName,
+      isSpeakerEngagementCard: isSpeakerCardEnabled(card.isSpeakerEngagementCard),
+    };
+  });
+};
 
 interface ShareOption {
   id: string;
@@ -301,6 +343,10 @@ export default function ContactsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [userPlan, setUserPlan] = useState<UserPlan>('free');
+  const [cardFilterOptions, setCardFilterOptions] = useState<UserCardFilterOption[]>([]);
+  const [selectedCardFilter, setSelectedCardFilter] = useState<number | 'all'>('all');
+  const [isCardFilterDropdownVisible, setIsCardFilterDropdownVisible] = useState(false);
   
   // Plan and limits
   const [remainingContacts, setRemainingContacts] = useState<number | 'unlimited'>(FREE_PLAN_CONTACT_LIMIT);
@@ -340,6 +386,12 @@ export default function ContactsScreen() {
     setSelectedContactKeys(new Set());
   }, []);
 
+  const hasAdvancedFeatures = getPlanLimits(userPlan).hasAdvancedFeatures;
+  const selectedCardFilterOption = cardFilterOptions.find(
+    (card) => card.cardIndex === selectedCardFilter
+  );
+  const selectedCardFilterLabel = selectedCardFilterOption?.label || 'All Cards';
+
   const exitSelectionMode = useCallback(() => {
     setIsSelectionMode(false);
     clearSelection();
@@ -351,6 +403,7 @@ export default function ContactsScreen() {
         clearSelection();
         return false;
       }
+      setIsCardFilterDropdownVisible(false);
       return true;
     });
   }, [clearSelection]);
@@ -465,10 +518,13 @@ export default function ContactsScreen() {
 
       const contactData = await contactResponse.json();
       const userData = await userResponse.json();
+      const resolvedPlan: UserPlan =
+        userData.plan === 'premium' || userData.plan === 'enterprise' ? userData.plan : 'free';
 
       // Process contacts with null safety
       const contactList = Array.isArray(contactData?.contactList) ? contactData.contactList : [];
       setContacts(contactList);
+      setUserPlan(resolvedPlan);
 
       // Cache contacts data in AsyncStorage with timestamp
       try {
@@ -482,8 +538,33 @@ export default function ContactsScreen() {
         console.error('Error caching contacts:', cacheError);
       }
 
+      if (getPlanLimits(resolvedPlan).hasAdvancedFeatures) {
+        try {
+          const cardsResponse = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`);
+          if (!cardsResponse.ok) {
+            throw new Error(`Failed to load cards: ${cardsResponse.status}`);
+          }
+
+          const cardsResponseData = await cardsResponse.json();
+          const cardsArray = Array.isArray(cardsResponseData?.cards)
+            ? cardsResponseData.cards
+            : Array.isArray(cardsResponseData)
+              ? cardsResponseData
+              : [];
+
+          setCardFilterOptions(buildCardFilterOptions(cardsArray));
+        } catch (cardError) {
+          console.error('Error loading card filter options:', cardError);
+          setCardFilterOptions([]);
+        }
+      } else {
+        setCardFilterOptions([]);
+        setSelectedCardFilter('all');
+        setIsCardFilterDropdownVisible(false);
+      }
+
       // Set remaining contacts based on plan
-      if (userData.plan === 'free') {
+      if (resolvedPlan === 'free') {
         const remaining = Math.max(0, FREE_PLAN_CONTACT_LIMIT - contactList.length);
         setRemainingContacts(remaining);
       } else {
@@ -901,8 +982,30 @@ export default function ContactsScreen() {
 
   // ============= COMPUTED VALUES =============
   
-  // Filter contacts based on search query (name, phone, company, email, howWeMet)
+  useEffect(() => {
+    if (selectedCardFilter === 'all') {
+      return;
+    }
+
+    const selectedCardStillExists = cardFilterOptions.some(
+      (card) => card.cardIndex === selectedCardFilter
+    );
+
+    if (!selectedCardStillExists) {
+      setSelectedCardFilter('all');
+    }
+  }, [cardFilterOptions, selectedCardFilter]);
+
+  // Filter contacts based on card filter and search query
   const filteredContacts = contacts.filter(contact => {
+    const matchesSelectedCard =
+      selectedCardFilter === 'all' ||
+      Number(contact.sourceCardIndex) === selectedCardFilter;
+
+    if (!matchesSelectedCard) {
+      return false;
+    }
+
     const searchTerm = searchQuery.toLowerCase();
     const fullName = `${contact.name || ''} ${contact.surname || ''}`.toLowerCase();
     const phone = (contact.phone || '').toLowerCase();
@@ -1068,6 +1171,85 @@ export default function ContactsScreen() {
             />
           </View>
 
+          {hasAdvancedFeatures && cardFilterOptions.length > 0 && (
+            <View style={styles.filterSection}>
+              <Text style={styles.filterSectionLabel}>Filter</Text>
+              <TouchableOpacity
+                style={styles.filterDropdownTrigger}
+                onPress={() =>
+                  setIsCardFilterDropdownVisible((prev) => !prev)
+                }
+                activeOpacity={0.8}
+              >
+                <View style={styles.filterTriggerContent}>
+                  {selectedCardFilterOption?.isSpeakerEngagementCard && (
+                    <View style={styles.speakerIndicatorDot} />
+                  )}
+                  <Text style={styles.filterDropdownTriggerText}>
+                    {selectedCardFilterLabel}
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name={isCardFilterDropdownVisible ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                  size={24}
+                  color={COLORS.gray}
+                />
+              </TouchableOpacity>
+
+              {isCardFilterDropdownVisible && (
+                <View style={styles.filterDropdownMenu}>
+                  <TouchableOpacity
+                    style={styles.filterDropdownItem}
+                    onPress={() => {
+                      setSelectedCardFilter('all');
+                      setIsCardFilterDropdownVisible(false);
+                    }}
+                  >
+                    <Text style={styles.filterDropdownItemText}>All Cards</Text>
+                    {selectedCardFilter === 'all' && (
+                      <MaterialIcons name="check" size={18} color={COLORS.primary} />
+                    )}
+                  </TouchableOpacity>
+
+                  {cardFilterOptions.map((card) => {
+                    const isSelected = selectedCardFilter === card.cardIndex;
+
+                    return (
+                      <TouchableOpacity
+                        key={card.cardIndex}
+                        style={styles.filterDropdownItem}
+                        onPress={() => {
+                          setSelectedCardFilter(card.cardIndex);
+                          setIsCardFilterDropdownVisible(false);
+                        }}
+                      >
+                        <View style={styles.filterDropdownItemContent}>
+                          <Text
+                            style={[
+                              styles.filterDropdownItemText,
+                              isSelected && styles.filterDropdownItemTextActive
+                            ]}
+                          >
+                            {card.label}
+                          </Text>
+                          {card.isSpeakerEngagementCard && (
+                            <View style={styles.speakerBadge}>
+                              <View style={styles.speakerBadgeDot} />
+                              <Text style={styles.speakerBadgeText}>Speaker</Text>
+                            </View>
+                          )}
+                        </View>
+                        {isSelected && (
+                          <MaterialIcons name="check" size={18} color={COLORS.primary} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
+
           {contacts.length > 0 && (
             <View style={styles.selectionToggleRow}>
               <TouchableOpacity
@@ -1108,15 +1290,16 @@ export default function ContactsScreen() {
             <View style={styles.emptyStateContainer}>
               <MaterialIcons name="people" size={64} color={COLORS.gray} />
               <Text style={styles.emptyStateTitle}>
-                {searchQuery ? 'No contacts found' : 'No contacts yet'}
+                {searchQuery || selectedCardFilter !== 'all' ? 'No contacts found' : 'No contacts yet'}
               </Text>
               <Text style={styles.emptyStateDescription}>
-                {searchQuery 
+                {searchQuery
                   ? 'Try adjusting your search terms'
-                  : 'When you share your card and they share their details back, they will appear here'
-                }
+                  : selectedCardFilter !== 'all'
+                    ? 'No contacts were captured from the selected card yet'
+                    : 'When you share your card and they share their details back, they will appear here'}
               </Text>
-              {!searchQuery && (
+              {!searchQuery && selectedCardFilter === 'all' && (
                 <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
                   <MaterialIcons name="share" size={24} color={COLORS.white} />
                   <Text style={styles.shareCardButtonText}>Share my card</Text>
@@ -1538,6 +1721,99 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: COLORS.black,
+  },
+  filterSection: {
+    marginHorizontal: 15,
+    marginTop: -4,
+    marginBottom: 10,
+  },
+  filterSectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.gray,
+    marginBottom: 8,
+  },
+  filterDropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '35',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  filterTriggerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  filterDropdownTriggerText: {
+    fontSize: 15,
+    color: COLORS.black,
+    fontWeight: '500',
+  },
+  filterDropdownMenu: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '25',
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    overflow: 'hidden',
+  },
+  filterDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray + '12',
+  },
+  filterDropdownItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  filterDropdownItemText: {
+    fontSize: 15,
+    color: COLORS.black,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  filterDropdownItemTextActive: {
+    color: COLORS.primary,
+  },
+  speakerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: '#FFF4D6',
+  },
+  speakerBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#F4B400',
+    marginRight: 6,
+  },
+  speakerBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8A5A00',
+  },
+  speakerIndicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F4B400',
+    marginRight: 8,
   },
   selectionToggleRow: {
     flexDirection: 'row',
