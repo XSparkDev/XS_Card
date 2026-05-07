@@ -8,6 +8,11 @@ build/
 .idea
 .gradle
 local.properties
+keystore.properties
+app/play-upload.keystore
+*.jks
+*.keystore
+!app/debug.keystore
 *.iml
 *.hprof
 .cxx/
