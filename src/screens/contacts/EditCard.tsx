@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking, ActivityIndicator, Pressable } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Modal as RNModal } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -398,6 +398,12 @@ export default function EditCard() {
   };
 
   const hasAdvancedFeatures = getPlanLimits(userPlan as UserPlan).hasAdvancedFeatures;
+  const hasAltNumberAccess = userPlan === 'premium' || userPlan === 'enterprise';
+  const isAltNumberLocked = !hasAltNumberAccess;
+
+  const showAltNumberUpsell = () => {
+    Alert.alert('Premium feature', 'Upgrade to Premium to use an alternative number.');
+  };
 
   const loadSpeakerConflictState = async () => {
     try {
@@ -641,7 +647,7 @@ export default function EditCard() {
       });
 
       // Create card data object - ensure logoZoomLevel is included as a number, not a string
-      const cardData = {
+      const cardData: any = {
         name: formData.firstName,
         surname: formData.lastName,
         occupation: formData.occupation,
@@ -653,12 +659,18 @@ export default function EditCard() {
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
         logoZoomLevel: Number(zoomLevel), // Ensure it's a number
-        altNumber: altNumber || '',
-        altCountryCode: altCountryCode || '+27',
-        showAltNumber: showAltNumber || false,
         isSpeakerEngagementCard
-      } as any;
+      };
       cardData.template = template;
+
+      // Alt number is Premium-only. For Free users, do not submit alt fields.
+      if (hasAltNumberAccess) {
+        cardData.altNumber = altNumber || '';
+        cardData.altCountryCode = altCountryCode || '+27';
+        cardData.showAltNumber = showAltNumber || false;
+      } else {
+        cardData.showAltNumber = false;
+      }
 
       console.log('Saving card with zoom level:', cardData.logoZoomLevel);
       console.log('Full card data:', JSON.stringify(cardData, null, 2));
@@ -1574,23 +1586,50 @@ export default function EditCard() {
               placeholder="Phone number"
             />
             
-            <PhoneNumberInput
-              value={altNumber}
-              onChangeText={(text) => setAltNumber(text)}
-              onCountryCodeChange={(code) => setAltCountryCode(code)}
-              placeholder="Alt number"
-            />
+            <Pressable
+              onPress={isAltNumberLocked ? showAltNumberUpsell : undefined}
+              style={[isAltNumberLocked && styles.altLockedContainer]}
+            >
+              <View pointerEvents={isAltNumberLocked ? 'none' : 'auto'}>
+                <PhoneNumberInput
+                  value={altNumber}
+                  onChangeText={(text) => setAltNumber(text)}
+                  onCountryCodeChange={(code) => setAltCountryCode(code)}
+                  placeholder="Alt number"
+                  disabled={isAltNumberLocked}
+                />
+              </View>
+            </Pressable>
             
             {/* Toggle to show/hide alt number on card */}
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Show alt number on card</Text>
+            <Pressable
+              onPress={isAltNumberLocked ? showAltNumberUpsell : undefined}
+              style={[styles.toggleContainer, isAltNumberLocked && styles.altLockedContainer]}
+            >
+              <View style={styles.toggleLabelRow}>
+                <Text style={styles.toggleLabel}>Show alt number on card</Text>
+                {isAltNumberLocked && (
+                  <View style={styles.premiumBadge}>
+                    <MaterialIcons name="lock" size={14} color={COLORS.white} />
+                    <Text style={styles.premiumBadgeText}>Premium</Text>
+                  </View>
+                )}
+              </View>
               <TouchableOpacity
                 style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
-                onPress={() => setShowAltNumber(!showAltNumber)}
+                onPress={() => {
+                  if (isAltNumberLocked) {
+                    showAltNumberUpsell();
+                    return;
+                  }
+                  setShowAltNumber(!showAltNumber);
+                }}
+                disabled={isAltNumberLocked}
+                activeOpacity={0.8}
               >
                 <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
               </TouchableOpacity>
-            </View>
+            </Pressable>
 
             {hasAdvancedFeatures && (
               <View style={styles.toggleContainer}>
@@ -2840,6 +2879,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 12,
+  },
+  altLockedContainer: {
+    opacity: 0.45,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginLeft: 10,
+    gap: 4,
+  },
+  premiumBadgeText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '600',
   },
   tooltipButton: {
     marginLeft: 8,

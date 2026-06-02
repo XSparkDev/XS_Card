@@ -208,7 +208,9 @@ exports.addCard = async (req, res) => {
         }
 
         const userDoc = await db.collection('users').doc(userId).get();
-        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+        const userPlan = String(userDoc.data()?.plan || 'free').toLowerCase();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userPlan);
+        const hasAltNumberAccess = ['premium', 'enterprise'].includes(userPlan);
 
         // Enhanced debug logging
         console.log('Request headers:', req.headers);
@@ -261,6 +263,7 @@ exports.addCard = async (req, res) => {
 
         // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
         const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
+        const enforcedShowAltNumber = hasAltNumberAccess ? parsedShowAltNumber : false;
         const isSpeakerEngagementCard =
             hasSpeakerCardAccess &&
             (req.body.isSpeakerEngagementCard === 'true' || req.body.isSpeakerEngagementCard === true);
@@ -278,9 +281,9 @@ exports.addCard = async (req, res) => {
             createdAt: admin.firestore.Timestamp.now(), // Store as Firestore Timestamp
             profileImage: profileImageUrl,
             companyLogo: companyLogoUrl,
-            altNumber: altNumber || '',
-            altCountryCode: altCountryCode || '+27',
-            showAltNumber: parsedShowAltNumber || false,
+            altNumber: hasAltNumberAccess ? (altNumber || '') : '',
+            altCountryCode: hasAltNumberAccess ? (altCountryCode || '+27') : '+27',
+            showAltNumber: enforcedShowAltNumber || false,
             isSpeakerEngagementCard
         };
 
@@ -354,7 +357,9 @@ exports.updateCard = async (req, res) => {
         }
 
         const userDoc = await db.collection('users').doc(userId).get();
-        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+        const userPlan = String(userDoc.data()?.plan || 'free').toLowerCase();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userPlan);
+        const hasAltNumberAccess = ['premium', 'enterprise'].includes(userPlan);
 
         let updateData = {};
 
@@ -385,6 +390,21 @@ exports.updateCard = async (req, res) => {
             } else {
                 updateData.isSpeakerEngagementCard = Boolean(cardsData.cards[cardIndex].isSpeakerEngagementCard);
             }
+        }
+
+        // Alt number is Premium-only. For Free users: ignore altNumber/altCountryCode and force showAltNumber false.
+        if (!hasAltNumberAccess) {
+            if (Object.prototype.hasOwnProperty.call(updateData, 'altNumber')) {
+                delete updateData.altNumber;
+            }
+            if (Object.prototype.hasOwnProperty.call(updateData, 'altCountryCode')) {
+                delete updateData.altCountryCode;
+            }
+            updateData.showAltNumber = false;
+        } else if (Object.prototype.hasOwnProperty.call(updateData, 'showAltNumber')) {
+            updateData.showAltNumber =
+                updateData.showAltNumber === true ||
+                updateData.showAltNumber === 'true';
         }
 
         // Update the specific card in the array

@@ -76,6 +76,7 @@ interface PhoneNumberInputProps {
   placeholder?: string;
   error?: string;
   style?: any;
+  disabled?: boolean;
 }
 
 export default function PhoneNumberInput({ 
@@ -84,7 +85,8 @@ export default function PhoneNumberInput({
   onCountryCodeChange, 
   placeholder = "Phone number",
   error,
-  style 
+  style,
+  disabled = false,
 }: PhoneNumberInputProps) {
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES.find(c => c.code === '+27') || COUNTRIES[0]); // Default to South Africa
   const [showCountryModal, setShowCountryModal] = useState(false);
@@ -158,7 +160,11 @@ export default function PhoneNumberInput({
       <View style={styles.phoneContainer}>
         <TouchableOpacity 
           style={[styles.countryCodeButton, error ? styles.inputError : null]}
-          onPress={() => setShowCountryModal(true)}
+          onPress={() => {
+            if (disabled) return;
+            setShowCountryModal(true);
+          }}
+          disabled={disabled}
         >
           <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
           <Text style={styles.countryCodeText}>{selectedCountry.code}</Text>
@@ -172,6 +178,7 @@ export default function PhoneNumberInput({
           keyboardType="phone-pad"
           placeholderTextColor="#999"
           maxLength={15}
+          editable={!disabled}
         />
       </View>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}

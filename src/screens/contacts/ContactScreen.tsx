@@ -14,13 +14,16 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Share,
-  Dimensions 
+  Dimensions,
+  Pressable,
+  InteractionManager,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 
 // Local imports
 import { COLORS } from '../../constants/colors';
@@ -354,15 +357,18 @@ export default function ContactsScreen() {
   // Modal states
   const [isShareModalVisible, setIsShareModalVisible] = useState(false);
   const [isContactOptionsVisible, setIsContactOptionsVisible] = useState(false);
+  const [isCopyFieldSheetVisible, setIsCopyFieldSheetVisible] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
   
   // Selected items
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedContactForOptions, setSelectedContactForOptions] = useState<Contact | null>(null);
+  const [selectedContactForCopy, setSelectedContactForCopy] = useState<Contact | null>(null);
   const [pendingShareContact, setPendingShareContact] = useState<Contact | null>(null);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [pressedCopyRowId, setPressedCopyRowId] = useState<string | null>(null);
 
   // Toast
   const toast = useToast();
@@ -427,6 +433,124 @@ export default function ContactsScreen() {
     setIsSelectionMode(true);
     setSelectedContactKeys(new Set([key]));
   }, [getContactKey, isSelectionMode]);
+
+  const openCopyFieldSheet = useCallback((contact: Contact) => {
+    setSelectedContactForCopy(contact);
+    setIsCopyFieldSheetVisible(true);
+  }, []);
+
+  const closeCopyFieldSheet = useCallback(() => {
+    setIsCopyFieldSheetVisible(false);
+    setSelectedContactForCopy(null);
+  }, []);
+
+  const showCopyToast = useCallback(
+    (type: 'success' | 'error', title: string, message: string) => {
+      InteractionManager.runAfterInteractions(() => {
+        if (type === 'success') {
+          toast.success(title, message);
+        } else {
+          toast.error(title, message);
+        }
+      });
+    },
+    [toast],
+  );
+
+  const copyContactField = useCallback(
+    async (
+      contact: Contact,
+      field:
+        | 'phone'
+        | 'nameShort'
+        | 'email'
+        | 'metAt'
+        | 'dateMet'
+        | 'fullName',
+    ) => {
+      const trimmedFirst = String(contact.name || '').trim();
+      const trimmedLast = String(contact.surname || '').trim();
+      const fullName = [trimmedFirst, trimmedLast].filter(Boolean).join(' ').trim();
+
+      let value = '';
+      let label = '';
+
+      switch (field) {
+        case 'phone':
+          value = formatPhoneWithCountryCode(contact.phone || '');
+          label = 'Phone number';
+          break;
+        case 'nameShort':
+          value = trimmedFirst;
+          label = 'Name';
+          break;
+        case 'email':
+          value = String(contact.email || '').trim();
+          label = 'Email';
+          break;
+        case 'metAt':
+          value = String(contact.howWeMet || '').trim();
+          label = 'Met at';
+          break;
+        case 'dateMet':
+          value = formatTimestamp(contact.createdAt);
+          label = 'Date met';
+          break;
+        case 'fullName':
+          value = fullName;
+          label = 'Full name';
+          break;
+        default:
+          value = '';
+          label = 'Value';
+          break;
+      }
+
+      // Dismiss the sheet immediately so it never lingers during clipboard I/O.
+      closeCopyFieldSheet();
+
+      if (!value) {
+        showCopyToast('error', 'Copy Failed', `${label} is not available to copy.`);
+        return;
+      }
+
+      try {
+        await Clipboard.setStringAsync(value);
+        showCopyToast('success', 'Copied', `${label} copied to clipboard`);
+      } catch (error) {
+        console.error('Error copying to clipboard:', error);
+        showCopyToast(
+          'error',
+          'Copy Failed',
+          'Unable to copy to clipboard. Please try again.',
+        );
+      }
+    },
+    [closeCopyFieldSheet, showCopyToast],
+  );
+
+  const copyToClipboard = useCallback(
+    async (label: string, value: string) => {
+      const safeValue = String(value || '').trim();
+      if (!safeValue) {
+        showCopyToast('error', 'Copy Failed', `${label} is not available to copy.`);
+        return;
+      }
+
+      try {
+        await Clipboard.setStringAsync(safeValue);
+        showCopyToast('success', 'Copied', `${label} copied to clipboard`);
+      } catch (error) {
+        console.error('Error copying to clipboard:', error);
+        showCopyToast(
+          'error',
+          'Copy Failed',
+          'Unable to copy to clipboard. Please try again.',
+        );
+      }
+    },
+    [showCopyToast],
+  );
 
   // Debug share modal state changes
   useEffect(() => {
@@ -1344,7 +1468,7 @@ export default function ContactsScreen() {
                     <TouchableOpacity 
                       style={[styles.contactCard, isSelected && styles.contactCardSelected]}
                       onPress={() => handleContactPress(contact)}
-                      onLongPress={() => handleLongPressSelect(contact)}
+                      onLongPress={() => openCopyFieldSheet(contact)}
                       activeOpacity={0.7}
                       delayLongPress={250}
                     >
@@ -1445,6 +1569,88 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
+        {/* Copy Field Action Sheet (Long-Press) */}
+        <Modal
+          visible={isCopyFieldSheetVisible}
+          transparent={true}
+          animationType="none"
+          onRequestClose={closeCopyFieldSheet}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={closeCopyFieldSheet}
+          >
+            <TouchableOpacity
+              style={styles.modalContent}
+              activeOpacity={1}
+              onPress={() => null}
+            >
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={closeCopyFieldSheet}
+              >
+                <MaterialIcons name="close" size={24} color={COLORS.black} />
+              </TouchableOpacity>
+
+              <Text style={styles.modalTitle}>Copy to clipboard</Text>
+
+              {selectedContactForCopy && (
+                <View style={styles.copySheetList}>
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'phone')}
+                  >
+                    <Text style={styles.copySheetRowText}>Phone Number</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'nameShort')}
+                  >
+                    <Text style={styles.copySheetRowText}>Name (short/display name)</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'email')}
+                  >
+                    <Text style={styles.copySheetRowText}>Email</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'metAt')}
+                  >
+                    <Text style={styles.copySheetRowText}>Met At (location/place)</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'dateMet')}
+                  >
+                    <Text style={styles.copySheetRowText}>Date Met</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'fullName')}
+                  >
+                    <Text style={styles.copySheetRowText}>Full Name</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.copySheetRow, styles.copySheetCancelRow]}
+                    onPress={closeCopyFieldSheet}
+                  >
+                    <Text style={[styles.copySheetRowText, styles.copySheetCancelText]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
         {/* Contact Options Modal */}
         <Modal
           visible={isContactOptionsVisible}
@@ -1477,9 +1683,24 @@ export default function ContactsScreen() {
                         style={styles.modalContactImage}
                       />
                     </View>
-                    <Text style={styles.modalContactName}>
-                      {selectedContactForOptions.name} {selectedContactForOptions.surname}
-                    </Text>
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('heading_full_name')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        const fullName = `${selectedContactForOptions.name || ''} ${selectedContactForOptions.surname || ''}`.trim();
+                        copyToClipboard('Full name', fullName);
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        pressedCopyRowId === 'heading_full_name' && styles.copyRowActive,
+                        styles.copyHeadingPressable,
+                      ]}
+                    >
+                      <Text style={styles.modalContactName}>
+                        {selectedContactForOptions.name} {selectedContactForOptions.surname}
+                      </Text>
+                    </Pressable>
                       {selectedContactForOptions.isXsCardUser && (
                         <View style={styles.xsCardUserBadge}>
                           <MaterialIcons name="verified" size={16} color={COLORS.primary} />
@@ -1490,29 +1711,111 @@ export default function ContactsScreen() {
 
                   {/* Contact Information Section */}
                   <View style={styles.contactInfoSection}>
-                    <View style={styles.contactInfoRow}>
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_name_short')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Name', String(selectedContactForOptions.name || '').trim());
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_name_short' && styles.copyRowActive,
+                      ]}
+                    >
+                      <MaterialIcons name="person" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
+                      <Text style={styles.contactInfoText}>{String(selectedContactForOptions.name || '').trim()}</Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_phone')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Phone number', formatPhoneWithCountryCode(selectedContactForOptions.phone || ''));
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_phone' && styles.copyRowActive,
+                      ]}
+                    >
                       <MaterialIcons name="phone" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>{formatPhoneWithCountryCode(selectedContactForOptions.phone)}</Text>
-                    </View>
+                    </Pressable>
                     
                     {selectedContactForOptions.email && (
-                      <View style={styles.contactInfoRow}>
+                      <Pressable
+                        onPressIn={() => setPressedCopyRowId('row_email')}
+                        onPressOut={() => setPressedCopyRowId(null)}
+                        onLongPress={() => {
+                          copyToClipboard('Email', String(selectedContactForOptions.email || '').trim());
+                          setTimeout(() => setPressedCopyRowId(null), 150);
+                        }}
+                        delayLongPress={200}
+                        style={[
+                          styles.contactInfoRow,
+                          pressedCopyRowId === 'row_email' && styles.copyRowActive,
+                        ]}
+                      >
                         <MaterialIcons name="email" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                         <Text style={styles.contactInfoText}>{selectedContactForOptions.email}</Text>
-                      </View>
+                      </Pressable>
                     )}
                     
                     {selectedContactForOptions.company && (
-                      <View style={styles.contactInfoRow}>
+                      <Pressable
+                        onPressIn={() => setPressedCopyRowId('row_company')}
+                        onPressOut={() => setPressedCopyRowId(null)}
+                        onLongPress={() => {
+                          copyToClipboard('Company', String(selectedContactForOptions.company || '').trim());
+                          setTimeout(() => setPressedCopyRowId(null), 150);
+                        }}
+                        delayLongPress={200}
+                        style={[
+                          styles.contactInfoRow,
+                          pressedCopyRowId === 'row_company' && styles.copyRowActive,
+                        ]}
+                      >
                         <MaterialIcons name="business" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                         <Text style={styles.contactInfoText}>{selectedContactForOptions.company}</Text>
-                      </View>
+                      </Pressable>
                     )}
                     
-                    <View style={styles.contactInfoRow}>
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_met_at')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Met at', String(selectedContactForOptions.howWeMet || '').trim());
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_met_at' && styles.copyRowActive,
+                      ]}
+                    >
                       <MaterialIcons name="place" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>Met at: {selectedContactForOptions.howWeMet}</Text>
-                    </View>
+                    </Pressable>
+
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_date_met')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Date met', formatTimestamp(selectedContactForOptions.createdAt));
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_date_met' && styles.copyRowActive,
+                      ]}
+                    >
+                      <MaterialIcons name="event" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
+                      <Text style={styles.contactInfoText}>{formatTimestamp(selectedContactForOptions.createdAt)}</Text>
+                    </Pressable>
                     
                   </View>
 
@@ -2201,5 +2504,38 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: COLORS.white,
     fontWeight: 'bold',
+  },
+  copyRowActive: {
+    backgroundColor: 'rgba(27, 43, 91, 0.08)',
+    borderRadius: 12,
+  },
+  copyHeadingPressable: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  copySheetList: {
+    marginTop: 8,
+    width: '100%',
+    gap: 10,
+  },
+  copySheetRow: {
+    backgroundColor: '#F7F7F7',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    width: '100%',
+  },
+  copySheetRowText: {
+    color: COLORS.black,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  copySheetCancelRow: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#E6E6E6',
+  },
+  copySheetCancelText: {
+    textAlign: 'center',
   },
 });
