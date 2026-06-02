@@ -264,6 +264,17 @@ exports.addCard = async (req, res) => {
         // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
         const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
         const enforcedShowAltNumber = hasAltNumberAccess ? parsedShowAltNumber : false;
+
+        // Premium-only validation: showAltNumber requires altNumber
+        if (hasAltNumberAccess && enforcedShowAltNumber) {
+            const trimmedAlt = String(altNumber || '').trim();
+            if (!trimmedAlt) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Alternative number is required when showAltNumber is enabled.'
+                });
+            }
+        }
         const isSpeakerEngagementCard =
             hasSpeakerCardAccess &&
             (req.body.isSpeakerEngagementCard === 'true' || req.body.isSpeakerEngagementCard === true);
@@ -405,6 +416,25 @@ exports.updateCard = async (req, res) => {
             updateData.showAltNumber =
                 updateData.showAltNumber === true ||
                 updateData.showAltNumber === 'true';
+        }
+
+        // Premium-only validation: if showAltNumber is true (incoming or existing), altNumber must be present.
+        if (hasAltNumberAccess) {
+            const nextShowAlt = Object.prototype.hasOwnProperty.call(updateData, 'showAltNumber')
+                ? Boolean(updateData.showAltNumber)
+                : Boolean(cardsData.cards[cardIndex]?.showAltNumber);
+
+            if (nextShowAlt) {
+                const nextAlt = Object.prototype.hasOwnProperty.call(updateData, 'altNumber')
+                    ? String(updateData.altNumber || '').trim()
+                    : String(cardsData.cards[cardIndex]?.altNumber || '').trim();
+
+                if (!nextAlt) {
+                    return res.status(400).send({
+                        message: 'Alternative number is required when showAltNumber is enabled.'
+                    });
+                }
+            }
         }
 
         // Update the specific card in the array

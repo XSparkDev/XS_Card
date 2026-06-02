@@ -121,6 +121,7 @@ export default function EditCard() {
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
   const [showAltNumber, setShowAltNumber] = useState(false);
+  const [altNumberError, setAltNumberError] = useState<string>('');
   const [isSpeakerEngagementCard, setIsSpeakerEngagementCard] = useState(false);
   const [existingSpeakerCardIndex, setExistingSpeakerCardIndex] = useState<number | null>(null);
   const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
@@ -617,8 +618,17 @@ export default function EditCard() {
       setError('Please enter a valid email address');
       return false;
     }
+
+    // Premium-only: if showing alt number on card, alt number becomes required.
+    const trimmedAlt = String(altNumber || '').trim();
+    if (hasAltNumberAccess && showAltNumber && !trimmedAlt) {
+      setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
+      setError('Please fix the highlighted fields');
+      return false;
+    }
     
     setError('');
+    setAltNumberError('');
     return true;
   };
 
@@ -1593,10 +1603,14 @@ export default function EditCard() {
               <View pointerEvents={isAltNumberLocked ? 'none' : 'auto'}>
                 <PhoneNumberInput
                   value={altNumber}
-                  onChangeText={(text) => setAltNumber(text)}
+                  onChangeText={(text) => {
+                    setAltNumber(text);
+                    if (altNumberError) setAltNumberError('');
+                  }}
                   onCountryCodeChange={(code) => setAltCountryCode(code)}
                   placeholder="Alt number"
                   disabled={isAltNumberLocked}
+                  error={!isAltNumberLocked ? altNumberError : undefined}
                 />
               </View>
             </Pressable>
@@ -1622,7 +1636,9 @@ export default function EditCard() {
                     showAltNumberUpsell();
                     return;
                   }
-                  setShowAltNumber(!showAltNumber);
+                  const next = !showAltNumber;
+                  setShowAltNumber(next);
+                  if (!next && altNumberError) setAltNumberError('');
                 }}
                 disabled={isAltNumberLocked}
                 activeOpacity={0.8}
