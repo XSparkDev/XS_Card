@@ -538,17 +538,9 @@ export default function SignInScreen() {
             const signInMethods = await fetchSignInMethodsForEmail(auth, trimmedEmail);
 
             if (!signInMethods || signInMethods.length === 0) {
-              setFailedAttempts(prev => {
-                const next = prev + 1;
-                if (next >= 3) {
-                  setShowRetryModal(true);
-                }
-                return next;
-              });
-              const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
-              setAuthFieldErrors({ email: true, password: true });
-              setErrors(prev => ({ ...prev, email: '', password: '' }));
-              toast.error('Sign In Failed', neutralMessage);
+              // Email is not registered — seamlessly transition to Sign Up with
+              // the typed email pre-filled so the user doesn't have to retype it.
+              navigation.navigate('SignUp', { prefillEmail: trimmedEmail });
               return;
             }
           } catch (methodCheckError) {
