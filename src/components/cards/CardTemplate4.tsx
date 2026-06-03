@@ -119,7 +119,9 @@ export default function CardTemplate4(props: Props) {
               resizeMode="contain"
             />
           ) : (
-            <Text style={isTablet() ? { fontSize: scale(16) } : undefined}>Loading QR Code...</Text>
+            <View style={styles.qrPlaceholder}>
+              <MaterialIcons name="qr-code-2" size={isTablet() ? scale(80) : 80} color="#ccc" />
+            </View>
           )}
         </View>
       </View>
@@ -361,6 +363,14 @@ const styles = StyleSheet.create({
   qrCode: {
     width: 150,
     height: 150,
+  },
+  qrPlaceholder: {
+    width: 150,
+    height: 150,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
   },
   profileCenterContainer: {
     alignItems: 'center',

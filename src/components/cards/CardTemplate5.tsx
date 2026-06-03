@@ -105,7 +105,9 @@ export default function CardTemplate5(props: Props) {
             resizeMode="contain"
           />
         ) : (
-          <Text style={isTablet() ? { fontSize: scale(16) } : undefined}>Loading QR Code...</Text>
+          <View style={styles.qrPlaceholder}>
+            <MaterialIcons name="qr-code-2" size={isTablet() ? scale(100) : 100} color="#ccc" />
+          </View>
         )}
       </View>
 
@@ -332,6 +334,14 @@ const styles = StyleSheet.create({
   qrCode: {
     width: 200,
     height: 200,
+  },
+  qrPlaceholder: {
+    width: 200,
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
   },
   // Logo & Profile Section - Side by side, no overlap
   logoProfileSection: {

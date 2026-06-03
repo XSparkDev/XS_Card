@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
@@ -12,11 +12,14 @@ import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import CardPreviewModal from '../../components/cards/CardPreviewModal';
+import { useAuth } from '../../context/AuthContext';
 
 type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 
 export default function AddCards() {
   const navigation = useNavigation<AddCardsNavigationProp>();
+  const { user } = useAuth();
   const [error, setError] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [formData, setFormData] = useState({
@@ -49,6 +52,11 @@ export default function AddCards() {
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
   const [showAltNumber, setShowAltNumber] = useState(false);
+  const [altNumberError, setAltNumberError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Template preview state
+  const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
 
   // Social media platforms data
   const socials = [
@@ -62,7 +70,7 @@ export default function AddCards() {
   ];
 
   // Keyboard event listeners
-  React.useEffect(() => {
+  useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
       setIsKeyboardVisible(true);
     });
@@ -76,6 +84,52 @@ export default function AddCards() {
     };
   }, []);
 
+  // Pre-populate form with authenticated user's data (same source as EditCard uses via useAuth).
+  // Only fills fields that are still empty so any manual edits are never overwritten.
+  useEffect(() => {
+    if (!user) return;
+    const nameParts = (user.name || '').trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    setFormData(prev => ({
+      ...prev,
+      firstName: prev.firstName || firstName,
+      lastName: prev.lastName || lastName,
+      email: prev.email || user.email || '',
+    }));
+  }, [user]);
+
+  // Build a card-shaped object from the current form state for the preview modal.
+  // Mirrors the same helper used in EditCard so both screens pass identical data
+  // to CardPreviewModal.
+  const buildCardObject = () => {
+    const socialFields: Record<string, string> = {};
+    selectedSocials.forEach(socialId => {
+      const val = formData[socialId as keyof typeof formData];
+      if (val) socialFields[socialId] = val as string;
+    });
+    return {
+      name: formData.firstName,
+      surname: formData.lastName,
+      occupation: formData.occupation,
+      company: formData.company,
+      email: formData.email,
+      phone: `${formData.countryCode}${formData.phoneNumber}`,
+      socials: socialFields,
+      colorScheme: selectedColor,
+      profileImage: profileImage ?? null,
+      companyLogo: companyLogo ?? null,
+      logoZoomLevel: 1.0,
+      template,
+    };
+  };
+
+  // Select a template and immediately open the live preview.
+  const handleTemplateSelect = (templateNumber: number) => {
+    setTemplate(templateNumber);
+    setIsPreviewModalVisible(true);
+  };
+
   const handleCancel = () => {
     navigation.goBack();
   };
@@ -85,7 +139,18 @@ export default function AddCards() {
       setError('Please fill in all required fields');
       return false;
     }
+
+    // If the alt-number toggle is ON, the alt number field becomes required —
+    // mirrors the identical validation guard in EditCardScreen.
+    const trimmedAlt = String(altNumber || '').trim();
+    if (showAltNumber && !trimmedAlt) {
+      setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
+      setError('Please fix the highlighted fields');
+      return false;
+    }
+
     setError('');
+    setAltNumberError('');
     return true;
   };
 
@@ -380,6 +445,7 @@ export default function AddCards() {
       if (!validateForm()) {
         return;
       }
+      setIsSaving(true);
 
       const userId = await getUserId();
 
@@ -459,6 +525,8 @@ export default function AddCards() {
     } catch (error) {
       console.error('Error creating card:', error);
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to create card');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -469,10 +537,17 @@ export default function AddCards() {
       {/* Cancel and Save buttons */}
       <View style={styles.actionButtons}>
         <TouchableOpacity onPress={handleCancel}>
-          <Text style={styles.cancelButton}>Cancel</Text>
+          <View style={styles.previewButton}>
+            <MaterialIcons name="arrow-back" size={16} color="#666" />
+            <Text style={styles.previewButtonText}>Cancel</Text>
+          </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleAdd}>
-          <Text style={styles.saveButton}>Save</Text>
+        <TouchableOpacity onPress={handleAdd} style={styles.saveButtonContainer} disabled={isSaving}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -536,74 +611,25 @@ export default function AddCards() {
             </View>
           </View>
 
-          {/* Template Selection */}
+          {/* Template Selection — tapping a template selects it and opens the live preview */}
           <Text style={styles.sectionTitle}>Template</Text>
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <TouchableOpacity
-              onPress={() => setTemplate(1)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 1 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 1 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 1</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(2)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 2 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 2 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 2</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(3)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 3 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 3 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 3</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(4)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 4 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 4 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 4</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(5)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 5 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 5</Text>
-            </TouchableOpacity>
+            {([1, 2, 3, 4, 5] as const).map((n) => (
+              <TouchableOpacity
+                key={n}
+                onPress={() => handleTemplateSelect(n)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: template === n ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === n ? '#F6F7FF' : '#FFF',
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template {n}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           {/* Personal Details Section */}
@@ -661,17 +687,18 @@ export default function AddCards() {
               
             <PhoneNumberInput
                 value={altNumber}
-                onChangeText={(text) => setAltNumber(text)}
+                onChangeText={(text) => { setAltNumber(text); if (altNumberError) setAltNumberError(''); }}
               onCountryCodeChange={(code) => setAltCountryCode(code)}
               placeholder="Alt number"
+              error={altNumberError}
               />
-              
+
             {/* Toggle to show/hide alt number on card */}
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Show alt number on card</Text>
               <TouchableOpacity
                 style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
-                onPress={() => setShowAltNumber(!showAltNumber)}
+                onPress={() => { if (showAltNumber) setAltNumberError(''); setShowAltNumber(!showAltNumber); }}
               >
                 <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
               </TouchableOpacity>
@@ -686,6 +713,16 @@ export default function AddCards() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Template preview modal — shows when the user taps a template pill */}
+      <CardPreviewModal
+        visible={isPreviewModalVisible}
+        onClose={() => setIsPreviewModalVisible(false)}
+        template={template}
+        card={buildCardObject()}
+        altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+        closeLabel="Continue Editing"
+      />
     </View>
   );
 }
@@ -812,19 +849,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     position: 'absolute',
-    top: 100,
+    top: 96,
     left: 0,
     right: 0,
     zIndex: 1,
-    paddingVertical: 0,
+    paddingVertical: 10,
+    backgroundColor: COLORS.white,
   },
-  cancelButton: {
-    color: '#666',
-    fontSize: 16,
+  previewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
   },
-  saveButton: {
+  previewButtonText: {
     color: '#666',
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  saveButtonContainer: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  saveButtonText: {
+    color: COLORS.white,
     fontSize: 16,
+    fontWeight: '600',
   },
   buttonContainer: {
     padding: 16,

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking, ActivityIndicator, Pressable } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, Linking, ActivityIndicator, Pressable } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { Modal as RNModal } from 'react-native';
+import CardPreviewModal from '../../components/cards/CardPreviewModal';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
@@ -17,10 +17,7 @@ import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '..
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
-import CardTemplate2 from '../../components/cards/CardTemplate2';
-import CardTemplate3 from '../../components/cards/CardTemplate3';
-import CardTemplate4 from '../../components/cards/CardTemplate4';
-import CardTemplate5 from '../../components/cards/CardTemplate5';
+// CardTemplate2–5 are now used inside the shared CardPreviewModal component
 import WidgetConfigModal from '../../components/widgets/WidgetConfigModal';
 import WidgetCard from '../../components/widgets/WidgetCard';
 import { WidgetManager } from '../../widgets/WidgetManager';
@@ -1916,196 +1913,17 @@ export default function EditCard() {
         ]}
       />
 
-      {/* Preview Modal */}
-      <RNModal
+      {/* Preview Modal — shared CardPreviewModal component */}
+      <CardPreviewModal
         visible={isPreviewModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsPreviewModalVisible(false)}
-      >
-        <SafeAreaView style={previewStyles.modalContainer}>
-          <View style={previewStyles.modalHeader}>
-            <Text style={previewStyles.modalTitle}>Card Preview</Text>
-            <TouchableOpacity onPress={() => setIsPreviewModalVisible(false)}>
-              <MaterialIcons name="close" size={24} color="#000" />
-            </TouchableOpacity>
-    </View>
-          
-          <ScrollView style={previewStyles.cardScrollView}>
-            <View style={previewStyles.cardContainer}>
-              {/* Render templates based on selected template */}
-              {template === 1 ? (
-                // Template 1 - Original hardcoded preview
-                <>
-                  {/* QR Code Placeholder */}
-                  <View style={previewStyles.qrContainer}>
-                    <View style={previewStyles.qrPlaceholder}>
-                      <MaterialIcons name="qr-code-2" size={80} color="#ccc" />
-                      <Text style={previewStyles.qrText}>QR Code</Text>
-                    </View>
-                  </View>
-                  
-                  {/* Company Logo and Profile Image */}
-                  <View style={previewStyles.logoContainer}>
-                    <View style={previewStyles.logoFrame}>
-                      {formData.companyLogo && getImageUrl(formData.companyLogo) ? (
-                        <Image 
-                          source={{ uri: getImageUrl(formData.companyLogo) || '' }}
-                          style={{ 
-                            width: '100%', 
-                            height: '100%',
-                            transform: [{ scale: zoomLevel }],
-                            opacity: 1,
-                          }}
-                          resizeMode="contain"
-                          fadeDuration={300}
-                        />
-                      ) : (
-                        <View style={previewStyles.logoPlaceholder}>
-                          <Text style={previewStyles.logoPlaceholderText}>LOGO</Text>
-                        </View>
-                      )}
-                    </View>
-                    
-                    {/* Profile Image */}
-                    <View style={previewStyles.profileContainer}>
-                      <View style={previewStyles.profileImageContainer}>
-                        {formData.profileImage ? (
-                          <Image
-                            style={previewStyles.profileImage}
-                            source={{ uri: getImageUrl(formData.profileImage) || '' }}
-                          />
-                        ) : (
-                          <GradientAvatar 
-                            size={110}
-                            style={previewStyles.profileImage}
-                          />
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                  
-                  {/* Basic Info - these should NOT use the color scheme as per user's request */}
-                  <Text style={previewStyles.name}>
-                    {`${formData.firstName} ${formData.lastName}`}
-                  </Text>
-                  <Text style={previewStyles.position}>
-                    {formData.occupation}
-                  </Text>
-                  <Text style={previewStyles.company}>
-                    {formData.company}
-                  </Text>
-                  
-                  {/* Contact Info - SHOULD use the color scheme */}
-                  <TouchableOpacity style={previewStyles.contactSection}>
-                    <MaterialCommunityIcons name="email-outline" size={24} color={selectedColor} />
-                    <Text style={previewStyles.contactText}>{formData.email}</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={previewStyles.contactSection}>
-                    <MaterialCommunityIcons name="phone-outline" size={24} color={selectedColor} />
-                    <Text style={previewStyles.contactText}>{`${formData.countryCode}${formData.phoneNumber}`}</Text>
-                  </TouchableOpacity>
-                  
-                  {/* Social Links - SHOULD use the color scheme */}
-                  {selectedSocials.map(socialId => {
-                    const social = socials.find(s => s.id === socialId);
-                    if (social && formData[socialId]) {
-                      return (
-                        <TouchableOpacity key={socialId} style={previewStyles.contactSection}>
-                          <MaterialCommunityIcons 
-                            name={social.icon} 
-                            size={24} 
-                            color={selectedColor} 
-                          />
-                          <Text style={previewStyles.contactText}>
-                            {formData[socialId]?.toString() || ''}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                    return null;
-                  })}
-                </>
-              ) : template === 2 ? (
-                <CardTemplate2
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : template === 3 ? (
-                <CardTemplate3
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : template === 4 ? (
-                <CardTemplate4
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : template === 5 ? (
-                <CardTemplate5
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : (
-                // Fallback to template 1
-                <Text>Template not found</Text>
-              )}
-            </View>
-          </ScrollView>
-          
-          <View style={previewStyles.modalActions}>
-            <TouchableOpacity 
-              style={[previewStyles.continueButton, { borderColor: selectedColor }]}
-              onPress={() => setIsPreviewModalVisible(false)}
-            >
-              <Text style={[previewStyles.continueText, { color: selectedColor }]}>Continue Editing</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[previewStyles.saveButton, { backgroundColor: selectedColor }]}
-              onPress={() => {
-                setIsPreviewModalVisible(false);
-                handleSave();
-              }}
-            >
-              <Text style={previewStyles.saveText}>Save & Exit</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </RNModal>
+        onClose={() => setIsPreviewModalVisible(false)}
+        onSave={handleSave}
+        template={template}
+        card={buildCardObject()}
+        altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+        closeLabel="Continue Editing"
+        saveLabel="Save & Exit"
+      />
 
       {/* Widget Configuration Modal */}
       <WidgetConfigModal
@@ -3088,167 +2906,5 @@ const styles = StyleSheet.create({
   },
 });
 
-const previewStyles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#FFF',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EFEFEF',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.black,
-  },
-  cardScrollView: {
-    flex: 1,
-  },
-  cardContainer: {
-    backgroundColor: COLORS.white,
-    borderRadius: 15,
-    padding: 16,
-    margin: 16,
-  },
-  qrContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  qrPlaceholder: {
-    width: 150,
-    height: 150,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F8F8',
-    borderRadius: 8,
-  },
-  qrText: {
-    marginTop: 10,
-    color: '#999',
-  },
-  logoContainer: {
-    width: '100%',
-    position: 'relative',
-    overflow: 'visible',
-    marginBottom: 80,
-    borderRadius: 12,
-    padding: 8,
-  },
-  logoFrame: {
-    width: '100%',
-    height: 200,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    borderRadius: 12,
-  },
-  logoPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#d3d3d3',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoPlaceholderText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    textShadowColor: 'rgba(255, 255, 255, 0.6)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
-  },
-  profileContainer: {
-    position: 'absolute',
-    bottom: -60,
-    left: '50%',
-    transform: [{ translateX: -60 }],
-    alignItems: 'center',
-  },
-  profileImageContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 5,
-    borderColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  profileImage: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-  },
-  name: {
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 5,
-    marginTop: 20,
-    color: COLORS.black,
-    marginLeft: 10,
-  },
-  position: {
-    fontSize: 18,
-    marginBottom: 5,
-    color: '#444',
-    marginLeft: 10,
-  },
-  company: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 20,
-    color: '#666',
-    marginLeft: 10,
-  },
-  contactSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    padding: 5,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  contactText: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#333',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#EFEFEF',
-  },
-  continueButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginRight: 8,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  continueText: {
-    fontWeight: '500',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginLeft: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveText: {
-    color: COLORS.white,
-    fontWeight: '500',
-  },
-});
+// previewStyles have been moved to CardPreviewModal component
 
