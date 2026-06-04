@@ -1,10 +1,12 @@
 /**
  * PremiumUpsell service
  *
- * A pure-JS singleton — no React dependency — that:
- *   1. Fires a toast via toastService
- *   2. Notifies any subscribed React component (PremiumUpsellProvider)
- *      so it can render the popup modal
+ * A pure-JS singleton — no React dependency — that notifies any subscribed
+ * React component (PremiumUpsellProvider) so it can render the upsell modal.
+ *
+ * The modal alone is the upsell UI — there is no toast. The modal stays visible
+ * until the user explicitly taps "Maybe Later", "Unlock Premium", the backdrop,
+ * or (Android) the hardware back button.
  *
  * Usage from a component:
  *   const { triggerUpsell } = usePremiumUpsell();
@@ -14,10 +16,8 @@
  *   premiumUpsellService.trigger({ featureName: 'Dashboard' });
  */
 
-import { toastService } from '../hooks/useToast';
-
 export interface UpsellConfig {
-  /** Short label used in the toast and popup headline, e.g. "Dashboard" */
+  /** Short label used in the popup headline, e.g. "Dashboard" */
   featureName: string;
   /** Optional longer description shown in the popup body */
   description?: string;
@@ -37,26 +37,11 @@ class PremiumUpsellService {
   }
 
   /**
-   * Fire the upsell flow: toast immediately, popup after a short delay.
-   *
-   * iOS/Android native presentation queues cannot handle two Modal components
-   * changing visibility in the same JS render cycle. The toast mounts its own
-   * Modal (in ToastProvider); the upsell popup mounts another Modal
-   * (in PremiumUpsellProvider). If both are triggered synchronously the native
-   * layer deadlocks and the app freezes. Delaying the popup listener by one
-   * native frame (100ms) lets the toast Modal fully present first.
-   *
+   * Fire the upsell flow: notify the subscribed provider to render the modal.
    * Call this only after you have confirmed the user is NOT premium.
    */
   trigger(config: UpsellConfig): void {
-    toastService.info(
-      'Premium Feature',
-      `Unlock Premium to access ${config.featureName}`,
-    );
-    // Delay modal so it doesn't race the toast Modal on the native presentation queue
-    setTimeout(() => {
-      this.listeners.forEach(l => l(config));
-    }, 100);
+    this.listeners.forEach(l => l(config));
   }
 }
 
