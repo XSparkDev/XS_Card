@@ -37,7 +37,15 @@ class PremiumUpsellService {
   }
 
   /**
-   * Fire the upsell flow: toast immediately, popup via subscribed provider.
+   * Fire the upsell flow: toast immediately, popup after a short delay.
+   *
+   * iOS/Android native presentation queues cannot handle two Modal components
+   * changing visibility in the same JS render cycle. The toast mounts its own
+   * Modal (in ToastProvider); the upsell popup mounts another Modal
+   * (in PremiumUpsellProvider). If both are triggered synchronously the native
+   * layer deadlocks and the app freezes. Delaying the popup listener by one
+   * native frame (100ms) lets the toast Modal fully present first.
+   *
    * Call this only after you have confirmed the user is NOT premium.
    */
   trigger(config: UpsellConfig): void {
@@ -45,7 +53,10 @@ class PremiumUpsellService {
       'Premium Feature',
       `Unlock Premium to access ${config.featureName}`,
     );
-    this.listeners.forEach(l => l(config));
+    // Delay modal so it doesn't race the toast Modal on the native presentation queue
+    setTimeout(() => {
+      this.listeners.forEach(l => l(config));
+    }, 100);
   }
 }
 

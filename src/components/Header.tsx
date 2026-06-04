@@ -176,7 +176,9 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
 
   const handleNavigate = (screenName: keyof RootStackParamList, screen?: string) => {
     setIsMenuVisible(false);
-    // Wait for the menu modal fade-out to complete before triggering another modal
+    // Wait for the menu modal fade-out to fully complete (animationType="fade" ~300ms)
+    // before triggering any further Modal or navigation. 400ms gives a buffer on slow
+    // devices so the menu is gone before the toast and upsell modals present.
     setTimeout(() => {
       try {
         if (screenName === 'AdminDashboard') {
@@ -199,7 +201,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
         console.error('Navigation error:', error);
         Alert.alert('Error', 'Failed to navigate. Please try again.');
       }
-    }, 300);
+    }, 400);
   };
 
   return (
