@@ -39,7 +39,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const { colorScheme } = useColorScheme();
-  const { logout } = useAuth(); // Use our centralized auth context
+  const { logout, updateUserPlan } = useAuth(); // Use our centralized auth context
   const { triggerUpsell, isPremium } = usePremiumUpsell();
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
@@ -50,6 +50,8 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
       if (userData) {
         const { plan } = JSON.parse(userData);
         setUserPlan(plan);
+        // Converge AuthContext from cache immediately (no-op if unchanged)
+        if (plan) updateUserPlan(plan);
         console.log('Header: Loaded cached plan:', plan);
       }
 
@@ -78,6 +80,9 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             
             // Update UI immediately
             setUserPlan(actualPlan);
+            // Push the fresh backend plan into AuthContext so every premium
+            // gate (upsell, lock icons) reads the correct value (no-op if same)
+            updateUserPlan(actualPlan);
             
             // Update cached data if it's different
             if (userData) {

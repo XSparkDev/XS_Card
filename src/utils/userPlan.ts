@@ -30,6 +30,22 @@ export const isPremiumUser = async (): Promise<boolean> => {
   return plan === 'premium' || plan === 'enterprise';
 };
 
+/**
+ * THE single, canonical free-vs-premium gate used everywhere (upsell triggers,
+ * lock icons, feature gates). Takes the user object (or anything carrying a
+ * `plan` field).
+ *
+ * FAIL OPEN: a user is only "free" when their plan is EXPLICITLY 'free'.
+ * If the plan is undefined/null/loading or any premium tier
+ * (premium/enterprise/admin), the user is NOT free — access is allowed.
+ * This guarantees we never block a premium user because their in-memory plan
+ * is stale or has not finished loading.
+ *
+ * Comparison is case-insensitive to tolerate backend casing variants.
+ */
+export const isFreeUser = (user?: { plan?: string | null } | null): boolean =>
+  String(user?.plan ?? '').trim().toLowerCase() === 'free';
+
 // Get plan limits
 export const getPlanLimits = (plan: UserPlan): PlanLimits => {
   switch (plan) {

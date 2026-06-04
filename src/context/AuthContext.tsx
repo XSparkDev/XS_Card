@@ -48,6 +48,7 @@ interface AuthContextType extends AuthState {
   clearError: () => void;
   setLoading: (loading: boolean) => void;
   resendVerificationEmail: () => Promise<void>; // Resend email verification
+  updateUserPlan: (plan: string) => void; // Refresh in-memory user.plan from backend sync
 }
 
 // Action types for the reducer
@@ -60,7 +61,8 @@ type AuthAction =
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESTORE_AUTH'; payload: AuthData }
   | { type: 'SET_FIREBASE_READY'; payload: boolean }
-  | { type: 'SET_EMAIL_VERIFIED'; payload: boolean };
+  | { type: 'SET_EMAIL_VERIFIED'; payload: boolean }
+  | { type: 'UPDATE_USER_PLAN'; payload: { plan: string } };
 
 // Initial state
 const initialState: AuthState = {
@@ -78,6 +80,18 @@ const initialState: AuthState = {
 // Auth reducer
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
+    case 'UPDATE_USER_PLAN':
+      // Keep the in-memory user.plan in sync with the backend plan that other
+      // parts of the app (Header sync, UnlockPremium) fetch. Guard against
+      // no-op dispatches so this can be safely called on every screen focus.
+      if (!state.user || state.user.plan === action.payload.plan) {
+        return state;
+      }
+      return {
+        ...state,
+        user: { ...state.user, plan: action.payload.plan },
+      };
+
     case 'SET_LOADING':
       return {
         ...state,
@@ -582,6 +596,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'SET_LOADING', payload: loading });
   };
 
+  const updateUserPlan = (plan: string): void => {
+    dispatch({ type: 'UPDATE_USER_PLAN', payload: { plan } });
+  };
+
   // Context value
   const value: AuthContextType = {
     ...state,
@@ -592,6 +610,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearError,
     setLoading,
     resendVerificationEmail,
+    updateUserPlan,
   };
 
   return (

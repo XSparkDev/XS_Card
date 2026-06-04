@@ -1,85 +1,42 @@
 /**
- * usePremiumUpsell hook
+ * usePremiumUpsell — THE single, canonical free-vs-premium gate for the app.
  *
- * THE single, canonical free-vs-premium check for the whole app.
- * Every upsell trigger AND every premium indicator icon must go through this
- * hook (via `isPremium`) so the condition can never drift between files.
+ * Every upsell trigger and every premium indicator icon uses this hook, which
+ * delegates to the one shared `isFreeUser()` utility in utils/userPlan. No
+ * other file may contain an inline plan comparison.
  *
- * Returns:
- *   isPremium   — true for premium / enterprise users
- *   triggerUpsell(config) — shows toast + popup for free users;
- *                           does nothing and returns false for premium users.
- *                           Returns true if the upsell was triggered (i.e. user is free).
+ * Plan field: user.plan (string) from AuthContext.
+ *   free value    : 'free'                              → blocked
+ *   premium values: 'premium' | 'enterprise' | 'admin'  → allowed
  *
- * Plan source of truth:
- *   The plan can live in two places that occasionally drift:
- *     1. AuthContext `user.plan`         — set at login
- *     2. AsyncStorage `userData.plan`    — updated on upgrade (UnlockPremium)
- *                                          and by the Header's backend sync
- *   When a user upgrades, only AsyncStorage is updated, so AuthContext lags and
- *   would otherwise wrongly treat a premium user as free. We therefore consider
- *   BOTH sources and FAIL OPEN: if either source says premium, the user is
- *   premium. The comparison is also case-insensitive so backend casing variants
- *   ('Premium', 'PREMIUM') are handled.
+ * FAIL OPEN: if user / user.plan is null, undefined, or still loading, the user
+ * is treated as PREMIUM (allowed). A user is only blocked when their plan is
+ * EXPLICITLY 'free'. This prevents premium users ever being blocked by a stale
+ * or not-yet-loaded plan value.
  */
 
-import { useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import { isFreeUser } from '../utils/userPlan';
 import { premiumUpsellService, UpsellConfig } from '../utils/premiumUpsell';
-
-/** Normalise any backend/stored plan value to a lowercase, trimmed string. */
-const normalizePlan = (plan?: string | null): string =>
-  String(plan ?? '').trim().toLowerCase();
-
-/** A plan grants premium access if it is premium, enterprise (or admin). */
-const planIsPremium = (plan?: string | null): boolean => {
-  const p = normalizePlan(plan);
-  return p === 'premium' || p === 'enterprise' || p === 'admin';
-};
 
 export function usePremiumUpsell() {
   const { user } = useAuth();
-  const [storedPlan, setStoredPlan] = useState<string | null>(null);
 
-  // Keep the AsyncStorage plan in sync. Re-read whenever the AuthContext plan
-  // changes (e.g. after login) so the two sources converge. The cleanup guard
-  // prevents a state update on an unmounted component.
-  useEffect(() => {
-    let active = true;
-    AsyncStorage.getItem('userData')
-      .then((raw) => {
-        if (!active || !raw) return;
-        try {
-          setStoredPlan(JSON.parse(raw)?.plan ?? null);
-        } catch {
-          /* ignore malformed cache */
-        }
-      })
-      .catch(() => {
-        /* ignore storage errors — fall back to AuthContext plan */
-      });
-    return () => {
-      active = false;
-    };
-  }, [user?.plan]);
-
-  // Premium if EITHER source indicates premium (fail open toward access so a
-  // premium user is never wrongly blocked while one source is stale).
-  const isPremium = planIsPremium(user?.plan) || planIsPremium(storedPlan);
+  // Single shared, fail-open check.
+  const isPremium = !isFreeUser(user);
 
   /**
    * Gate a premium feature.
-   * @returns true  — user is free, upsell was shown, the action should be blocked
-   * @returns false — user is premium, proceed normally
+   * @returns true  — user is free; upsell was shown; caller should abort.
+   * @returns false — user is premium; proceed normally.
    */
   const triggerUpsell = (config: UpsellConfig): boolean => {
     if (isPremium) return false;
     premiumUpsellService.trigger(config);
-    return true; // blocked
+    return true;
   };
 
-  const plan = normalizePlan(user?.plan) || normalizePlan(storedPlan) || 'free';
+  const plan = String(user?.plan ?? 'free').trim().toLowerCase() || 'free';
 
   return { triggerUpsell, isPremium, plan };
 }
