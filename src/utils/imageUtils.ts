@@ -1,4 +1,5 @@
 import { launchCamera, launchImageLibrary, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { API_BASE_URL } from './api';
 import { Platform, PermissionsAndroid, Alert } from 'react-native';
 
@@ -165,6 +166,48 @@ export const pickImage = async (useCamera: boolean = false): Promise<string | nu
       launchImageLibrary(options, callback);
     }
   });
+};
+
+/**
+ * Opens the device's native file explorer filtered to image files.
+ * Works on both iOS (Files app) and Android (file manager).
+ * No camera / photo-library permission is required.
+ *
+ * @returns The local `file://` URI of the selected image, or `null` if the
+ *          user cancelled or selected an unsupported file type.
+ */
+export const pickImageFromDocument = async (): Promise<string | null> => {
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      // Accept all image MIME types; the file explorer will filter for us.
+      type: 'image/*',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+
+    if (result.canceled || !result.assets?.length) {
+      return null;
+    }
+
+    const asset = result.assets[0];
+    const mimeType = (asset.mimeType ?? '').toLowerCase();
+
+    // Guard against non-image files that slip through the filter
+    if (mimeType && !mimeType.startsWith('image/')) {
+      Alert.alert(
+        'Unsupported File Type',
+        'Please select an image file (JPEG, PNG, WebP, etc.).',
+      );
+      return null;
+    }
+
+    console.log('[Document Picker] File selected:', asset.name, mimeType);
+    return asset.uri;
+  } catch (error) {
+    console.error('[Document Picker] Error:', error);
+    Alert.alert('Error', 'Could not open the file picker. Please try again.');
+    return null;
+  }
 };
 
 /**

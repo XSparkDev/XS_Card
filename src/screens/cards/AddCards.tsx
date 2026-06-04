@@ -10,7 +10,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../types';
 import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE_URL } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import CardPreviewModal from '../../components/cards/CardPreviewModal';
 import { useAuth } from '../../context/AuthContext';
@@ -156,20 +156,20 @@ export default function AddCards() {
 
   const handleProfileImagePick = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Profile Picture',
         'Choose where you want to get your profile picture from.',
         [
           { text: 'Camera', onPress: () => pickImageFromSource('camera') },
           { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Choose File', onPress: () => pickImageFromSource('file') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Profile Picture',
@@ -177,47 +177,53 @@ export default function AddCards() {
           [
             { text: 'Camera', onPress: () => pickImageFromSource('camera') },
             { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
-      Alert.alert(
-        'Permission Required', 
-        'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-              text: 'Grant Permission', 
+        // Show permission request modal for iOS only.
+        // "Choose File" is available here too — it doesn't need camera/gallery permissions.
+        Alert.alert(
+          'Permission Required',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
-              Alert.alert(
+                  Alert.alert(
                     'Select Profile Picture',
                     'Choose where you want to get your profile picture from.',
                     [
                       { text: 'Camera', onPress: () => pickImageFromSource('camera') },
                       { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Choose File', onPress: () => pickImageFromSource('file') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
     }
   };
 
-  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
+  const pickImageFromSource = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Image Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -225,24 +231,24 @@ export default function AddCards() {
         // iOS: Check permissions first, then pick
         console.log('[Image Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
                   Alert.alert('Open Settings', 'Please go to Settings > XS Card > Camera');
               }}
-        ]
-      );
-      return;
-    }
+            ]
+          );
+          return;
+        }
 
         if (source === 'gallery' && !galleryGranted) {
-    Alert.alert(
-            'Photo Library Permission Required', 
+          Alert.alert(
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
@@ -257,7 +263,7 @@ export default function AddCards() {
         console.log('[Image Picker] iOS: Permissions checked, launching picker...');
         imageUri = await pickImage(source === 'camera');
       }
-      
+
       if (imageUri) {
         console.log('[Image Picker] Image selected successfully');
         setProfileImage(imageUri);
@@ -266,7 +272,7 @@ export default function AddCards() {
       }
     } catch (error) {
       console.error('[Image Picker] Error during image selection:', error);
-      
+
       if (error instanceof Error) {
         if (error.message.includes('Permission')) {
           Alert.alert('Permission Error', 'Unable to access camera or photo library. Please check your device settings.');
@@ -281,20 +287,20 @@ export default function AddCards() {
 
   const handleLogoUpload = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Company Logo',
         'Choose where you want to get your company logo from.',
         [
           { text: 'Camera', onPress: () => pickLogo('camera') },
           { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Choose File', onPress: () => pickLogo('file') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Company Logo',
@@ -302,47 +308,51 @@ export default function AddCards() {
           [
             { text: 'Camera', onPress: () => pickLogo('camera') },
             { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Choose File', onPress: () => pickLogo('file') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
-      Alert.alert(
-        'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-              text: 'Grant Permission', 
+        Alert.alert(
+          'Permission Required',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose File', onPress: () => pickLogo('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
-              Alert.alert(
+                  Alert.alert(
                     'Select Company Logo',
                     'Choose where you want to get your company logo from.',
                     [
                       { text: 'Camera', onPress: () => pickLogo('camera') },
                       { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Choose File', onPress: () => pickLogo('file') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
     }
   };
 
-  const pickLogo = async (source: 'camera' | 'gallery') => {
+  const pickLogo = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Logo Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -350,29 +360,29 @@ export default function AddCards() {
         // iOS: Check permissions first, then pick
         console.log('[Logo Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Camera');
+                  Alert.alert('Open Settings', 'Please go to Settings > XS Card > Camera');
               }}
-        ]
-      );
-      return;
-    }
+            ]
+          );
+          return;
+        }
 
         if (source === 'gallery' && !galleryGranted) {
-    Alert.alert(
-            'Photo Library Permission Required', 
+          Alert.alert(
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Photos');
+                  Alert.alert('Open Settings', 'Please go to Settings > XS Card > Photos');
               }}
             ]
           );
@@ -382,7 +392,7 @@ export default function AddCards() {
         console.log('[Logo Picker] iOS: Permissions checked, launching picker...');
         imageUri = await pickImage(source === 'camera');
       }
-      
+
       if (imageUri) {
         console.log('[Logo Picker] Logo selected successfully');
         setCompanyLogo(imageUri);
@@ -391,7 +401,7 @@ export default function AddCards() {
       }
     } catch (error) {
       console.error('[Logo Picker] Error during logo selection:', error);
-      
+
       if (error instanceof Error) {
         if (error.message.includes('Permission')) {
           Alert.alert('Permission Error', 'Unable to access camera or photo library. Please check your device settings.');
@@ -399,7 +409,7 @@ export default function AddCards() {
           Alert.alert('Error', `Logo selection failed: ${error.message}`);
         }
       } else {
-        Alert.alert('Error', 'There was a problem with the image picker. Please try again.');
+        Alert.alert('Error', 'There was a problem with the logo picker. Please try again.');
       }
     }
   };

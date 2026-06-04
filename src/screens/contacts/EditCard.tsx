@@ -13,7 +13,7 @@ import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRef
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
-import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import { getImageUrl, pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
@@ -800,20 +800,20 @@ export default function EditCard() {
 
   const handleProfileImageEdit = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Profile Picture',
         'Choose where you want to get your profile picture from.',
         [
           { text: 'Camera', onPress: () => pickImageFromSource('camera') },
           { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Choose File', onPress: () => pickImageFromSource('file') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Profile Picture',
@@ -821,34 +821,35 @@ export default function EditCard() {
           [
             { text: 'Camera', onPress: () => pickImageFromSource('camera') },
             { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
         Alert.alert(
-          'Permission Required', 
+          'Permission Required',
           'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Grant Permission', 
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
                   Alert.alert(
                     'Select Profile Picture',
                     'Choose where you want to get your profile picture from.',
                     [
                       { text: 'Camera', onPress: () => pickImageFromSource('camera') },
                       { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Choose File', onPress: () => pickImageFromSource('file') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
@@ -857,20 +858,20 @@ export default function EditCard() {
 
   const handleLogoEdit = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Company Logo',
         'Choose where you want to get your company logo from.',
         [
           { text: 'Camera', onPress: () => pickLogo('camera') },
           { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Choose File', onPress: () => pickLogo('file') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Company Logo',
@@ -878,34 +879,35 @@ export default function EditCard() {
           [
             { text: 'Camera', onPress: () => pickLogo('camera') },
             { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Choose File', onPress: () => pickLogo('file') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
         Alert.alert(
-          'Permission Required', 
+          'Permission Required',
           'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Grant Permission', 
+            { text: 'Choose File', onPress: () => pickLogo('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
                   Alert.alert(
                     'Select Company Logo',
                     'Choose where you want to get your company logo from.',
                     [
                       { text: 'Camera', onPress: () => pickLogo('camera') },
                       { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Choose File', onPress: () => pickLogo('file') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
@@ -913,13 +915,16 @@ export default function EditCard() {
   };
 
   // Profile image picker function (simplified like logo picker)
-  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
+  const pickImageFromSource = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Image Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -927,30 +932,26 @@ export default function EditCard() {
         // iOS: Check permissions first, then pick
         console.log('[Image Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
         }
-        
+
         if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
-            'Photo Library Permission Required', 
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
@@ -1030,13 +1031,16 @@ export default function EditCard() {
   };
 
   // Improved implementation for logo picker with iOS compatibility
-  const pickLogo = async (source: 'camera' | 'gallery') => {
+  const pickLogo = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Logo Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -1044,30 +1048,26 @@ export default function EditCard() {
         // iOS: Check permissions first, then pick
         console.log('[Logo Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
         }
-        
+
         if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
-            'Photo Library Permission Required', 
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;

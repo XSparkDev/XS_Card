@@ -6,7 +6,7 @@ import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-naviga
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { ENDPOINTS, buildUrl, useToast } from '../../utils/api';
-import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../../config/firebaseConfig';
 
@@ -399,6 +399,16 @@ export default function CompleteProfile() {
           },
         },
         {
+          text: 'Choose File',
+          onPress: async () => {
+            const imageUri = await pickImageFromDocument();
+            if (imageUri) {
+              setProfileImage(imageUri);
+              setOauthPrefillImage(null);
+            }
+          },
+        },
+        {
           text: 'Cancel',
           style: 'cancel',
         },
@@ -457,6 +467,13 @@ export default function CompleteProfile() {
           text: 'Gallery',
           onPress: async () => {
             const imageUri = await pickImage(false);
+            if (imageUri) setCompanyLogo(imageUri);
+          },
+        },
+        {
+          text: 'Choose File',
+          onPress: async () => {
+            const imageUri = await pickImageFromDocument();
             if (imageUri) setCompanyLogo(imageUri);
           },
         },
