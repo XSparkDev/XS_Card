@@ -40,7 +40,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const { colorScheme } = useColorScheme();
   const { logout } = useAuth(); // Use our centralized auth context
-  const { triggerUpsell } = usePremiumUpsell();
+  const { triggerUpsell, isPremium } = usePremiumUpsell();
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
   const syncUserPlan = async () => {
@@ -174,31 +174,32 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
     }
   };
 
-  const handleNavigate = async (screenName: keyof RootStackParamList, screen?: string) => {
+  const handleNavigate = (screenName: keyof RootStackParamList, screen?: string) => {
     setIsMenuVisible(false);
-    try {
-      // For AdminDashboard, navigate with optional screen parameter
-      if (screenName === 'AdminDashboard') {
-        const featureName = screen === 'Calendar' ? 'Calendar' : 'Dashboard';
-        const description = screen === 'Calendar'
-          ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
-          : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
-        if (triggerUpsell({ featureName, description })) return;
-        if (screen) {
-          navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
+    // Wait for the menu modal fade-out to complete before triggering another modal
+    setTimeout(() => {
+      try {
+        if (screenName === 'AdminDashboard') {
+          const featureName = screen === 'Calendar' ? 'Calendar' : 'Dashboard';
+          const description = screen === 'Calendar'
+            ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
+            : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
+          if (triggerUpsell({ featureName, description })) return;
+          if (screen) {
+            navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
+          } else {
+            navigation.navigate('AdminDashboard');
+          }
+        } else if (screenName === 'Cards' || screenName === 'Contacts') {
+          (navigation as any).navigate('MainTabs', { screen: screenName });
         } else {
-          navigation.navigate('AdminDashboard');
+          navigation.navigate(screenName);
         }
-      } else if (screenName === 'Cards' || screenName === 'Contacts') {
-        // For tab screens, navigate to MainTabs with the specific screen
-        (navigation as any).navigate('MainTabs', { screen: screenName });
-      } else {
-        navigation.navigate(screenName);
+      } catch (error) {
+        console.error('Navigation error:', error);
+        Alert.alert('Error', 'Failed to navigate. Please try again.');
       }
-    } catch (error) {
-      console.error('Navigation error:', error);
-      Alert.alert('Error', 'Failed to navigate. Please try again.');
-    }
+    }, 300);
   };
 
   return (
@@ -247,6 +248,9 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             >
               <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
+              {!isPremium && (
+                <MaterialIcons name="lock" size={14} color={COLORS.primary} style={styles.premiumBadge} />
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -255,6 +259,9 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             >
               <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
+              {!isPremium && (
+                <MaterialIcons name="lock" size={14} color={COLORS.primary} style={styles.premiumBadge} />
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -375,5 +382,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: COLORS.secondary,
+    flex: 1,
+  },
+  premiumBadge: {
+    marginLeft: 4,
   },
 });

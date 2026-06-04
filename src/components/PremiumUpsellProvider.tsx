@@ -74,56 +74,58 @@ export default function PremiumUpsellProvider({
     <>
       {children}
 
-      <Modal
-        visible={state.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={dismiss}
-        statusBarTranslucent
-      >
-        {/* Tap-outside-to-dismiss overlay */}
-        <TouchableWithoutFeedback onPress={dismiss}>
-          <View style={styles.overlay}>
-            {/* Prevent taps inside the card from closing the modal */}
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.card}>
-                {/* Premium icon */}
-                <View style={styles.iconWrapper}>
-                  <MaterialIcons name="lock" size={52} color={COLORS.primary} />
+      {state.visible && (
+        <Modal
+          visible={true}
+          transparent
+          animationType="fade"
+          onRequestClose={dismiss}
+          statusBarTranslucent
+        >
+          {/* Tap-outside-to-dismiss overlay */}
+          <TouchableWithoutFeedback onPress={dismiss}>
+            <View style={styles.overlay}>
+              {/* Prevent taps inside the card from closing the modal */}
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={styles.card}>
+                  {/* Premium icon */}
+                  <View style={styles.iconWrapper}>
+                    <MaterialIcons name="lock" size={52} color={COLORS.primary} />
+                  </View>
+
+                  <Text style={styles.headline}>Premium Feature</Text>
+
+                  <Text style={styles.body}>{description}</Text>
+
+                  {/* Primary CTA */}
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={handleUnlockPremium}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialIcons
+                      name="star"
+                      size={18}
+                      color={COLORS.white}
+                      style={styles.btnIcon}
+                    />
+                    <Text style={styles.primaryButtonText}>Unlock Premium</Text>
+                  </TouchableOpacity>
+
+                  {/* Secondary dismiss */}
+                  <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPress={dismiss}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.secondaryButtonText}>Maybe Later</Text>
+                  </TouchableOpacity>
                 </View>
-
-                <Text style={styles.headline}>Premium Feature</Text>
-
-                <Text style={styles.body}>{description}</Text>
-
-                {/* Primary CTA */}
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handleUnlockPremium}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons
-                    name="star"
-                    size={18}
-                    color={COLORS.white}
-                    style={styles.btnIcon}
-                  />
-                  <Text style={styles.primaryButtonText}>Unlock Premium</Text>
-                </TouchableOpacity>
-
-                {/* Secondary dismiss */}
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={dismiss}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.secondaryButtonText}>Maybe Later</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
     </>
   );
 }

@@ -442,21 +442,16 @@ export default function AdminDashboard() {
         if (userData) {
           const { plan } = JSON.parse(userData);
           setUserPlan(plan);
-          
-          // Redirect if user is on free plan
+          // Free users should have been blocked in the Header before reaching here.
+          // If they somehow arrive, go back rather than resetting the whole stack
+          // (a full reset while a modal may be animating causes a freeze).
           if (plan === 'free') {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'MainApp', params: undefined }],
-            });
+            navigation.goBack();
           }
         }
       } catch (error) {
         console.error('Error checking user plan:', error);
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'MainApp', params: undefined }],
-        });
+        navigation.goBack();
       }
     };
 

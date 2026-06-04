@@ -73,7 +73,7 @@ export default function EditCard() {
   const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { triggerUpsell } = usePremiumUpsell();
+  const { triggerUpsell, isPremium } = usePremiumUpsell();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -1624,7 +1624,7 @@ export default function EditCard() {
             >
               <View style={styles.toggleLabelRow}>
                 <Text style={styles.toggleLabel}>Show alt number on card</Text>
-                {isAltNumberLocked && (
+                {!isPremium && (
                   <View style={styles.premiumBadge}>
                     <MaterialIcons name="lock" size={14} color={COLORS.white} />
                     <Text style={styles.premiumBadgeText}>Premium</Text>
