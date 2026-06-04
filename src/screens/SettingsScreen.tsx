@@ -18,6 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, API_BASE_URL } from '../utils/api';
 import { useToast } from '../hooks/useToast';
+import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
 import Header from '../components/Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getImageUrl } from '../utils/imageUtils';
@@ -62,6 +63,7 @@ interface UserData {
 export default function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const toast = useToast();
+  const { triggerUpsell } = usePremiumUpsell();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
@@ -497,13 +499,14 @@ export default function SettingsScreen() {
             () => navigation.navigate('EventPreferences')
           )}
 
-          {(userData?.plan === 'premium' || userData?.plan === 'enterprise') && (
-            renderSettingItem(
-              'calendar-today',
-              'Calendar Preferences',
-              'Configure your public booking calendar',
-              () => navigation.navigate('CalendarPreferences')
-            )
+          {renderSettingItem(
+            'calendar-today',
+            'Calendar Preferences',
+            'Configure your public booking calendar',
+            () => {
+              if (triggerUpsell({ featureName: 'Calendar Preferences', description: 'Calendar Preferences lets you configure your public booking calendar and manage your availability. Upgrade to Premium to unlock this feature.' })) return;
+              navigation.navigate('CalendarPreferences');
+            }
           )}
 
           {renderSettingItem(

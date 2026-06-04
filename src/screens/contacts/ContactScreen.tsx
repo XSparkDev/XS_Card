@@ -41,6 +41,7 @@ import { formatTimestamp } from '../../utils/dateFormatter';
 import { AuthManager } from '../../utils/authManager';
 import GradientAvatar from '../../components/GradientAvatar';
 import { getPlanLimits, UserPlan } from '../../utils/userPlan';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -343,6 +344,7 @@ export default function ContactsScreen() {
   
   // Core state
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const { triggerUpsell } = usePremiumUpsell();
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1295,14 +1297,15 @@ export default function ContactsScreen() {
             />
           </View>
 
-          {hasAdvancedFeatures && cardFilterOptions.length > 0 && (
+          {cardFilterOptions.length > 0 && (
             <View style={styles.filterSection}>
               <Text style={styles.filterSectionLabel}>Filter</Text>
               <TouchableOpacity
                 style={styles.filterDropdownTrigger}
-                onPress={() =>
-                  setIsCardFilterDropdownVisible((prev) => !prev)
-                }
+                onPress={() => {
+                  if (triggerUpsell({ featureName: 'Contact Filter', description: 'Filter contacts by card lets you instantly find contacts from a specific card. Upgrade to Premium to use this feature.' })) return;
+                  setIsCardFilterDropdownVisible((prev) => !prev);
+                }}
                 activeOpacity={0.8}
               >
                 <View style={styles.filterTriggerContent}>

@@ -9,6 +9,7 @@ import { AuthProvider } from './src/context/AuthContext';
 import { EventNotificationProvider } from './src/context/EventNotificationContext';
 import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
+import PremiumUpsellProvider from './src/components/PremiumUpsellProvider';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
@@ -153,11 +154,13 @@ function AppContent() {
           <MeetingNotificationProvider>
           <ToastProvider>
             <NavigationContainer ref={navigationRef}>
-              <ExpoStatusBar style="auto" translucent={true} />
-              <Stack.Navigator screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="Auth" component={AuthNavigator} />
-                <Stack.Screen name="MainApp" component={TabNavigator} />
-              </Stack.Navigator>
+              <PremiumUpsellProvider>
+                <ExpoStatusBar style="auto" translucent={true} />
+                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="Auth" component={AuthNavigator} />
+                  <Stack.Screen name="MainApp" component={TabNavigator} />
+                </Stack.Navigator>
+              </PremiumUpsellProvider>
             </NavigationContainer>
             
             {/* Update Modal - shown when update is available */}

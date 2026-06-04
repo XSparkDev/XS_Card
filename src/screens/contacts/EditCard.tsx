@@ -24,6 +24,7 @@ import { WidgetManager } from '../../widgets/WidgetManager';
 import { WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
 import { getPlanLimits, getUserPlan as getStoredUserPlan, UserPlan } from '../../utils/userPlan';
 import { useAuth } from '../../context/AuthContext';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -72,6 +73,7 @@ export default function EditCard() {
   const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
   const { user } = useAuth();
+  const { triggerUpsell } = usePremiumUpsell();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -400,7 +402,10 @@ export default function EditCard() {
   const isAltNumberLocked = !hasAltNumberAccess;
 
   const showAltNumberUpsell = () => {
-    Alert.alert('Premium feature', 'Upgrade to Premium to use an alternative number.');
+    triggerUpsell({
+      featureName: 'Alternative Number',
+      description: 'The Alternative Number feature lets you display a second phone number on your card. Upgrade to Premium to unlock it.',
+    });
   };
 
   const loadSpeakerConflictState = async () => {
@@ -1644,36 +1649,37 @@ export default function EditCard() {
               </TouchableOpacity>
             </Pressable>
 
-            {hasAdvancedFeatures && (
-              <View style={styles.toggleContainer}>
-                <View style={styles.toggleLabelRow}>
-                  <Text style={styles.toggleLabel}>My Speaker and Engagement Card</Text>
-                  <TouchableOpacity
-                    style={styles.tooltipButton}
-                    onPress={handleSpeakerTooltipPress}
-                    accessibilityRole="button"
-                    accessibilityLabel="Learn more about speaker and engagement cards"
-                  >
-                    <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
+            <View style={styles.toggleContainer}>
+              <View style={styles.toggleLabelRow}>
+                <Text style={styles.toggleLabel}>My Speaker and Engagement Card</Text>
                 <TouchableOpacity
-                  style={[
-                    styles.toggleSwitch,
-                    isSpeakerEngagementCard && styles.toggleSwitchActive
-                  ]}
-                  onPress={handleSpeakerTogglePress}
-                  activeOpacity={0.8}
+                  style={styles.tooltipButton}
+                  onPress={handleSpeakerTooltipPress}
+                  accessibilityRole="button"
+                  accessibilityLabel="Learn more about speaker and engagement cards"
                 >
-                  <View
-                    style={[
-                      styles.toggleThumb,
-                      isSpeakerEngagementCard && styles.toggleThumbActive
-                    ]}
-                  />
+                  <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
                 </TouchableOpacity>
               </View>
-            )}
+              <TouchableOpacity
+                style={[
+                  styles.toggleSwitch,
+                  isSpeakerEngagementCard && styles.toggleSwitchActive
+                ]}
+                onPress={() => {
+                  if (triggerUpsell({ featureName: 'Speaker & Engagement Card', description: 'The Speaker & Engagement Card is a premium card type designed for speakers and presenters. Upgrade to Premium to enable it.' })) return;
+                  handleSpeakerTogglePress();
+                }}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.toggleThumb,
+                    isSpeakerEngagementCard && styles.toggleThumbActive
+                  ]}
+                />
+              </TouchableOpacity>
+            </View>
 
             {/* Social Media URL Inputs */}
             {selectedSocials.map((socialId) => (
@@ -1803,20 +1809,25 @@ export default function EditCard() {
             )}
           </View>
 
-          {/* Delete Button */}
-          {userPlan !== 'free' && (
-            <TouchableOpacity 
-              style={[
-                styles.deleteButton,
-                cardIndex === 0 ? styles.deleteButtonDisabled : null
-              ]}
-              onPress={handleDelete}
-            >
-              <Text style={styles.deleteButtonText}>
-                {cardIndex === 0 ? "Default Card (Cannot Delete)" : "Delete Card"}
-              </Text>
-            </TouchableOpacity>
-          )}
+          {/* Delete Button — visible to all; free users see the upsell popup */}
+          <TouchableOpacity
+            style={[
+              styles.deleteButton,
+              cardIndex === 0 ? styles.deleteButtonDisabled : null
+            ]}
+            onPress={() => {
+              if (cardIndex === 0) {
+                handleDelete(); // Let handleDelete show its own "cannot delete" message
+                return;
+              }
+              if (triggerUpsell({ featureName: 'Delete Card', description: 'Deleting additional cards is a Premium feature. Upgrade to manage and delete multiple cards.' })) return;
+              handleDelete();
+            }}
+          >
+            <Text style={styles.deleteButtonText}>
+              {cardIndex === 0 ? "Default Card (Cannot Delete)" : "Delete Card"}
+            </Text>
+          </TouchableOpacity>
       </KeyboardAwareScrollView>
 
       <CustomModal

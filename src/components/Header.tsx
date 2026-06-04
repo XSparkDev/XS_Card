@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from '../context/ColorSchemeContext';
 import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
 
 // Update this type to match your actual navigation type
 type RootStackParamList = {
@@ -39,6 +40,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const { colorScheme } = useColorScheme();
   const { logout } = useAuth(); // Use our centralized auth context
+  const { triggerUpsell } = usePremiumUpsell();
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
   const syncUserPlan = async () => {
@@ -118,6 +120,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   );
 
   const handleAddPress = () => {
+    if (triggerUpsell({ featureName: 'Add Card', description: 'Add Card lets you create multiple digital business cards. Upgrade to Premium to unlock this feature.' })) return;
     navigation.navigate('AddCards');
   };
 
@@ -176,6 +179,11 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
     try {
       // For AdminDashboard, navigate with optional screen parameter
       if (screenName === 'AdminDashboard') {
+        const featureName = screen === 'Calendar' ? 'Calendar' : 'Dashboard';
+        const description = screen === 'Calendar'
+          ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
+          : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
+        if (triggerUpsell({ featureName, description })) return;
         if (screen) {
           navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
         } else {
@@ -210,7 +218,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
         </View>
 
         <View style={styles.rightIconContainer}>
-          {showAddButton && userPlan !== 'free' && userPlan !== 'enterprise' && (
+          {showAddButton && userPlan !== 'enterprise' && (
             <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
               <Text style={styles.iconContainer}>
                 <MaterialIcons name="add" size={24} color={COLORS.white} />
@@ -233,25 +241,21 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
           onPress={() => setIsMenuVisible(false)}
         >
           <View style={styles.menuContainer}>
-            {userPlan !== 'free' && (
-              <TouchableOpacity 
-                style={styles.menuItem}
-                onPress={() => handleNavigate('AdminDashboard')}
-              >
-                <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
-                <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => handleNavigate('AdminDashboard')}
+            >
+              <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
+              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
+            </TouchableOpacity>
 
-            {userPlan !== 'free' && (
-              <TouchableOpacity 
-                style={styles.menuItem}
-                onPress={() => handleNavigate('AdminDashboard', 'Calendar')}
-              >
-                <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
-                <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => handleNavigate('AdminDashboard', 'Calendar')}
+            >
+              <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
+              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.menuItem}
