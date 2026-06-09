@@ -1,15 +1,19 @@
 /**
  * PremiumUpsellProvider
  *
- * Place this component once inside the NavigationContainer so it can use
- * useNavigation().  It subscribes to premiumUpsellService and renders
- * the upsell modal whenever trigger() is called.
+ * Mounted once inside the NavigationContainer (above the navigator) so it can
+ * use useNavigation() and overlay every screen — including the side menu, which
+ * stays mounted in the background while this modal is shown.
  *
- * Visual style mirrors ProfileCompletionModal exactly:
- *   - animationType="fade"
- *   - rgba(0,0,0,0.5) overlay
- *   - white card, borderRadius 20, padding 30
- *   - Primary (COLORS.primary) CTA + ghost secondary
+ * Layout:
+ *   - Dashboard/analytics icon (large, centred, primary colour)
+ *   - ✕ close button (top-right) — dismisses, same as "Maybe Later"
+ *   - Heading "This is a premium feature"
+ *   - Body "Keep going, {X} contacts have successfully scanned your card…"
+ *     where {X} is the current user's cached contact count
+ *   - Unlock Premium + Maybe Later buttons (unchanged behaviour)
+ *   - "How does this work?" link (bottom-right) → nested modal explaining the
+ *     feature, with its own ✕ that closes ONLY the nested modal
  */
 
 import React, { useEffect, useState } from 'react';
@@ -21,7 +25,8 @@ import {
   StyleSheet,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { COLORS } from '../constants/colors';
@@ -42,15 +47,45 @@ export default function PremiumUpsellProvider({
 }) {
   const navigation = useNavigation<NavProp>();
   const [state, setState] = useState<UpsellState>({ visible: false, config: null });
+  const [howVisible, setHowVisible] = useState(false);
+  const [contactCount, setContactCount] = useState<number>(0);
 
   useEffect(() => {
     const unsubscribe = premiumUpsellService.subscribe((config) => {
       setState({ visible: true, config });
+      setHowVisible(false);
     });
     return unsubscribe;
   }, []);
 
-  const dismiss = () => setState({ visible: false, config: null });
+  // Pull the current user's contact count from the cache whenever the modal
+  // opens, so the body copy reflects the real number.
+  useEffect(() => {
+    if (!state.visible) return;
+    let active = true;
+    AsyncStorage.getItem('cachedContacts')
+      .then((raw) => {
+        if (!active || !raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          const count = Array.isArray(parsed?.data) ? parsed.data.length : 0;
+          setContactCount(count);
+        } catch {
+          /* ignore malformed cache */
+        }
+      })
+      .catch(() => {
+        /* ignore storage errors */
+      });
+    return () => {
+      active = false;
+    };
+  }, [state.visible]);
+
+  const dismiss = () => {
+    setHowVisible(false);
+    setState({ visible: false, config: null });
+  };
 
   const handleUnlockPremium = () => {
     dismiss();
@@ -59,16 +94,27 @@ export default function PremiumUpsellProvider({
       try {
         (navigation as any).navigate('UnlockPremium');
       } catch {
-        // Fallback if UnlockPremium is not in the current stack
         console.warn('[PremiumUpsell] Could not navigate to UnlockPremium');
       }
     }, 150);
   };
 
   const featureName = state.config?.featureName ?? 'this feature';
-  const description =
+  // The feature explanation paragraph now lives behind "How does this work?"
+  const explanation =
     state.config?.description ??
     `${featureName} is available exclusively for Premium members. Upgrade now to unlock the full XS Card experience.`;
+
+  // Per-feature hero icon (MaterialCommunityIcons), defaulting to analytics.
+  const heroIconName = state.config?.icon ?? 'chart-bar';
+
+  // Per-feature body copy. When a trigger supplies static bodyText we use it
+  // verbatim; otherwise fall back to the dynamic contacts sentence.
+  const bodyText =
+    state.config?.bodyText ??
+    `Keep going, ${contactCount} ${
+      contactCount === 1 ? 'contact has' : 'contacts have'
+    } successfully scanned your card. To see more...`;
 
   return (
     <>
@@ -82,22 +128,37 @@ export default function PremiumUpsellProvider({
           onRequestClose={dismiss}
           statusBarTranslucent
         >
-          {/* Tap-outside-to-dismiss overlay */}
+          {/* Tap-outside-to-dismiss overlay (sits above the still-mounted side menu) */}
           <TouchableWithoutFeedback onPress={dismiss}>
             <View style={styles.overlay}>
               {/* Prevent taps inside the card from closing the modal */}
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.card}>
-                  {/* Premium icon */}
-                  <View style={styles.iconWrapper}>
-                    <MaterialIcons name="lock" size={52} color={COLORS.primary} />
-                  </View>
+                  {/* ✕ close button (top-right) */}
+                  <TouchableOpacity
+                    style={styles.closeButton}
+                    onPress={dismiss}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                  </TouchableOpacity>
 
-                  <Text style={styles.headline}>Premium Feature</Text>
+                  {/* Per-feature hero icon */}
+                  <MaterialCommunityIcons
+                    name={heroIconName as any}
+                    size={72}
+                    color={COLORS.primary}
+                    style={styles.heroIcon}
+                  />
 
-                  <Text style={styles.body}>{description}</Text>
+                  {/* Heading */}
+                  <Text style={styles.headline}>This is a premium feature</Text>
 
-                  {/* Primary CTA */}
+                  {/* Body — dynamic contact count */}
+                  <Text style={styles.body}>{bodyText}</Text>
+
+                  {/* Primary CTA (unchanged) */}
                   <TouchableOpacity
                     style={styles.primaryButton}
                     onPress={handleUnlockPremium}
@@ -112,7 +173,7 @@ export default function PremiumUpsellProvider({
                     <Text style={styles.primaryButtonText}>Unlock Premium</Text>
                   </TouchableOpacity>
 
-                  {/* Secondary dismiss */}
+                  {/* Secondary dismiss (unchanged) */}
                   <TouchableOpacity
                     style={styles.secondaryButton}
                     onPress={dismiss}
@@ -120,10 +181,58 @@ export default function PremiumUpsellProvider({
                   >
                     <Text style={styles.secondaryButtonText}>Maybe Later</Text>
                   </TouchableOpacity>
+
+                  {/* "How does this work?" (bottom-right) → nested modal */}
+                  <TouchableOpacity
+                    style={styles.howButton}
+                    onPress={() => setHowVisible(true)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons
+                      name="info-outline"
+                      size={14}
+                      color={COLORS.gray}
+                      style={styles.howIcon}
+                    />
+                    <Text style={styles.howText}>How does this work?</Text>
+                  </TouchableOpacity>
                 </View>
               </TouchableWithoutFeedback>
             </View>
           </TouchableWithoutFeedback>
+
+          {/* Nested "How does this work?" modal — layered above the upsell modal.
+              Closing it returns to the upsell modal (does NOT dismiss it). */}
+          {howVisible && (
+            <Modal
+              visible={true}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setHowVisible(false)}
+              statusBarTranslucent
+            >
+              <TouchableWithoutFeedback onPress={() => setHowVisible(false)}>
+                <View style={styles.overlay}>
+                  <TouchableWithoutFeedback onPress={() => {}}>
+                    <View style={styles.card}>
+                      <TouchableOpacity
+                        style={styles.closeButton}
+                        onPress={() => setHowVisible(false)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                      </TouchableOpacity>
+
+                      <Text style={styles.howHeadline}>How does this work?</Text>
+                      <Text style={styles.body}>{explanation}</Text>
+                    </View>
+                  </TouchableWithoutFeedback>
+                </View>
+              </TouchableWithoutFeedback>
+            </Modal>
+          )}
         </Modal>
       )}
     </>
@@ -137,11 +246,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    // Sit above the side menu without unmounting it
+    zIndex: 9999,
+    elevation: 20,
   },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
     padding: 30,
+    paddingBottom: 44, // room for the bottom-right "How does this work?" link
     alignItems: 'center',
     maxWidth: 400,
     width: '100%',
@@ -151,18 +264,23 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
-  iconWrapper: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#FFF0F3', // soft pink tint matching COLORS.primaryLight
+  closeButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    zIndex: 1,
+  },
+  heroIcon: {
+    marginTop: 8,
+    marginBottom: 16,
   },
   headline: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: COLORS.secondary,
     marginBottom: 12,
     textAlign: 'center',
@@ -201,5 +319,28 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 15,
     fontWeight: '500',
+  },
+  howButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  howIcon: {
+    marginRight: 4,
+  },
+  howText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500',
+  },
+  howHeadline: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+    marginTop: 8,
+    marginBottom: 14,
+    textAlign: 'center',
   },
 });

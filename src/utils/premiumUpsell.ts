@@ -17,10 +17,14 @@
  */
 
 export interface UpsellConfig {
-  /** Short label used in the popup headline, e.g. "Dashboard" */
+  /** Short label used in toasts/analytics, e.g. "Dashboard" */
   featureName: string;
-  /** Optional longer description shown in the popup body */
+  /** Feature explanation paragraph — shown in the nested "How does this work?" modal */
   description?: string;
+  /** MaterialCommunityIcons glyph name for the hero icon (e.g. 'chart-bar', 'calendar-clock') */
+  icon?: string;
+  /** Static main-body copy. If omitted, the modal shows the dynamic contacts sentence. */
+  bodyText?: string;
 }
 
 type UpsellListener = (config: UpsellConfig) => void;

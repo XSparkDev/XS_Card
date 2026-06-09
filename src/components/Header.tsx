@@ -180,24 +180,44 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   };
 
   const handleNavigate = (screenName: keyof RootStackParamList, screen?: string) => {
-    setIsMenuVisible(false);
-    // Wait for the menu modal fade-out to fully complete (animationType="fade" ~300ms)
-    // before triggering any further Modal or navigation. 400ms gives a buffer on slow
-    // devices so the menu is gone before the toast and upsell modals present.
-    setTimeout(() => {
-      try {
-        if (screenName === 'AdminDashboard') {
-          const featureName = screen === 'Calendar' ? 'Calendar' : 'Dashboard';
-          const description = screen === 'Calendar'
-            ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
-            : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
-          if (triggerUpsell({ featureName, description })) return;
+    // Premium-gated menu items (Dashboard / Calendar): for FREE users we must NOT
+    // close the side menu — the upsell modal overlays it (it lives above the
+    // navigator and renders on top). Closing the menu here previously caused
+    // freezes. The menu stays mounted; the modal sits over it.
+    if (screenName === 'AdminDashboard') {
+      const isCalendar = screen === 'Calendar';
+      const featureName = isCalendar ? 'Calendar' : 'Dashboard';
+      const description = isCalendar
+        ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
+        : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
+      const icon = isCalendar ? 'calendar-clock' : 'chart-bar';
+      const bodyText = isCalendar
+        ? 'Never miss an event. You have contacts ready to create an appointment and send a real invite.'
+        : undefined; // Dashboard uses the dynamic contacts sentence
+      // Free user → overlay the upsell, leave the menu mounted/open behind it.
+      if (triggerUpsell({ featureName, description, icon, bodyText })) return;
+      // Premium user → close the menu, then navigate once it has animated out.
+      setIsMenuVisible(false);
+      setTimeout(() => {
+        try {
           if (screen) {
             navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
           } else {
             navigation.navigate('AdminDashboard');
           }
-        } else if (screenName === 'Cards' || screenName === 'Contacts') {
+        } catch (error) {
+          console.error('Navigation error:', error);
+          Alert.alert('Error', 'Failed to navigate. Please try again.');
+        }
+      }, 400);
+      return;
+    }
+
+    // Non-gated items: close the menu, then navigate after the fade-out.
+    setIsMenuVisible(false);
+    setTimeout(() => {
+      try {
+        if (screenName === 'Cards' || screenName === 'Contacts') {
           (navigation as any).navigate('MainTabs', { screen: screenName });
         } else {
           navigation.navigate(screenName);
