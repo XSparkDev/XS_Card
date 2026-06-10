@@ -42,6 +42,7 @@ import { AuthManager } from '../../utils/authManager';
 import GradientAvatar from '../../components/GradientAvatar';
 import { getPlanLimits, UserPlan } from '../../utils/userPlan';
 import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
+import FeatureTip from '../../components/FeatureTip';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -1427,15 +1428,21 @@ export default function ContactsScreen() {
                     : 'When you share your card and they share their details back, they will appear here'}
               </Text>
               {!searchQuery && selectedCardFilter === 'all' && (
-                <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
-                  <MaterialIcons name="share" size={24} color={COLORS.white} />
-                  <Text style={styles.shareCardButtonText}>Share my card</Text>
-                </TouchableOpacity>
+                <FeatureTip
+                  tipKey="contacts_add_button"
+                  content="Contacts appear here after scanning your card"
+                  position="bottom"
+                >
+                  <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
+                    <MaterialIcons name="share" size={24} color={COLORS.white} />
+                    <Text style={styles.shareCardButtonText}>Share my card</Text>
+                  </TouchableOpacity>
+                </FeatureTip>
               )}
             </View>
           ) : (
             /* Contact List */
-            <ScrollView 
+            <ScrollView
               style={styles.contactsList}
               refreshControl={
                 <RefreshControl 
@@ -1453,10 +1460,10 @@ export default function ContactsScreen() {
               }}
               scrollEventThrottle={200}
             >
-              {filteredContacts.map((contact) => {
+              {filteredContacts.map((contact, index) => {
                 const contactKey = getContactKey(contact);
                 const isSelected = selectedContactKeys.has(contactKey);
-                return (
+                const card = (
                   <Swipeable
                     key={contactKey}
                     ref={(el) => swipeableRefs.current.set(contactKey, el)}
@@ -1520,6 +1527,17 @@ export default function ContactsScreen() {
                     </TouchableOpacity>
                   </Swipeable>
                 );
+                // Anchor the contacts tip to the first item only.
+                return index === 0 ? (
+                  <FeatureTip
+                    key={contactKey}
+                    tipKey="contacts_list_item"
+                    content="Tap a contact to view their details"
+                    position="bottom"
+                  >
+                    {card}
+                  </FeatureTip>
+                ) : card;
               })}
             </ScrollView>
           )}

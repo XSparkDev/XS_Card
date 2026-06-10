@@ -39,6 +39,7 @@ import EventCard from './components/EventCard';
 import EventFiltersComponent from './components/EventFilters';
 import EventNotificationToast from '../../components/EventNotificationToast';
 import EntryInfoModal from '../../components/EntryInfoModal';
+import FeatureTip from '../../components/FeatureTip';
 
 // Navigation types
 type RootStackParamList = {
@@ -627,13 +628,19 @@ export default function EventsScreen() {
 
         {/* Quick Action Buttons */}
         <View style={styles.quickActions}>
-          <TouchableOpacity 
-            style={styles.quickActionButton}
-            onPress={() => navigation.navigate('MyEvents')}
+          <FeatureTip
+            tipKey="events_list"
+            content="Your created and attended events appear here"
+            position="bottom"
           >
-            <MaterialIcons name="event-note" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>My Events</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('MyEvents')}
+            >
+              <MaterialIcons name="event-note" size={20} color={COLORS.primary} />
+              <Text style={styles.quickActionText}>My Events</Text>
+            </TouchableOpacity>
+          </FeatureTip>
 
           <TouchableOpacity 
             style={styles.quickActionButton}
@@ -643,13 +650,19 @@ export default function EventsScreen() {
             <Text style={styles.quickActionText}>Personalize</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.quickActionButton}
-            onPress={() => navigation.navigate('CreateEvent')}
+          <FeatureTip
+            tipKey="events_create"
+            content="Create an event and invite your contacts"
+            position="bottom"
           >
-            <MaterialIcons name="add" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>New Event</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('CreateEvent')}
+            >
+              <MaterialIcons name="add" size={20} color={COLORS.primary} />
+              <Text style={styles.quickActionText}>New Event</Text>
+            </TouchableOpacity>
+          </FeatureTip>
         </View>
       </View>
 

@@ -3,6 +3,8 @@ import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, 
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
+import FeatureTip from '../../components/FeatureTip';
+import { useTooltipContext } from '../../context/TooltipContext';
 import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh, forceLogoutExpiredToken } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -109,6 +111,7 @@ export default function CardsScreen() {
   const [qrCodes, setQrCodes] = useState<Record<number, string>>({});
   const [userData, setUserData] = useState<UserData | null>(null);
   const { colorScheme, updateColorScheme } = useColorScheme();
+  const { notifyScroll } = useTooltipContext();
   // Remove cardData state since it's now part of userData
   const borderRotation = useRef(new Animated.Value(0)).current;
   const [isShareModalVisible, setIsShareModalVisible] = useState(false);
@@ -916,11 +919,17 @@ export default function CardsScreen() {
         showAddButton={true}  // Add this prop
         rightIcon={
           !isTablet() ? (
-            <TouchableOpacity onPress={handleEditCard}>
-              <Text style={styles.headerIconContainer}>
-                <MaterialIcons name="edit" size={24} color={COLORS.white} />
-              </Text>
-            </TouchableOpacity>
+            <FeatureTip
+              tipKey="home_edit_button"
+              content="Update your card details, photo and info"
+              position="bottom"
+            >
+              <TouchableOpacity onPress={handleEditCard}>
+                <Text style={styles.headerIconContainer}>
+                  <MaterialIcons name="edit" size={24} color={COLORS.white} />
+                </Text>
+              </TouchableOpacity>
+            </FeatureTip>
           ) : undefined
         }
       />
@@ -988,7 +997,7 @@ export default function CardsScreen() {
                 </View>
               </>
             )}
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={isTablet() ? { paddingVertical: 0 } : undefined}>
+            <ScrollView showsVerticalScrollIndicator={false} scrollEventThrottle={1} onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)} contentContainerStyle={isTablet() ? { paddingVertical: 0 } : undefined}>
               {/* Render by template: 2 uses alternative layout; 3 uses outlined version; default keeps existing */}
               {card.template === 2 ? (
                 <View
@@ -1367,43 +1376,86 @@ export default function CardsScreen() {
                 })}
 
                 {/* Share and Wallet Buttons */}
-                <TouchableOpacity 
-                  onPress={() => setIsShareModalVisible(true)} 
-                  style={[getDynamicStyles(card.colorScheme || colorScheme).shareButton]}
+                <FeatureTip
+                  tipKey="home_qr_button"
+                  content="Share your card via QR code"
+                  position="top"
+                  bubbleAlign="left"
+                  inScrollView={true}
                 >
-                  <MaterialIcons name="share" size={isTablet() ? scale(24) : 24} color={COLORS.white} />
-                  <Text style={[
-                    styles.shareButtonText,
-                    isTablet() && { fontSize: scale(16) }
-                  ]}>
-                    Share
-                  </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setIsShareModalVisible(true)}
+                    style={[getDynamicStyles(card.colorScheme || colorScheme).shareButton]}
+                  >
+                    <MaterialIcons name="share" size={isTablet() ? scale(24) : 24} color={COLORS.white} />
+                    <Text style={[
+                      styles.shareButtonText,
+                      isTablet() && { fontSize: scale(16) }
+                    ]}>
+                      Share
+                    </Text>
+                  </TouchableOpacity>
+                </FeatureTip>
                 
-                <TouchableOpacity 
-                  onPress={handleAddToWallet} 
-                  style={[getDynamicStyles(card.colorScheme || colorScheme).walletButton]}
-                  disabled={isWalletLoading}
-                >
-                  {isWalletLoading ? (
-                    <ActivityIndicator size="small" color={card.colorScheme || colorScheme} />
-                  ) : (
-                    <>
-                      <MaterialCommunityIcons 
-                        name="wallet" 
-                        size={isTablet() ? scale(24) : 24} 
-                        color={card.colorScheme || colorScheme} 
-                      />
-                      <Text style={[
-                        styles.walletButtonText,
-                        { color: card.colorScheme || colorScheme },
-                        isTablet() && { fontSize: scale(16) }
-                      ]}>
-                        Add to {Platform.OS === 'ios' ? 'Apple' : 'Google'} Wallet
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                {Platform.OS === 'ios' ? (
+                  <FeatureTip
+                    tipKey="cards_apple_wallet"
+                    content="Save your card to Apple Wallet"
+                    position="top"
+                    bubbleAlign="right"
+                    inScrollView={true}
+                  >
+                    <TouchableOpacity
+                      onPress={handleAddToWallet}
+                      style={[getDynamicStyles(card.colorScheme || colorScheme).walletButton]}
+                      disabled={isWalletLoading}
+                    >
+                      {isWalletLoading ? (
+                        <ActivityIndicator size="small" color={card.colorScheme || colorScheme} />
+                      ) : (
+                        <>
+                          <MaterialCommunityIcons
+                            name="wallet"
+                            size={isTablet() ? scale(24) : 24}
+                            color={card.colorScheme || colorScheme}
+                          />
+                          <Text style={[
+                            styles.walletButtonText,
+                            { color: card.colorScheme || colorScheme },
+                            isTablet() && { fontSize: scale(16) }
+                          ]}>
+                            Add to Apple Wallet
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </FeatureTip>
+                ) : (
+                  <TouchableOpacity
+                    onPress={handleAddToWallet}
+                    style={[getDynamicStyles(card.colorScheme || colorScheme).walletButton]}
+                    disabled={isWalletLoading}
+                  >
+                    {isWalletLoading ? (
+                      <ActivityIndicator size="small" color={card.colorScheme || colorScheme} />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons
+                          name="wallet"
+                          size={isTablet() ? scale(24) : 24}
+                          color={card.colorScheme || colorScheme}
+                        />
+                        <Text style={[
+                          styles.walletButtonText,
+                          { color: card.colorScheme || colorScheme },
+                          isTablet() && { fontSize: scale(16) }
+                        ]}>
+                          Add to Google Wallet
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
               )}
             </ScrollView>

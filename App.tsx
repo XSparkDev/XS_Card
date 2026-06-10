@@ -10,6 +10,7 @@ import { EventNotificationProvider } from './src/context/EventNotificationContex
 import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
 import PremiumUpsellProvider from './src/components/PremiumUpsellProvider';
+import { TooltipProvider } from './src/context/TooltipContext';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
@@ -153,6 +154,7 @@ function AppContent() {
         <ColorSchemeProvider>
           <MeetingNotificationProvider>
           <ToastProvider>
+            <TooltipProvider>
             <NavigationContainer ref={navigationRef}>
               <PremiumUpsellProvider>
                 <ExpoStatusBar style="auto" translucent={true} />
@@ -162,7 +164,8 @@ function AppContent() {
                 </Stack.Navigator>
               </PremiumUpsellProvider>
             </NavigationContainer>
-            
+            </TooltipProvider>
+
             {/* Update Modal - shown when update is available */}
             {updateInfo && (
               <UpdateModal

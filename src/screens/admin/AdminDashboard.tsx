@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, ScrollView, Dimensions, Platform, ActivityIndic
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
 import EntryInfoModal from '../../components/EntryInfoModal';
+import FeatureTip from '../../components/FeatureTip';
 import { useAuth } from '../../context/AuthContext';
 import { LineChart } from 'react-native-chart-kit';
 import { API_BASE_URL, ENDPOINTS, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
@@ -513,6 +514,11 @@ export default function AdminDashboard() {
         <Text style={styles.sectionTitle}>Overview</Text>
         
         {/* Overview Cards - Removed ellipses icon */}
+        <FeatureTip
+          tipKey="dashboard_stats"
+          content="See how many people have scanned your card"
+          position="bottom"
+        >
         <View style={styles.overviewContainer}>
           <TouchableOpacity 
             style={[styles.overviewCard, { backgroundColor: COLORS.primary }]}
@@ -534,6 +540,7 @@ export default function AdminDashboard() {
             <MaterialCommunityIcons name="dots-horizontal" size={24} color="white" style={styles.cardIcon} />
           </TouchableOpacity>
         </View>
+        </FeatureTip>
 
         {/* Monthly Growth Section - Removed ellipses icon */}
         <View style={styles.growthSection}>
@@ -561,6 +568,11 @@ export default function AdminDashboard() {
             </View>
           </View>
           
+          <FeatureTip
+            tipKey="dashboard_chart"
+            content="Scan activity over time shown here"
+            position="top"
+          >
           <LineChart
             data={getFilteredChartData()}
             width={Dimensions.get('window').width - 40}
@@ -592,7 +604,8 @@ export default function AdminDashboard() {
             bezier
             style={styles.chart}
           />
-          
+          </FeatureTip>
+
           <Text style={styles.axisLabel}>Number of Cards/Contacts</Text>
           
           <View style={styles.legendContainer}>

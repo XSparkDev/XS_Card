@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar, Switch } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -9,6 +9,8 @@ import { useColorScheme } from '../context/ColorSchemeContext';
 import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
+import { useTooltipContext } from '../context/TooltipContext';
+import FeatureTip from './FeatureTip';
 
 // Update this type to match your actual navigation type
 type RootStackParamList = {
@@ -41,8 +43,20 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const { colorScheme } = useColorScheme();
   const { logout, updateUserPlan } = useAuth(); // Use our centralized auth context
   const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
+  const { tooltipsEnabled, setTooltipsEnabled, resetTips } = useTooltipContext();
   // Only show premium lock badges once the plan is definitively known.
   const showLock = !isLoadingUserStatus && !isPremium;
+
+  const handleResetTips = () => {
+    Alert.alert(
+      'Reset tips',
+      'This will show all feature tips again. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => { resetTips(); } },
+      ],
+    );
+  };
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
   const syncUserPlan = async () => {
@@ -249,11 +263,17 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
 
         <View style={styles.rightIconContainer}>
           {showAddButton && userPlan !== 'enterprise' && (
-            <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
-              <Text style={styles.iconContainer}>
-                <MaterialIcons name="add" size={24} color={COLORS.white} />
-              </Text>
-            </TouchableOpacity>
+            <FeatureTip
+              tipKey="home_add_button"
+              content="Tap to add a new card"
+              position="bottom"
+            >
+              <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
+                <Text style={styles.iconContainer}>
+                  <MaterialIcons name="add" size={24} color={COLORS.white} />
+                </Text>
+              </TouchableOpacity>
+            </FeatureTip>
           )}
           {rightIcon}
         </View>
@@ -327,7 +347,53 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
 
 
 
-            <TouchableOpacity 
+            {/* Premium upgrade — free users only */}
+            {showLock && (
+              <FeatureTip
+                tipKey="menu_premium"
+                content="Upgrade for analytics, more cards and paid events"
+                position="right"
+              >
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setIsMenuVisible(false);
+                    setTimeout(() => {
+                      try { navigation.navigate('UnlockPremium'); } catch {}
+                    }, 400);
+                  }}
+                >
+                  <MaterialIcons name="workspace-premium" size={24} color={COLORS.primary} />
+                  <Text style={[styles.menuText, { color: COLORS.primary }]}>Upgrade to Premium</Text>
+                </TouchableOpacity>
+              </FeatureTip>
+            )}
+
+            {/* ── Feature Tips controls (separated from navigation) ── */}
+            <View style={styles.tipsDivider} />
+
+            <View style={styles.menuItem}>
+              <MaterialIcons name="lightbulb-outline" size={24} color={COLORS.secondary} />
+              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Feature Tips</Text>
+              <Switch
+                value={tooltipsEnabled}
+                onValueChange={setTooltipsEnabled}
+                trackColor={{ false: COLORS.disabled, true: COLORS.primary }}
+                thumbColor={COLORS.white}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.resetTipsButton}
+              onPress={handleResetTips}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.resetTipsText}>Reset tips</Text>
+            </TouchableOpacity>
+
+            <View style={styles.tipsDivider} />
+
+            <TouchableOpacity
               style={styles.menuItem}
               onPress={handleLogout}
             >
@@ -415,5 +481,20 @@ const styles = StyleSheet.create({
   },
   premiumBadge: {
     marginLeft: 4,
+  },
+  tipsDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 6,
+    marginHorizontal: 4,
+  },
+  resetTipsButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'flex-start',
+  },
+  resetTipsText: {
+    fontSize: 13,
+    color: COLORS.gray,
   },
 });

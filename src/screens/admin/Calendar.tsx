@@ -4,6 +4,7 @@ import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
 import EntryInfoModal from '../../components/EntryInfoModal';
+import FeatureTip from '../../components/FeatureTip';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { AdminTabParamList, AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, getUserId, buildUrl, authenticatedFetchWithRefresh, forceLogoutExpiredToken, useToast } from '../../utils/api';
@@ -2358,6 +2359,11 @@ const renderEventDate = (dateStr: string) => {
           />
         }
       >
+        <FeatureTip
+          tipKey="calendar_grid"
+          content="Your upcoming appointments appear here"
+          position="top"
+        >
         <RNCalendar
           style={styles.calendar}
           minDate={todayString} // Add minimum date to prevent selecting past dates
@@ -2379,8 +2385,14 @@ const renderEventDate = (dateStr: string) => {
           }}
           onDayPress={(day: DateData) => setSelectedDate(day.dateString)}
         />
+        </FeatureTip>
 
         {/* Schedule Meeting Button */}
+        <FeatureTip
+          tipKey="calendar_create"
+          content="Schedule a meeting with your contacts"
+          position="bottom"
+        >
         <TouchableOpacity
           style={[
             styles.scheduleMeetingButton,
@@ -2403,6 +2415,7 @@ const renderEventDate = (dateStr: string) => {
             Schedule Meeting
           </Text>
         </TouchableOpacity>
+        </FeatureTip>
 
         {/* Share, Filter, and Settings Buttons */}
         <View style={styles.actionsContainer}>
