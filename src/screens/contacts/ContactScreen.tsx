@@ -396,6 +396,8 @@ export default function ContactsScreen() {
   }, []);
 
   const hasAdvancedFeatures = getPlanLimits(userPlan).hasAdvancedFeatures;
+  const isFreeUser = userPlan === 'free';
+  const firstSpeakerCardIndex = cardFilterOptions.find(c => c.isSpeakerEngagementCard)?.cardIndex ?? -1;
   const selectedCardFilterOption = cardFilterOptions.find(
     (card) => card.cardIndex === selectedCardFilter
   );
@@ -1301,28 +1303,44 @@ export default function ContactsScreen() {
           {cardFilterOptions.length > 0 && (
             <View style={styles.filterSection}>
               <Text style={styles.filterSectionLabel}>Filter</Text>
-              <TouchableOpacity
-                style={styles.filterDropdownTrigger}
-                onPress={() => {
-                  if (triggerUpsell({ featureName: 'Contact Filter', description: 'Filter contacts by card lets you instantly find contacts from a specific card. Upgrade to Premium to use this feature.' })) return;
-                  setIsCardFilterDropdownVisible((prev) => !prev);
-                }}
-                activeOpacity={0.8}
+              <FeatureTip
+                tipKey="contacts_filter_bar"
+                content="Filter your contacts by which card they scanned"
+                position="top"
               >
-                <View style={styles.filterTriggerContent}>
-                  {selectedCardFilterOption?.isSpeakerEngagementCard && (
-                    <View style={styles.speakerIndicatorDot} />
-                  )}
-                  <Text style={styles.filterDropdownTriggerText}>
-                    {selectedCardFilterLabel}
-                  </Text>
-                </View>
-                <MaterialIcons
-                  name={isCardFilterDropdownVisible ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
-                  size={24}
-                  color={COLORS.gray}
-                />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.filterDropdownTrigger}
+                  onPress={() => {
+                    if (triggerUpsell({ featureName: 'Contact Filter', description: 'Filter contacts by card lets you instantly find contacts from a specific card. Upgrade to Premium to use this feature.' })) return;
+                    setIsCardFilterDropdownVisible((prev) => !prev);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.filterTriggerContent}>
+                    {selectedCardFilterOption?.isSpeakerEngagementCard && (
+                      !isFreeUser ? (
+                        <FeatureTip
+                          tipKey="contacts_speaker_icon"
+                          content="A speaker engagement card is currently selected"
+                          position="bottom"
+                        >
+                          <View style={styles.speakerIndicatorDot} />
+                        </FeatureTip>
+                      ) : (
+                        <View style={styles.speakerIndicatorDot} />
+                      )
+                    )}
+                    <Text style={styles.filterDropdownTriggerText}>
+                      {selectedCardFilterLabel}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name={isCardFilterDropdownVisible ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={24}
+                    color={COLORS.gray}
+                  />
+                </TouchableOpacity>
+              </FeatureTip>
 
               {isCardFilterDropdownVisible && (
                 <View style={styles.filterDropdownMenu}>
@@ -1361,10 +1379,23 @@ export default function ContactsScreen() {
                             {card.label}
                           </Text>
                           {card.isSpeakerEngagementCard && (
-                            <View style={styles.speakerBadge}>
-                              <View style={styles.speakerBadgeDot} />
-                              <Text style={styles.speakerBadgeText}>Speaker</Text>
-                            </View>
+                            !isFreeUser && card.cardIndex === firstSpeakerCardIndex ? (
+                              <FeatureTip
+                                tipKey="contacts_engagement_indicator"
+                                content="Speaker engagement cards track contacts from events"
+                                position="right"
+                              >
+                                <View style={styles.speakerBadge}>
+                                  <View style={styles.speakerBadgeDot} />
+                                  <Text style={styles.speakerBadgeText}>Speaker</Text>
+                                </View>
+                              </FeatureTip>
+                            ) : (
+                              <View style={styles.speakerBadge}>
+                                <View style={styles.speakerBadgeDot} />
+                                <Text style={styles.speakerBadgeText}>Speaker</Text>
+                              </View>
+                            )
                           )}
                         </View>
                         {isSelected && (

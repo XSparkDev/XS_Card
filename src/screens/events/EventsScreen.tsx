@@ -632,6 +632,7 @@ export default function EventsScreen() {
             tipKey="events_list"
             content="Your created and attended events appear here"
             position="bottom"
+            bubbleAlign="left"
           >
             <TouchableOpacity
               style={styles.quickActionButton}
@@ -654,6 +655,7 @@ export default function EventsScreen() {
             tipKey="events_create"
             content="Create an event and invite your contacts"
             position="bottom"
+            bubbleAlign="right"
           >
             <TouchableOpacity
               style={styles.quickActionButton}
