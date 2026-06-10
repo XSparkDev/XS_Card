@@ -40,7 +40,9 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const { colorScheme } = useColorScheme();
   const { logout, updateUserPlan } = useAuth(); // Use our centralized auth context
-  const { triggerUpsell, isPremium } = usePremiumUpsell();
+  const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
+  // Only show premium lock badges once the plan is definitively known.
+  const showLock = !isLoadingUserStatus && !isPremium;
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
   const syncUserPlan = async () => {
@@ -275,7 +277,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             >
               <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
-              {!isPremium && (
+              {showLock && (
                 <MaterialIcons name="lock" size={14} color={COLORS.primary} style={styles.premiumBadge} />
               )}
             </TouchableOpacity>
@@ -286,7 +288,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             >
               <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
               <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
-              {!isPremium && (
+              {showLock && (
                 <MaterialIcons name="lock" size={14} color={COLORS.primary} style={styles.premiumBadge} />
               )}
             </TouchableOpacity>

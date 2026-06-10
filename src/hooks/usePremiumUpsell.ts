@@ -1,29 +1,24 @@
 /**
  * usePremiumUpsell — THE single, canonical free-vs-premium gate for the app.
  *
- * Every upsell trigger and every premium indicator icon uses this hook, which
- * delegates to the one shared `isFreeUser()` utility in utils/userPlan. No
- * other file may contain an inline plan comparison.
+ * Reads the authoritative plan from AuthContext (the single source of truth,
+ * resolved from the backend) via the derived `isFreeUser`, and exposes the
+ * loading gate so callers never evaluate premium UI before the plan is known.
  *
- * Plan field: user.plan (string) from AuthContext.
- *   free value    : 'free'                              → blocked
- *   premium values: 'premium' | 'enterprise' | 'admin'  → allowed
- *
- * FAIL OPEN: if user / user.plan is null, undefined, or still loading, the user
- * is treated as PREMIUM (allowed). A user is only blocked when their plan is
- * EXPLICITLY 'free'. This prevents premium users ever being blocked by a stale
- * or not-yet-loaded plan value.
+ *   isPremium            — true only for an explicitly premium plan (fail-closed)
+ *   isLoadingUserStatus  — true until the backend plan has resolved; gate UI on this
+ *   triggerUpsell(config)— free user → show modal + return true (block);
+ *                          premium → return false (proceed)
  */
 
 import { useAuth } from '../context/AuthContext';
-import { isFreeUser } from '../utils/userPlan';
 import { premiumUpsellService, UpsellConfig } from '../utils/premiumUpsell';
 
 export function usePremiumUpsell() {
-  const { user } = useAuth();
+  const { user, isFreeUser, isLoadingUserStatus } = useAuth();
 
-  // Single shared, fail-open check.
-  const isPremium = !isFreeUser(user);
+  // Canonical, fail-closed value from the single source of truth.
+  const isPremium = !isFreeUser;
 
   /**
    * Gate a premium feature.
@@ -38,5 +33,5 @@ export function usePremiumUpsell() {
 
   const plan = String(user?.plan ?? 'free').trim().toLowerCase() || 'free';
 
-  return { triggerUpsell, isPremium, plan };
+  return { triggerUpsell, isPremium, isFreeUser, isLoadingUserStatus, plan };
 }

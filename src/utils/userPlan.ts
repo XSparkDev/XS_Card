@@ -30,21 +30,31 @@ export const isPremiumUser = async (): Promise<boolean> => {
   return plan === 'premium' || plan === 'enterprise';
 };
 
+/** The plan strings that grant premium access (case-insensitive). */
+const PREMIUM_PLANS = new Set(['premium', 'enterprise', 'admin']);
+
+/** True only if the given plan value explicitly grants premium access. */
+export const planIsPremium = (plan?: string | null): boolean =>
+  PREMIUM_PLANS.has(String(plan ?? '').trim().toLowerCase());
+
 /**
  * THE single, canonical free-vs-premium gate used everywhere (upsell triggers,
  * lock icons, feature gates). Takes the user object (or anything carrying a
  * `plan` field).
  *
- * FAIL OPEN: a user is only "free" when their plan is EXPLICITLY 'free'.
- * If the plan is undefined/null/loading or any premium tier
- * (premium/enterprise/admin), the user is NOT free — access is allowed.
- * This guarantees we never block a premium user because their in-memory plan
- * is stale or has not finished loading.
+ * FAIL CLOSED: a user is premium ONLY when their plan is explicitly a premium
+ * tier (premium/enterprise/admin). Anything else — 'free', '', null, undefined,
+ * or an unrecognised value — is treated as FREE (restricted). This guarantees a
+ * free user can never accidentally be granted premium access while data is
+ * missing or still loading.
  *
- * Comparison is case-insensitive to tolerate backend casing variants.
+ * IMPORTANT: because this fails closed, callers that gate visible UI must wait
+ * for `isLoadingUserStatus === false` (from AuthContext) before evaluating it,
+ * so a premium user is not briefly shown restricted UI during the initial
+ * plan fetch. See AuthContext.isLoadingUserStatus.
  */
 export const isFreeUser = (user?: { plan?: string | null } | null): boolean =>
-  String(user?.plan ?? '').trim().toLowerCase() === 'free';
+  !planIsPremium(user?.plan);
 
 // Get plan limits
 export const getPlanLimits = (plan: UserPlan): PlanLimits => {

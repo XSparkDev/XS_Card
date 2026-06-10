@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Modal, 
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
+import EntryInfoModal from '../../components/EntryInfoModal';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { AdminTabParamList, AuthStackParamList } from '../../types';
 import { API_BASE_URL, ENDPOINTS, getUserId, buildUrl, authenticatedFetchWithRefresh, forceLogoutExpiredToken, useToast } from '../../utils/api';
@@ -2717,6 +2718,17 @@ const renderEventDate = (dateStr: string) => {
           </View>
         </View>
       </Modal>
+
+      <EntryInfoModal
+        icon="calendar-clock"
+        heading="Your Calendar"
+        freeTextBefore="The Calendar gives you full control over your event schedule. To unlock it, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText="Welcome to your Calendar. Schedule and manage meetings, create appointments from your contacts, and send real invites — all in one place. Tap a day to add or review what's coming up."
+        howItWorksText="The Calendar pulls together your meetings and appointments in one schedule. You can create an appointment directly from a contact, send a real calendar invite, and manage your availability via Calendar Preferences. Bookings and changes sync with the backend so your schedule stays up to date across the app."
+        dontShowAgainKey="calendar_dont_show_again"
+      />
       </View>
     </TouchableWithoutFeedback>
   );

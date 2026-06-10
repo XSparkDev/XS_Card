@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
 import { useColorScheme } from '../../context/ColorSchemeContext';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 import { useEventNotifications } from '../../context/EventNotificationContext';
 import { authenticatedFetchWithRefresh, ENDPOINTS, API_BASE_URL } from '../../utils/api';
 import { useToast } from '../../hooks/useToast';
@@ -37,6 +38,7 @@ import { enhanceEventsWithOrganizerInfo } from '../../services/eventService';
 import EventCard from './components/EventCard';
 import EventFiltersComponent from './components/EventFilters';
 import EventNotificationToast from '../../components/EventNotificationToast';
+import EntryInfoModal from '../../components/EntryInfoModal';
 
 // Navigation types
 type RootStackParamList = {
@@ -56,6 +58,8 @@ export default function EventsScreen() {
   const { colorScheme } = useColorScheme();
   const { connected, connectToSocket, notifications } = useEventNotifications();
   const toast = useToast();
+  const { isFreeUser, isLoadingUserStatus } = usePremiumUpsell();
+  console.log('[Events] Screen rendering, isFreeUser:', isFreeUser, 'isLoadingUserStatus:', isLoadingUserStatus);
 
   // State management
   const [events, setEvents] = useState<Event[]>([]);
@@ -79,6 +83,16 @@ export default function EventsScreen() {
   const [isRecentEventsExpanded, setIsRecentEventsExpanded] = useState(true);
   const [recentEventsHeight] = useState(new Animated.Value(1)); // Start expanded
   const [recentEventsRotation] = useState(new Animated.Value(0)); // For chevron rotation
+
+  // Sequencing gate: the upsell (Modal 2) only evaluates AFTER the explainer
+  // (Modal 1) has resolved this focus. Reset to false on every focus so the
+  // order (explainer → upsell) is enforced on each visit.
+  const [explainerResolved, setExplainerResolved] = useState(false);
+  useFocusEffect(
+    React.useCallback(() => {
+      setExplainerResolved(false);
+    }, []),
+  );
 
   // Load events when screen focuses
   useFocusEffect(
@@ -694,6 +708,37 @@ export default function EventsScreen() {
       )}
 
       {renderRecentEvents()}
+
+      {/* Modal 1 — Events Explainer (all users; "Don't show again", no count) */}
+      <EntryInfoModal
+        name="explainer"
+        dontShowAgainKey="events_explainer_dont_show_again"
+        icon="calendar-star"
+        heading="How Events Works"
+        freeTextBefore="This is a freemium feature. You have access to the majority of the functionality — browse public events, register/RSVP, and manage your own from My Events. To create paid events, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText="You have full access. Create events, invite your contacts, set ticket prices, and manage RSVPs all from one place."
+        howItWorksText="Events shows a live, real-time feed of public events (the dot in the header turns green when you're connected). Filter the feed, open an event to register or RSVP, and revisit anything under Recently Viewed. Tap + to create a New Event, invite contacts, and manage attendees and registrations from My Events, while Personalize controls your event preferences. Free accounts can use all of this for free events; creating paid (ticketed) events — which run through secure checkout and organiser registration — requires Premium."
+        onResolved={() => setExplainerResolved(true)}
+      />
+
+      {/* Modal 2 — Freemium Upsell (free users only; max 3, after Modal 1) */}
+      <EntryInfoModal
+        name="upsell"
+        sequenced
+        storageKey="events_upsell_seen_count"
+        requireFreeUser
+        showUpsellButtons
+        enabled={explainerResolved}
+        icon="ticket-confirmation"
+        heading="Freemium Feature"
+        freeTextBefore="This is a premium feature, however, you have access to majority of the functionality. To create paid events, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText=""
+        howItWorksText="Paid (ticketed) events let you charge for attendance. Attendees check out securely, and you register as an organiser to receive payouts and manage tickets. Everything else in Events — browsing, free events, RSVPs and My Events — stays available on the free plan."
+      />
     </View>
   );
 }

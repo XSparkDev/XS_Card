@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, Platform, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
+import EntryInfoModal from '../../components/EntryInfoModal';
+import { useAuth } from '../../context/AuthContext';
 import { LineChart } from 'react-native-chart-kit';
 import { API_BASE_URL, ENDPOINTS, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -120,6 +122,7 @@ export default function AdminDashboard() {
   const [userPlan, setUserPlan] = useState<string>('free');
   const [timeRange, setTimeRange] = useState<'3m' | '6m' | '1y'>('6m');
   const navigation = useNavigation<AdminDashboardNavigationProp>();
+  const { isFreeUser, isLoadingUserStatus } = useAuth();
   const [showContactsModal, setShowContactsModal] = useState(false);
   const [showCardsModal, setShowCardsModal] = useState(false);
   const [contactsList, setContactsList] = useState<Contact[]>([]);
@@ -435,28 +438,15 @@ export default function AdminDashboard() {
     }, [timeRange])
   );
 
+  // Free-user guard, driven by the single canonical source of truth.
+  // Wait until the plan is definitively resolved (isLoadingUserStatus === false)
+  // before evaluating, so a premium user is never bounced during the fetch.
   useEffect(() => {
-    const checkUserPlan = async () => {
-      try {
-        const userData = await AsyncStorage.getItem('userData');
-        if (userData) {
-          const { plan } = JSON.parse(userData);
-          setUserPlan(plan);
-          // Free users should have been blocked in the Header before reaching here.
-          // If they somehow arrive, go back rather than resetting the whole stack
-          // (a full reset while a modal may be animating causes a freeze).
-          if (plan === 'free') {
-            navigation.goBack();
-          }
-        }
-      } catch (error) {
-        console.error('Error checking user plan:', error);
-        navigation.goBack();
-      }
-    };
-
-    checkUserPlan();
-  }, [navigation]);
+    if (isLoadingUserStatus) return;
+    if (isFreeUser) {
+      navigation.goBack();
+    }
+  }, [navigation, isFreeUser, isLoadingUserStatus]);
 
   // Refetch data when time range changes
   useEffect(() => {
@@ -661,10 +651,27 @@ export default function AdminDashboard() {
         contacts={contactsList}
       />
 
-      <CardsModal 
+      <CardsModal
         visible={showCardsModal}
         onClose={() => setShowCardsModal(false)}
         cards={cardsList}
+      />
+
+      <EntryInfoModal
+        icon="view-dashboard"
+        heading="Your Dashboard"
+        freeTextBefore="Get a snapshot of your card's performance — your total cards, contacts and recent growth. To unlock full analytics and insights, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText="Welcome to your Dashboard. Here you can track your Total Cards and Total Contacts, see your Average Card Views, and follow Monthly Growth and Contact Growth to measure the reach of your digital business card."
+        featureIcons={[
+          { icon: 'eye', label: 'Card Views' },
+          { icon: 'account-group', label: 'Contacts' },
+          { icon: 'card-account-details', label: 'Cards' },
+          { icon: 'chart-line', label: 'Growth' },
+        ]}
+        howItWorksText="The Dashboard reads from your own cards and contacts. The Overview shows your Total Cards and Total Contacts; the charts plot Monthly Growth, Average Card Views and Contact Growth over the last several months. Tapping a card opens its underlying list. For speed, recent data is served from a local cache and refreshed from the backend in the background, so the numbers stay current without slowing the screen down."
+        dontShowAgainKey="dashboard_dont_show_again"
       />
     </View>
   );

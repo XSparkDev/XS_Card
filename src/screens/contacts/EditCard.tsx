@@ -73,7 +73,7 @@ export default function EditCard() {
   const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { triggerUpsell, isPremium } = usePremiumUpsell();
+  const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -398,7 +398,8 @@ export default function EditCard() {
   };
 
   const hasAdvancedFeatures = getPlanLimits(userPlan as UserPlan).hasAdvancedFeatures;
-  const hasAltNumberAccess = userPlan === 'premium' || userPlan === 'enterprise';
+  // Alt-number access uses the single canonical premium gate (fail-closed).
+  const hasAltNumberAccess = isPremium;
   const isAltNumberLocked = !hasAltNumberAccess;
 
   const showAltNumberUpsell = () => {
@@ -1624,7 +1625,7 @@ export default function EditCard() {
             >
               <View style={styles.toggleLabelRow}>
                 <Text style={styles.toggleLabel}>Show alt number on card</Text>
-                {!isPremium && (
+                {!isLoadingUserStatus && !isPremium && (
                   <View style={styles.premiumBadge}>
                     <MaterialIcons name="lock" size={14} color={COLORS.white} />
                     <Text style={styles.premiumBadgeText}>Premium</Text>
