@@ -17,6 +17,7 @@ import {
   Dimensions,
   Pressable,
   InteractionManager,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -345,7 +346,7 @@ export default function ContactsScreen() {
   
   // Core state
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const { triggerUpsell } = usePremiumUpsell();
+  const { triggerUpsell, isFreeUser: isFreeUserFromPlan, isLoadingUserStatus } = usePremiumUpsell();
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -372,6 +373,13 @@ export default function ContactsScreen() {
   const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [pressedCopyRowId, setPressedCopyRowId] = useState<string | null>(null);
+  const [showUpsellModal, setShowUpsellModal] = useState(false);
+  const [showUpsellInfoModal, setShowUpsellInfoModal] = useState(false);
+  const [upsellDontShow, setUpsellDontShow] = useState(false);
+
+  // Upsell modal refs
+  const upsellFocusedRef = useRef(false);
+  const upsellEvaluatedRef = useRef(false);
 
   // Toast
   const toast = useToast();
@@ -1227,6 +1235,75 @@ export default function ContactsScreen() {
     }, [loadContacts, closeAllSwipeables])
   );
 
+  // ============= UPSELL MODAL =============
+
+  const checkAndShowUpsell = useCallback(async () => {
+    if (upsellEvaluatedRef.current) return;
+
+    // 1. Loading gate
+    if (isLoadingUserStatus) {
+      console.log('[ContactsUpsell] Skipping - user status still loading');
+      return;
+    }
+
+    // 2. User type gate — isFreeUser === false means premium; null/undefined defaults to showing
+    if (isFreeUserFromPlan === false) {
+      console.log('[ContactsUpsell] Skipping - user is premium');
+      upsellEvaluatedRef.current = true;
+      return;
+    }
+
+    upsellEvaluatedRef.current = true;
+
+    try {
+      // 3. Don't show again gate
+      const dontShow = await AsyncStorage.getItem('contacts_upsell_dont_show_again');
+      if (dontShow === 'true') {
+        console.log('[ContactsUpsell] Skipping - dont show again is set');
+        return;
+      }
+
+      // 4. All checks passed — show modal
+      console.log('[ContactsUpsell] All checks passed - showing modal');
+      setUpsellDontShow(false); // always unchecked on open
+      setShowUpsellModal(true);
+    } catch {
+      console.log('[ContactsUpsell] AsyncStorage read failed - defaulting to show');
+      setUpsellDontShow(false);
+      setShowUpsellModal(true);
+    }
+  }, [isFreeUserFromPlan, isLoadingUserStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      upsellFocusedRef.current = true;
+      upsellEvaluatedRef.current = false;
+      checkAndShowUpsell();
+      return () => { upsellFocusedRef.current = false; };
+    }, [checkAndShowUpsell])
+  );
+
+  useEffect(() => {
+    if (!isLoadingUserStatus && upsellFocusedRef.current && !upsellEvaluatedRef.current) {
+      checkAndShowUpsell();
+    }
+  }, [isLoadingUserStatus, checkAndShowUpsell]);
+
+  const dismissUpsellModal = useCallback(() => {
+    if (upsellDontShow) {
+      AsyncStorage.setItem('contacts_upsell_dont_show_again', 'true').catch(() => {});
+    }
+    setShowUpsellModal(false);
+  }, [upsellDontShow]);
+
+  const handleUpsellUnlockPremium = useCallback(() => {
+    if (upsellDontShow) {
+      AsyncStorage.setItem('contacts_upsell_dont_show_again', 'true').catch(() => {});
+    }
+    setShowUpsellModal(false);
+    navigation.navigate('UnlockPremium');
+  }, [navigation, upsellDontShow]);
+
   // ============= RENDER =============
 
   return (
@@ -1987,6 +2064,132 @@ export default function ContactsScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Contacts Upsell Modal */}
+        <Modal
+          visible={showUpsellModal}
+          transparent
+          animationType="fade"
+          onRequestClose={dismissUpsellModal}
+          statusBarTranslucent
+        >
+          <TouchableWithoutFeedback onPress={dismissUpsellModal}>
+            <View style={styles.upsellOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={styles.upsellCard}>
+                  <TouchableOpacity
+                    style={styles.upsellCloseButton}
+                    onPress={dismissUpsellModal}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                  </TouchableOpacity>
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    style={{ width: '100%' }}
+                    contentContainerStyle={styles.upsellScrollContent}
+                  >
+                    <MaterialCommunityIcons
+                      name="account-network"
+                      size={72}
+                      color={COLORS.primary}
+                      style={styles.upsellHeroIcon}
+                    />
+                    <Text style={styles.upsellHeadline}>Your Network is Your Net Worth</Text>
+                    <Text style={styles.upsellBody}>
+                      85% of opportunities in business come through people you know — not job boards, not cold emails. The professionals who grow fastest aren't the most talented, they're the most connected.
+                    </Text>
+                    <Text style={[styles.upsellBody, { marginTop: 10 }]}>
+                      The average person needs over 200 meaningful connections to fully unlock the opportunities around them. Right now, you're building something real. Don't let your network hit a ceiling.
+                    </Text>
+                    <Text style={[styles.upsellBody, { marginTop: 12 }]}>
+                      Ready to go further?{' '}
+                      <Text style={styles.upsellLink} onPress={handleUpsellUnlockPremium}>
+                        Unlock Premium
+                      </Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.upsellPrimaryButton}
+                      onPress={handleUpsellUnlockPremium}
+                      activeOpacity={0.85}
+                    >
+                      <MaterialIcons name="star" size={18} color={COLORS.white} style={styles.upsellBtnIcon} />
+                      <Text style={styles.upsellPrimaryButtonText}>Unlock Premium</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.upsellSecondaryButton}
+                      onPress={dismissUpsellModal}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.upsellSecondaryButtonText}>Maybe Later</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.upsellDontShowRow}
+                      onPress={() => setUpsellDontShow((v) => !v)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: upsellDontShow }}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <View style={[styles.upsellCheckbox, upsellDontShow && styles.upsellCheckboxChecked]}>
+                        {upsellDontShow && (
+                          <MaterialIcons name="check" size={14} color={COLORS.white} />
+                        )}
+                      </View>
+                      <Text style={styles.upsellDontShowLabel}>Don't show again</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                  <TouchableOpacity
+                    style={styles.upsellInfoButton}
+                    onPress={() => setShowUpsellInfoModal(true)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="info-outline" size={14} color={COLORS.gray} style={{ marginRight: 4 }} />
+                    <Text style={styles.upsellInfoText}>What does premium unlock?</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+
+        {/* Upsell nested info modal */}
+        <Modal
+          visible={showUpsellInfoModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowUpsellInfoModal(false)}
+          statusBarTranslucent
+        >
+          <TouchableWithoutFeedback onPress={() => setShowUpsellInfoModal(false)}>
+            <View style={styles.upsellOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={[styles.upsellCard, { paddingBottom: 30 }]}>
+                  <TouchableOpacity
+                    style={styles.upsellCloseButton}
+                    onPress={() => setShowUpsellInfoModal(false)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                  </TouchableOpacity>
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    style={{ width: '100%' }}
+                    contentContainerStyle={styles.upsellScrollContent}
+                  >
+                    <Text style={styles.upsellHeadline}>Premium Contacts</Text>
+                    <Text style={styles.upsellBody}>
+                      With premium, your contacts are unlimited. See who engaged with your card, when they scanned it, and how often. Filter by engagement level, get notified when a contact views your card again, and use the calendar to turn connections into appointments — all from one place.
+                    </Text>
+                  </ScrollView>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </View>
     </GestureHandlerRootView>
   );
@@ -2589,5 +2792,133 @@ const styles = StyleSheet.create({
   },
   copySheetCancelText: {
     textAlign: 'center',
+  },
+  upsellOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+    elevation: 20,
+  },
+  upsellCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    paddingBottom: 44,
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '100%',
+    maxHeight: '85%' as any,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  upsellScrollContent: {
+    paddingHorizontal: 30,
+    paddingTop: 30,
+    paddingBottom: 8,
+    alignItems: 'center' as const,
+  },
+  upsellCloseButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  upsellHeroIcon: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  upsellHeadline: {
+    fontSize: 22,
+    fontWeight: 'bold' as const,
+    color: COLORS.secondary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  upsellBody: {
+    fontSize: 14,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  upsellLink: {
+    color: COLORS.primary,
+    fontWeight: '700' as const,
+  },
+  upsellPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    width: '100%',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  upsellBtnIcon: {
+    marginRight: 8,
+  },
+  upsellPrimaryButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  upsellSecondaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  upsellSecondaryButtonText: {
+    color: COLORS.gray,
+    fontSize: 15,
+    fontWeight: '500' as const,
+  },
+  upsellInfoButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  upsellInfoText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500' as const,
+  },
+  upsellDontShowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 18,
+    paddingBottom: 16,
+  },
+  upsellCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.gray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  upsellCheckboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  upsellDontShowLabel: {
+    fontSize: 12,
+    color: COLORS.gray,
   },
 });
