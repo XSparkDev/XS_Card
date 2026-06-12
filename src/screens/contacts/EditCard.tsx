@@ -1674,6 +1674,12 @@ export default function EditCard() {
             <View style={styles.toggleContainer}>
               <View style={styles.toggleLabelRow}>
                 <Text style={styles.toggleLabel}>My Speaker and Engagement Card</Text>
+                {!isPremium && (
+                  <View style={styles.premiumBadge}>
+                    <MaterialIcons name="lock" size={11} color={COLORS.white} />
+                    <Text style={styles.premiumBadgeText}>PREMIUM</Text>
+                  </View>
+                )}
                 <TouchableOpacity
                   style={styles.tooltipButton}
                   onPress={handleSpeakerTooltipPress}
@@ -1686,20 +1692,35 @@ export default function EditCard() {
               <TouchableOpacity
                 style={[
                   styles.toggleSwitch,
-                  isSpeakerEngagementCard && styles.toggleSwitchActive
+                  isPremium && isSpeakerEngagementCard && styles.toggleSwitchActive,
+                  !isPremium && styles.toggleSwitchLocked
                 ]}
                 onPress={() => {
+                  // Premium gate: free users get the existing Unlock Premium upsell;
+                  // the toggle never activates for them.
                   if (triggerUpsell({ featureName: 'Speaker & Engagement Card', description: 'The Speaker & Engagement Card is a premium card type designed for speakers and presenters. Upgrade to Premium to enable it.' })) return;
                   handleSpeakerTogglePress();
                 }}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  !isPremium
+                    ? 'Speaker and Engagement Card. Premium feature, locked. Tap to upgrade.'
+                    : 'Toggle Speaker and Engagement Card'
+                }
               >
-                <View
-                  style={[
-                    styles.toggleThumb,
-                    isSpeakerEngagementCard && styles.toggleThumbActive
-                  ]}
-                />
+                {!isPremium ? (
+                  <View style={styles.toggleThumbLocked}>
+                    <MaterialIcons name="lock" size={12} color={COLORS.gray} />
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.toggleThumb,
+                      isSpeakerEngagementCard && styles.toggleThumbActive
+                    ]}
+                  />
+                )}
               </TouchableOpacity>
             </View>
 
@@ -2796,6 +2817,19 @@ const styles = StyleSheet.create({
   },
   toggleThumbActive: {
     alignSelf: 'flex-end',
+  },
+  // Locked (free-user) variant of the Speaker & Engagement toggle.
+  toggleSwitchLocked: {
+    backgroundColor: '#E0E0E0',
+  },
+  toggleThumbLocked: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewModalContainer: {
     flex: 1,
