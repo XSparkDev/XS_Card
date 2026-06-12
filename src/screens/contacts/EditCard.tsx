@@ -608,10 +608,11 @@ export default function EditCard() {
       }
 
       // Only contacts captured by THIS card WHILE it was an active speaker card.
+      // Use the machine-readable createdAtMs (epoch); createdAt itself is a display string.
       const speakerContacts = contactList.filter(
         (c: any) =>
           Number(c?.sourceCardIndex) === Number(cardIndex) &&
-          inAnySpeakerWindow(c?.createdAt, speakerWindows)
+          inAnySpeakerWindow(c?.createdAtMs ?? c?.createdAt, speakerWindows)
       );
 
       if (speakerContacts.length === 0) {
