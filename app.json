@@ -23,7 +23,8 @@
       "buildNumber": "27",
       "icon": "./assets/icons/icon.png",
       "infoPlist": {
-        "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards."
+        "NSCameraUsageDescription": "XSCard uses the camera to let you take profile pictures and company logos during account setup and card creation. This helps create professional digital business cards.",
+        "NSLocationWhenInUseUsageDescription": "XS Card uses your location so you can see where you met your contacts. This is optional and can be changed in your device settings at any time."
       },
       "scheme": "com.p.zzles.xscard"
     },
@@ -39,7 +40,9 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",
-        "READ_MEDIA_VIDEO"
+        "READ_MEDIA_VIDEO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -59,6 +62,12 @@
         {
           "photosPermission": "XSCard accesses your photos to let you select profile pictures and company logos from your gallery during account setup and card creation.",
           "cameraPermission": "XSCard uses your camera to let you take profile pictures and company logos during account setup and card creation for your digital business card."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "XS Card uses your location so you can see where you met your contacts. This is optional and can be changed in your device settings at any time."
         }
       ]
     ]

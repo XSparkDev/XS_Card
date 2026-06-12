@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions, Share } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
@@ -23,6 +23,7 @@ import CardTemplate4 from '../../components/cards/CardTemplate4';
 import CardTemplate5 from '../../components/cards/CardTemplate5';
 import { getAltNumber, migrateAltNumbersToBackend } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 
 // Update interfaces to match new data structure
 interface UserData {
@@ -137,8 +138,101 @@ export default function CardsScreen() {
   // Track card heights for tablet shadow positioning
   const [cardHeights, setCardHeights] = useState<Record<number, number>>({});
 
+  // ===== Scan rate limit (5 scans / rolling hour for free users) =====
+  const { isFreeUser, isLoadingUserStatus } = usePremiumUpsell();
+  const [scansThisHour, setScansThisHour] = useState(0);
+  const [scanLimited, setScanLimited] = useState(false);
+  const [scanResetTime, setScanResetTime] = useState<Date | null>(null);
+  const [scanCountdown, setScanCountdown] = useState('');
+  const limitFadeAnim = useRef(new Animated.Value(0)).current;
+
   // Get responsive card width (mobile: full width, tablet: fixed width)
   const cardWidth = getCardWidth(420);
+
+  // Poll the rolling-hour scan status for FREE users only, scoped to focus so the
+  // one-hour window is always recalculated fresh each time the screen is shown.
+  // Premium users never poll and see none of this UI.
+  useFocusEffect(
+    useCallback(() => {
+      if (isLoadingUserStatus || !isFreeUser) return;
+
+      let active = true;
+      let intervalId: ReturnType<typeof setInterval> | null = null;
+
+      const poll = async () => {
+        try {
+          const userId = await getUserId();
+          if (!userId || !active) return;
+          const res = await fetch(`${API_BASE_URL}/scan-status/${userId}`);
+          if (!res.ok || !active) return;
+          const data = await res.json();
+          if (!active || !data?.success) return;
+          setScansThisHour(data.scanCountThisHour || 0);
+          setScanLimited(!!data.isLimitExceeded);
+          setScanResetTime(data.resetTime ? new Date(data.resetTime) : null);
+        } catch (error) {
+          // Never block the QR on a read failure — default to showing it.
+          console.log('[CardsScreen] scan-status poll failed:', error);
+          if (active) setScanLimited(false);
+        }
+      };
+
+      poll();
+      intervalId = setInterval(poll, 3000);
+
+      return () => {
+        active = false;
+        if (intervalId) clearInterval(intervalId);
+      };
+    }, [isFreeUser, isLoadingUserStatus])
+  );
+
+  // Premium upgrade mid-session → clear all limitation state immediately.
+  useEffect(() => {
+    if (!isFreeUser) {
+      setScanLimited(false);
+      setScansThisHour(0);
+      setScanResetTime(null);
+    }
+  }, [isFreeUser]);
+
+  // Live countdown to the moment the oldest scan in the window ages out.
+  useEffect(() => {
+    if (!scanLimited || !scanResetTime) return;
+
+    const tick = () => {
+      const diff = scanResetTime.getTime() - Date.now();
+      if (diff <= 0) {
+        // Slot freed — drop the limit; the next poll confirms from the server.
+        setScanLimited(false);
+        setScanCountdown('00:00');
+        return;
+      }
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      setScanCountdown(
+        `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      );
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [scanLimited, scanResetTime]);
+
+  // Smooth fade-in of the limit placeholder (out: 200ms in, 400ms back).
+  useEffect(() => {
+    Animated.timing(limitFadeAnim, {
+      toValue: scanLimited ? 1 : 0,
+      duration: scanLimited ? 200 : 400,
+      useNativeDriver: true,
+    }).start();
+  }, [scanLimited, limitFadeAnim]);
+
+  // When a free user is over the limit, never hand the real (scannable) QR to the
+  // card templates — they fall back to a non-scannable placeholder automatically.
+  const effectiveQrUri = (idx: number): string | undefined =>
+    isFreeUser && scanLimited ? undefined : qrCodes[idx];
 
   // Add this function to handle scroll events
   const handleScroll = (event: any) => {
@@ -1009,7 +1103,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate2
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1035,7 +1129,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate3
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1061,7 +1155,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate4
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1087,7 +1181,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate5
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1151,17 +1245,19 @@ export default function CardsScreen() {
                 
                 {/* QR Code */}
                 <View style={getDynamicStyles(card.colorScheme || colorScheme).qrContainer}>
-                  {qrCodes[index] ? (
+                  {effectiveQrUri(index) ? (
                     <Image
                       style={[
                         styles.qrCode,
                         isTablet() && { width: scale(150), height: scale(150) }
                       ]}
-                      source={{ uri: qrCodes[index] }}
+                      source={{ uri: effectiveQrUri(index) }}
                       resizeMode="contain"
                     />
                   ) : (
-                    <Text style={isTablet() && { fontSize: scale(16) }}>Loading QR Code...</Text>
+                    <Text style={isTablet() && { fontSize: scale(16) }}>
+                      {isFreeUser && scanLimited ? 'Scan limit reached' : 'Loading QR Code...'}
+                    </Text>
                   )}
                 </View>
 
@@ -1485,6 +1581,40 @@ export default function CardsScreen() {
           ))}
         </View>
       </View>
+
+      {/* ===== Scan rate-limit UI (free users only) ===== */}
+      {isFreeUser && !isLoadingUserStatus && scanLimited && (
+        <Animated.View style={[styles.scanLimitCard, { opacity: limitFadeAnim }]}>
+          <View style={styles.scanLimitIconWrap}>
+            <MaterialCommunityIcons name="lock-outline" size={40} color={COLORS.primary} />
+          </View>
+          <Text style={styles.scanLimitTitle}>Scan Limit Reached</Text>
+          <Text style={styles.scanLimitSubtitle}>5 scans per hour maximum</Text>
+          <Text style={styles.scanLimitCountdown}>
+            Resets in {scanCountdown || '--:--'}
+          </Text>
+        </Animated.View>
+      )}
+
+      {isFreeUser && !isLoadingUserStatus && !scanLimited && (
+        <View style={styles.scanCounterWrap}>
+          <Text style={styles.scanCounterText}>
+            {scansThisHour} of 5 scans used this hour
+          </Text>
+          <View style={styles.scanProgressTrack}>
+            <View
+              style={[
+                styles.scanProgressFill,
+                {
+                  width: `${Math.min(100, (scansThisHour / 5) * 100)}%`,
+                  backgroundColor:
+                    scansThisHour >= 5 ? '#E53935' : scansThisHour >= 4 ? '#FB8C00' : COLORS.primary,
+                },
+              ]}
+            />
+          </View>
+        </View>
+      )}
 
       <Modal
         visible={isShareModalVisible}
@@ -1996,6 +2126,70 @@ qrCode: {
     flexDirection: 'row',
     gap: 1,
     marginLeft:320
+  },
+  // Scan rate-limit UI
+  scanLimitCard: {
+    marginHorizontal: 24,
+    marginTop: 8,
+    marginBottom: 12,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  scanLimitIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  scanLimitTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+    marginBottom: 4,
+  },
+  scanLimitSubtitle: {
+    fontSize: 13,
+    color: COLORS.gray,
+    marginBottom: 12,
+  },
+  scanLimitCountdown: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.primary,
+    fontVariant: ['tabular-nums'],
+  },
+  scanCounterWrap: {
+    marginHorizontal: 24,
+    marginTop: 6,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  scanCounterText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginBottom: 6,
+  },
+  scanProgressTrack: {
+    width: '70%',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.gray + '30',
+    overflow: 'hidden',
+  },
+  scanProgressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   dot: {
     width: 5,

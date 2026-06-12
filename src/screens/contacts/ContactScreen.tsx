@@ -18,6 +18,7 @@ import {
   Pressable,
   InteractionManager,
   TouchableWithoutFeedback,
+  Platform,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -76,6 +77,20 @@ interface Contact {
     original?: string;
   };
   linkedAt?: string;
+  // Scanner geolocation captured at scan time (optional).
+  location?: ContactLocation | null;
+  locationCapturedAt?: string | null;
+}
+
+interface ContactLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  formattedAddress?: string;
+  city?: string;
+  area?: string;
+  country?: string;
+  capturedAt?: string;
 }
 
 interface ContactData {
@@ -336,6 +351,46 @@ const formatPhoneWithCountryCode = (phone: string): string => {
   
   // Otherwise, add country code to the number
   return DEFAULT_COUNTRY_CODE + cleanedPhone;
+};
+
+// ============= GEOLOCATION HELPERS =============
+
+// True only when the contact has a usable location with real coordinates.
+const hasContactLocation = (location?: ContactLocation | null): location is ContactLocation =>
+  !!location &&
+  typeof location.latitude === 'number' &&
+  typeof location.longitude === 'number';
+
+// Human-readable label for a contact's location. Never shows raw coordinates.
+// Returns '' when no address parts are available (caller shows "Location available").
+const getContactLocationLabel = (location: ContactLocation): string => {
+  const area = (location.area || '').trim();
+  const city = (location.city || '').trim();
+  const country = (location.country || '').trim();
+  const formatted = (location.formattedAddress || '').trim();
+
+  if (area && city) return `${area}, ${city}`;
+  if (city && country) return `${city}, ${country}`;
+  if (city) return city;
+  if (country) return country;
+  if (formatted) {
+    const firstLine = formatted.split(',')[0].trim();
+    return firstLine.length > 40 ? `${firstLine.slice(0, 40)}…` : firstLine;
+  }
+  return '';
+};
+
+// Open the contact's coordinates in the native maps app, falling back to web.
+const openContactLocationInMaps = (location: ContactLocation) => {
+  const { latitude, longitude } = location;
+  const url = Platform.select({
+    ios: `maps:?q=${latitude},${longitude}`,
+    android: `geo:${latitude},${longitude}?q=${latitude},${longitude}`,
+  });
+  const webFallback = `https://www.google.com/maps?q=${latitude},${longitude}`;
+  Linking.openURL(url || webFallback).catch(() => {
+    Linking.openURL(webFallback).catch(() => {});
+  });
 };
 
 // Main Component
@@ -1629,6 +1684,24 @@ export default function ContactsScreen() {
                             <Text style={styles.contactDate}>
                               {formatTimestamp(contact.createdAt)}
                             </Text>
+                            {hasContactLocation(contact.location) && (
+                              <TouchableOpacity
+                                style={styles.contactLocationRow}
+                                onPress={() => openContactLocationInMaps(contact.location!)}
+                                activeOpacity={0.6}
+                                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                              >
+                                <MaterialCommunityIcons
+                                  name="map-marker"
+                                  size={16}
+                                  color={COLORS.primary}
+                                  style={styles.contactLocationIcon}
+                                />
+                                <Text style={styles.contactLocationText} numberOfLines={1}>
+                                  {getContactLocationLabel(contact.location) || 'Location available'}
+                                </Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                         </View>
                       </View>
@@ -1945,7 +2018,61 @@ export default function ContactsScreen() {
                       <MaterialIcons name="event" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>{formatTimestamp(selectedContactForOptions.createdAt)}</Text>
                     </Pressable>
-                    
+
+                    {hasContactLocation(selectedContactForOptions.location) && (
+                      <View>
+                        <View style={styles.contactInfoRow}>
+                          <MaterialCommunityIcons name="map-marker" size={20} color={COLORS.primary} style={styles.contactInfoIcon} />
+                          <Text style={styles.contactInfoText}>
+                            {getContactLocationLabel(selectedContactForOptions.location) ||
+                              selectedContactForOptions.location.formattedAddress ||
+                              'Location available'}
+                          </Text>
+                        </View>
+
+                        {!!selectedContactForOptions.location.formattedAddress &&
+                          getContactLocationLabel(selectedContactForOptions.location) !==
+                            selectedContactForOptions.location.formattedAddress && (
+                            <Text style={styles.contactLocationDetailText}>
+                              {selectedContactForOptions.location.formattedAddress}
+                            </Text>
+                          )}
+
+                        {(() => {
+                          const capturedAt =
+                            selectedContactForOptions.location.capturedAt ||
+                            selectedContactForOptions.locationCapturedAt;
+                          if (!capturedAt) return null;
+                          const d = new Date(capturedAt);
+                          if (isNaN(d.getTime())) return null;
+                          const formatted = d.toLocaleDateString('en-GB', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          });
+                          return (
+                            <Text style={styles.contactLocationDetailText}>
+                              Met on {formatted}
+                            </Text>
+                          );
+                        })()}
+
+                        <TouchableOpacity
+                          style={styles.viewOnMapsButton}
+                          onPress={() => openContactLocationInMaps(selectedContactForOptions.location!)}
+                          activeOpacity={0.85}
+                        >
+                          <MaterialCommunityIcons name="google-maps" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                          <Text style={styles.viewOnMapsButtonText}>View on Google Maps</Text>
+                        </TouchableOpacity>
+
+                        <Text style={styles.locationDisclaimer}>
+                          Location captured when contact scanned your card
+                        </Text>
+                      </View>
+                    )}
+
                   </View>
 
                   <View style={styles.contactActionButtons}>
@@ -2541,6 +2668,52 @@ const styles = StyleSheet.create({
   contactDate: {
     fontSize: 12,
     color: COLORS.gray,
+    fontStyle: 'italic',
+  },
+  // Geolocation — list row
+  contactLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  contactLocationIcon: {
+    marginRight: 4,
+  },
+  contactLocationText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.gray,
+  },
+  // Geolocation — detail modal
+  contactLocationDetailText: {
+    fontSize: 13,
+    color: COLORS.gray,
+    marginLeft: 32,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  viewOnMapsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 10,
+    marginLeft: 32,
+    alignSelf: 'flex-start',
+  },
+  viewOnMapsButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  locationDisclaimer: {
+    fontSize: 10,
+    color: COLORS.gray,
+    marginLeft: 32,
+    marginTop: 8,
     fontStyle: 'italic',
   },
   deleteAction: {

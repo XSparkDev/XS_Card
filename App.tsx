@@ -18,6 +18,7 @@ import { useSystemUI } from './src/hooks/useSystemUI';
 import { MeetingNotificationProvider } from './src/context/MeetingNotificationContext';
 import { checkForUpdate, VersionInfo } from './src/services/updateCheckService';
 import { UpdateModal } from './src/components/UpdateModal';
+import LocationPermissionModal from './src/components/LocationPermissionModal';
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
@@ -165,6 +166,9 @@ function AppContent() {
               </PremiumUpsellProvider>
             </NavigationContainer>
             </TooltipProvider>
+
+            {/* First-launch location permission rationale (optional feature) */}
+            <LocationPermissionModal />
 
             {/* Update Modal - shown when update is available */}
             {updateInfo && (

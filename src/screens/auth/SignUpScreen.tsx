@@ -22,8 +22,13 @@ export default function SignUpScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState(route.params?.prefillEmail?.trim() ?? '');
+  // Shown when the user landed here automatically because no account exists for
+  // the email they tried to log in with. Dismissed once they edit the email.
+  const [showAutoSwitchBanner, setShowAutoSwitchBanner] = useState(!!route.params?.autoSwitched);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showError, setShowError] = useState(false);
@@ -32,6 +37,7 @@ export default function SignUpScreen() {
     lastName: '',
     email: '',
     password: '',
+    confirmPassword: '',
   });
   const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
   const [consentError, setConsentError] = useState('');
@@ -56,6 +62,7 @@ export default function SignUpScreen() {
       lastName: '',
       email: '',
       password: '',
+      confirmPassword: '',
     };
 
     let isValid = true;
@@ -98,6 +105,20 @@ export default function SignUpScreen() {
       setErrorMessage('Password must be at least 8 characters and contain uppercase, lowercase, and numbers');
       setShowError(true);
       newErrors.password = 'Password must be at least 8 characters and contain uppercase, lowercase, and numbers';
+      isValid = false;
+    }
+
+    if (!confirmPassword) {
+      setErrorMessage('Please confirm your password');
+      setShowError(true);
+      newErrors.confirmPassword = 'Please confirm your password';
+      isValid = false;
+    } else if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match');
+      setShowError(true);
+      newErrors.confirmPassword = 'Passwords do not match';
+      // Clear only the confirm field so the user must retype it; leave password intact.
+      setConfirmPassword('');
       isValid = false;
     }
 
@@ -268,6 +289,8 @@ export default function SignUpScreen() {
             onChangeText={(text) => {
               setEmail(text);
               setErrors(prev => ({ ...prev, email: '' }));
+              // Editing the email dismisses the auto-switch indicator.
+              if (showAutoSwitchBanner) setShowAutoSwitchBanner(false);
             }}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -275,13 +298,14 @@ export default function SignUpScreen() {
           />
           {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
-          {/* Email Warning */}
-          <View style={styles.emailWarningContainer}>
-            <MaterialIcons name="warning" size={16} color="#FF6B35" />
-            <Text style={styles.emailWarningText}>
-              Use your personal email address. Company emails may result in account loss if employment ends.
-            </Text>
-          </View>
+          {showAutoSwitchBanner ? (
+            <View style={styles.autoSwitchBanner}>
+              <MaterialIcons name="info-outline" size={18} color={COLORS.primary} style={styles.autoSwitchIcon} />
+              <Text style={styles.autoSwitchText}>
+                No account found for this email. Fill in the details below to create one.
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.passwordContainer}>
             <TextInput
@@ -307,6 +331,31 @@ export default function SignUpScreen() {
             </TouchableOpacity>
           </View>
           {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.input, styles.passwordInput, errors.confirmPassword ? styles.inputError : null]}
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChangeText={(text) => {
+                setConfirmPassword(text);
+                setErrors(prev => ({ ...prev, confirmPassword: '' }));
+              }}
+              secureTextEntry={!showConfirmPassword}
+              placeholderTextColor="#999"
+            />
+            <TouchableOpacity
+              style={styles.eyeIcon}
+              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            >
+              <MaterialIcons
+                name={showConfirmPassword ? "visibility" : "visibility-off"}
+                size={24}
+                color="#999"
+              />
+            </TouchableOpacity>
+          </View>
+          {errors.confirmPassword ? <Text style={styles.errorText}>{errors.confirmPassword}</Text> : null}
 
           <View style={styles.consentContainer}>
             <TouchableOpacity
@@ -647,22 +696,23 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 15,
   },
-  emailWarningContainer: {
+  autoSwitchBanner: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#FFF3E0',
-    padding: 12,
-    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 75, 110, 0.12)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     marginBottom: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF6B35',
   },
-  emailWarningText: {
-    color: '#E65100',
+  autoSwitchIcon: {
+    marginRight: 8,
+  },
+  autoSwitchText: {
+    flex: 1,
+    color: COLORS.primary,
     fontSize: 13,
     lineHeight: 18,
-    marginLeft: 8,
-    flex: 1,
     fontWeight: '500',
   },
   consentContainer: {

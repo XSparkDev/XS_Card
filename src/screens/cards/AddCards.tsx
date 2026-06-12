@@ -647,21 +647,27 @@ export default function AddCards() {
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             
-              <TextInput 
-                style={styles.input}
+              <TextInput
+                style={[styles.input, styles.disabledInput]}
               placeholder="First name"
                 placeholderTextColor="#999"
                 value={formData.firstName}
                 onChangeText={(text) => setFormData({...formData, firstName: text})}
+                editable={false}
               />
 
-              <TextInput 
-                style={styles.input}
+              <TextInput
+                style={[styles.input, styles.disabledInput]}
               placeholder="Last name"
                 placeholderTextColor="#999"
                 value={formData.lastName}
                 onChangeText={(text) => setFormData({...formData, lastName: text})}
+                editable={false}
               />
+
+              <Text style={styles.namePolicyNote}>
+                Your name is set from your profile. To change it, edit your primary card.
+              </Text>
 
               <TextInput 
                 style={styles.input}
@@ -910,6 +916,17 @@ const styles = StyleSheet.create({
     color: COLORS.error,
     marginBottom: 10,
     fontSize: 14,
+  },
+  disabledInput: {
+    backgroundColor: '#E8E8E8',
+    color: '#666',
+  },
+  namePolicyNote: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 16,
   },
   imagePreview: {
     width: '100%',

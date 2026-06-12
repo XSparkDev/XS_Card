@@ -70,6 +70,9 @@ interface FormData {
 export default function EditCard() {
   const route = useRoute<EditCardScreenRouteProp>();
   const cardIndex = route.params?.cardIndex ?? 0; // Provide default value of 0
+  // First/last name may only be edited on the primary card (index 0). On any
+  // other card the name fields are locked (see the name-change policy).
+  const isPrimaryCard = cardIndex === 0;
   const cardData = route.params?.cardData; // Get the passed card data
   const navigation = useNavigation();
   const { user } = useAuth();
@@ -698,6 +701,17 @@ export default function EditCard() {
       );
 
       if (!response.ok) {
+        // Surface the backend's name-change-throttle message specifically.
+        let serverMessage = '';
+        try {
+          const errBody = await response.json();
+          serverMessage = errBody?.message || '';
+        } catch {
+          serverMessage = '';
+        }
+        if (response.status === 403 && serverMessage) {
+          throw new Error(serverMessage);
+        }
         throw new Error('Failed to update card');
       }
 
@@ -775,7 +789,7 @@ export default function EditCard() {
 
     } catch (error) {
       console.error('Error updating card:', error);
-      setError('Failed to update card');
+      setError(error instanceof Error && error.message ? error.message : 'Failed to update card');
       setIsSaving(false);
     }
   };
@@ -1548,27 +1562,34 @@ export default function EditCard() {
             <Text style={styles.sectionTitle}>Personal details</Text>
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            <TextInput 
-              style={styles.input}
+            <TextInput
+              style={[styles.input, !isPrimaryCard && styles.disabledInput]}
               placeholder="First name"
               placeholderTextColor="#999"
               value={formData.firstName}
               onChangeText={(text) => setFormData({...formData, firstName: text})}
+              editable={isPrimaryCard}
             />
-            <TextInput 
+            <TextInput
               style={styles.input}
               placeholder="Occupation"
               placeholderTextColor="#999"
               value={formData.occupation}
               onChangeText={(text) => setFormData({...formData, occupation: text})}
             />
-            <TextInput 
-              style={styles.input}
+            <TextInput
+              style={[styles.input, !isPrimaryCard && styles.disabledInput]}
               placeholder="Last name"
               placeholderTextColor="#999"
               value={formData.lastName}
               onChangeText={(text) => setFormData({...formData, lastName: text})}
+              editable={isPrimaryCard}
             />
+            <Text style={styles.namePolicyNote}>
+              {isPrimaryCard
+                ? 'Your name can only be changed here, once every 30 days.'
+                : 'Your name can only be changed on your primary card.'}
+            </Text>
             <TextInput 
               style={[
                 styles.input, 
@@ -2611,6 +2632,13 @@ const styles = StyleSheet.create({
   disabledInput: {
     backgroundColor: '#E8E8E8',
     color: '#666',
+  },
+  namePolicyNote: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 16,
   },
   zoomSliderContainer: {
     width: '100%',
