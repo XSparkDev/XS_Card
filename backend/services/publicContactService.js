@@ -63,6 +63,10 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
     ...contactInfo,
     email: String(contactInfo.email || ''),
     sourceCardIndex: normalizedCardIndex,
+    // Optional scanner geolocation captured at scan time. Persisted as-is when
+    // provided, otherwise stored as null so the field is always present.
+    location: contactInfo.location || null,
+    locationCapturedAt: contactInfo.locationCapturedAt || (contactInfo.location && contactInfo.location.capturedAt) || null,
     createdAt: admin.firestore.Timestamp.now(),
   };
 
@@ -121,6 +125,10 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
     },
     { merge: true }
   );
+
+  // NOTE: Scans are recorded at saveContact.html PAGE LOAD (via /record-scan),
+  // not on contact save — a scan is "someone landed on the page", independent of
+  // whether they fill in or submit the form.
 
   if (userData.email) {
     setImmediate(async () => {

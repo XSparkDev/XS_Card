@@ -393,6 +393,47 @@ exports.updateCard = async (req, res) => {
             updateData.phoneNormalized = normalizedPhone;
         }
 
+        // ===== Name-change policy =====
+        // First/last name may be changed ONLY on the primary card (index 0), and
+        // at most once every 30 days. Enforced here authoritatively, independent
+        // of the client. Non-primary card name edits are silently ignored.
+        const NAME_CHANGE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+        const existingCardForName = cardsData.cards[cardIndex] || {};
+        const hasIncomingName = Object.prototype.hasOwnProperty.call(updateData, 'name');
+        const hasIncomingSurname = Object.prototype.hasOwnProperty.call(updateData, 'surname');
+        const incomingName = hasIncomingName ? String(updateData.name ?? '').trim() : undefined;
+        const incomingSurname = hasIncomingSurname ? String(updateData.surname ?? '').trim() : undefined;
+        const nameChanged =
+            (incomingName !== undefined && incomingName !== String(existingCardForName.name ?? '').trim()) ||
+            (incomingSurname !== undefined && incomingSurname !== String(existingCardForName.surname ?? '').trim());
+
+        let stampNameChange = false;
+        if (nameChanged) {
+            if (Number(cardIndex) !== 0) {
+                // Names are locked on non-primary cards — keep the existing values.
+                delete updateData.name;
+                delete updateData.surname;
+            } else {
+                const lastChanged = userDoc.data()?.nameLastChangedAt;
+                const lastChangedMs =
+                    lastChanged && typeof lastChanged.toMillis === 'function'
+                        ? lastChanged.toMillis()
+                        : (lastChanged ? new Date(lastChanged).getTime() : 0);
+                const elapsed = Date.now() - lastChangedMs;
+
+                if (lastChangedMs && elapsed < NAME_CHANGE_WINDOW_MS) {
+                    const nextAllowedAt = new Date(lastChangedMs + NAME_CHANGE_WINDOW_MS);
+                    const daysLeft = Math.max(1, Math.ceil((NAME_CHANGE_WINDOW_MS - elapsed) / (24 * 60 * 60 * 1000)));
+                    return res.status(403).send({
+                        message: `You can only change your name once every 30 days. Please try again in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+                        code: 'NAME_CHANGE_TOO_SOON',
+                        nextAllowedAt: nextAllowedAt.toISOString(),
+                    });
+                }
+                stampNameChange = true;
+            }
+        }
+
         if (Object.prototype.hasOwnProperty.call(updateData, 'isSpeakerEngagementCard')) {
             if (hasSpeakerCardAccess) {
                 updateData.isSpeakerEngagementCard =
@@ -461,7 +502,20 @@ exports.updateCard = async (req, res) => {
             cards: updatedCards
         });
 
-        res.status(200).send({ 
+        // Record the name change on the user record (canonical name + 30-day stamp).
+        if (stampNameChange) {
+            try {
+                await db.collection('users').doc(userId).update({
+                    name: String(updatedCards[cardIndex].name ?? ''),
+                    surname: String(updatedCards[cardIndex].surname ?? ''),
+                    nameLastChangedAt: admin.firestore.Timestamp.now(),
+                });
+            } catch (stampError) {
+                console.error('Failed to stamp nameLastChangedAt:', stampError);
+            }
+        }
+
+        res.status(200).send({
             message: 'Card updated successfully',
             updatedCard: updatedCards[cardIndex],
             cards: updatedCards
