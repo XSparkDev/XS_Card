@@ -377,12 +377,11 @@ export default function CompleteProfile() {
       'Choose where you want to get your profile picture from. This will be displayed on your digital business card.',
       [
         {
-          text: 'Camera',
+          text: 'Choose File',
           onPress: async () => {
-            const imageUri = await pickImage(true);
+            const imageUri = await pickImageFromDocument();
             if (imageUri) {
               setProfileImage(imageUri);
-              // Clear OAuth prefill image if user picks their own
               setOauthPrefillImage(null);
             }
           },
@@ -399,11 +398,12 @@ export default function CompleteProfile() {
           },
         },
         {
-          text: 'Choose File',
+          text: 'Camera',
           onPress: async () => {
-            const imageUri = await pickImageFromDocument();
+            const imageUri = await pickImage(true);
             if (imageUri) {
               setProfileImage(imageUri);
+              // Clear OAuth prefill image if user picks their own
               setOauthPrefillImage(null);
             }
           },
@@ -457,9 +457,9 @@ export default function CompleteProfile() {
       'Choose where you want to get your company logo from. This will be displayed on your digital business card.',
       [
         {
-          text: 'Camera',
+          text: 'Choose File',
           onPress: async () => {
-            const imageUri = await pickImage(true);
+            const imageUri = await pickImageFromDocument();
             if (imageUri) setCompanyLogo(imageUri);
           },
         },
@@ -471,9 +471,9 @@ export default function CompleteProfile() {
           },
         },
         {
-          text: 'Choose File',
+          text: 'Camera',
           onPress: async () => {
-            const imageUri = await pickImageFromDocument();
+            const imageUri = await pickImage(true);
             if (imageUri) setCompanyLogo(imageUri);
           },
         },

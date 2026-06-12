@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, Linking, ActivityIndicator, Pressable } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import CardPreviewModal from '../../components/cards/CardPreviewModal';
+import TemplatePreviewOverlay from '../../components/cards/TemplatePreviewOverlay';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
@@ -114,6 +115,7 @@ export default function EditCard() {
   );
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
   const [socialNotification, setSocialNotification] = useState<string | null>(null);
   const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
   const [customColor, setCustomColor] = useState('#1B2B5B');
@@ -968,9 +970,9 @@ export default function EditCard() {
         'Select Profile Picture',
         'Choose where you want to get your profile picture from.',
         [
-          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
-          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
           { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -983,9 +985,9 @@ export default function EditCard() {
           'Select Profile Picture',
           'Choose where you want to get your profile picture from.',
           [
-            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
-            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
             { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
@@ -1005,9 +1007,9 @@ export default function EditCard() {
                     'Select Profile Picture',
                     'Choose where you want to get your profile picture from.',
                     [
-                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
-                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
                       { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
@@ -1026,9 +1028,9 @@ export default function EditCard() {
         'Select Company Logo',
         'Choose where you want to get your company logo from.',
         [
-          { text: 'Camera', onPress: () => pickLogo('camera') },
-          { text: 'Gallery', onPress: () => pickLogo('gallery') },
           { text: 'Choose File', onPress: () => pickLogo('file') },
+          { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Camera', onPress: () => pickLogo('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -1041,9 +1043,9 @@ export default function EditCard() {
           'Select Company Logo',
           'Choose where you want to get your company logo from.',
           [
-            { text: 'Camera', onPress: () => pickLogo('camera') },
-            { text: 'Gallery', onPress: () => pickLogo('gallery') },
             { text: 'Choose File', onPress: () => pickLogo('file') },
+            { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Camera', onPress: () => pickLogo('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
@@ -1063,9 +1065,9 @@ export default function EditCard() {
                     'Select Company Logo',
                     'Choose where you want to get your company logo from.',
                     [
-                      { text: 'Camera', onPress: () => pickLogo('camera') },
-                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
                       { text: 'Choose File', onPress: () => pickLogo('file') },
+                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
@@ -1386,14 +1388,13 @@ export default function EditCard() {
   };
 
   const handlePreview = () => {
-    setIsPreviewModalVisible(true);
+    setPreviewVisible(true);
   };
 
-  // Handler for template selection - auto-opens preview
+  // Handler for template selection - auto-opens the draggable preview overlay
   const handleTemplateSelect = (templateNumber: number) => {
     setTemplate(templateNumber);
-    // Auto-open preview when template is selected
-    setIsPreviewModalVisible(true);
+    setPreviewVisible(true);
   };
 
   // Helper function to build card object for preview
@@ -2132,17 +2133,16 @@ export default function EditCard() {
         ]}
       />
 
-      {/* Preview Modal — shared CardPreviewModal component */}
-      <CardPreviewModal
-        visible={isPreviewModalVisible}
-        onClose={() => setIsPreviewModalVisible(false)}
-        onSave={handleSave}
-        template={template}
-        card={buildCardObject()}
-        altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-        closeLabel="Continue Editing"
-        saveLabel="Save & Exit"
-      />
+      {/* Draggable template preview overlay — shows when previewing/selecting templates */}
+      {previewVisible && (
+        <TemplatePreviewOverlay
+          template={template}
+          card={buildCardObject()}
+          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          onSelectTemplate={setTemplate}
+          onClose={() => setPreviewVisible(false)}
+        />
+      )}
 
       {/* Widget Configuration Modal */}
       <WidgetConfigModal

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard, ActivityIndicator } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
@@ -13,6 +13,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import CardPreviewModal from '../../components/cards/CardPreviewModal';
+import TemplatePreviewOverlay from '../../components/cards/TemplatePreviewOverlay';
+import LogoPlaceholder from '../../components/LogoPlaceholder';
 import { useAuth } from '../../context/AuthContext';
 
 type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
@@ -57,6 +59,7 @@ export default function AddCards() {
 
   // Template preview state
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
   // Social media platforms data
   const socials = [
@@ -86,17 +89,37 @@ export default function AddCards() {
 
   // Pre-populate form with authenticated user's data (same source as EditCard uses via useAuth).
   // Only fills fields that are still empty so any manual edits are never overwritten.
+  // Prefill the (read-only) first/last name from the user's PRIMARY card, which
+  // authoritatively stores name + surname. (useAuth().user doesn't reliably carry
+  // a separate surname.) Email falls back to the auth user.
   useEffect(() => {
-    if (!user) return;
-    const nameParts = (user.name || '').trim().split(/\s+/);
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-    setFormData(prev => ({
-      ...prev,
-      firstName: prev.firstName || firstName,
-      lastName: prev.lastName || lastName,
-      email: prev.email || user.email || '',
-    }));
+    let cancelled = false;
+    (async () => {
+      try {
+        const userId = await getUserId();
+        if (!userId) return;
+        const response = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const cards = Array.isArray(data?.cards)
+          ? data.cards
+          : (Array.isArray(data) ? data : []);
+        const primary = cards[0];
+        if (primary && !cancelled) {
+          setFormData(prev => ({
+            ...prev,
+            firstName: primary.name || prev.firstName,
+            lastName: primary.surname || prev.lastName,
+            email: prev.email || primary.email || user?.email || '',
+          }));
+        }
+      } catch (e) {
+        console.log('[AddCards] Failed to prefill name from primary card:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   // Build a card-shaped object from the current form state for the preview modal.
@@ -124,10 +147,10 @@ export default function AddCards() {
     };
   };
 
-  // Select a template and immediately open the live preview.
+  // Select a template and immediately open the live draggable preview.
   const handleTemplateSelect = (templateNumber: number) => {
     setTemplate(templateNumber);
-    setIsPreviewModalVisible(true);
+    setPreviewVisible(true);
   };
 
   const handleCancel = () => {
@@ -160,9 +183,9 @@ export default function AddCards() {
         'Select Profile Picture',
         'Choose where you want to get your profile picture from.',
         [
-          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
-          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
           { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+          { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -175,9 +198,9 @@ export default function AddCards() {
           'Select Profile Picture',
           'Choose where you want to get your profile picture from.',
           [
-            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
-            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
             { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+            { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
@@ -199,9 +222,9 @@ export default function AddCards() {
                     'Select Profile Picture',
                     'Choose where you want to get your profile picture from.',
                     [
-                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
-                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
                       { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+                      { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
@@ -291,9 +314,9 @@ export default function AddCards() {
         'Select Company Logo',
         'Choose where you want to get your company logo from.',
         [
-          { text: 'Camera', onPress: () => pickLogo('camera') },
-          { text: 'Gallery', onPress: () => pickLogo('gallery') },
           { text: 'Choose File', onPress: () => pickLogo('file') },
+          { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Camera', onPress: () => pickLogo('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -306,9 +329,9 @@ export default function AddCards() {
           'Select Company Logo',
           'Choose where you want to get your company logo from.',
           [
-            { text: 'Camera', onPress: () => pickLogo('camera') },
-            { text: 'Gallery', onPress: () => pickLogo('gallery') },
             { text: 'Choose File', onPress: () => pickLogo('file') },
+            { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Camera', onPress: () => pickLogo('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
@@ -328,9 +351,9 @@ export default function AddCards() {
                     'Select Company Logo',
                     'Choose where you want to get your company logo from.',
                     [
-                      { text: 'Camera', onPress: () => pickLogo('camera') },
-                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
                       { text: 'Choose File', onPress: () => pickLogo('file') },
+                      { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
@@ -599,7 +622,7 @@ export default function AddCards() {
                   <Image source={{ uri: profileImage }} style={styles.imagePreview} />
                 ) : (
                   <View style={styles.imagePlaceholder}>
-                    <MaterialIcons name="person" size={40} color={COLORS.primary} />
+                    <MaterialCommunityIcons name="account-circle" size={48} color={COLORS.primary} />
                     <Text style={styles.imagePlaceholderText}>Profile Picture</Text>
                   </View>
                 )}
@@ -612,10 +635,7 @@ export default function AddCards() {
                 {companyLogo ? (
                   <Image source={{ uri: companyLogo }} style={styles.imagePreview} />
                 ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <MaterialIcons name="business" size={40} color={COLORS.primary} />
-                    <Text style={styles.imagePlaceholderText}>Company Logo</Text>
-                  </View>
+                  <LogoPlaceholder textSize={16} />
                 )}
               </TouchableOpacity>
             </View>
@@ -730,15 +750,16 @@ export default function AddCards() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Template preview modal — shows when the user taps a template pill */}
-      <CardPreviewModal
-        visible={isPreviewModalVisible}
-        onClose={() => setIsPreviewModalVisible(false)}
-        template={template}
-        card={buildCardObject()}
-        altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-        closeLabel="Continue Editing"
-      />
+      {/* Draggable template preview overlay — shows when the user taps a template */}
+      {previewVisible && (
+        <TemplatePreviewOverlay
+          template={template}
+          card={buildCardObject()}
+          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          onSelectTemplate={setTemplate}
+          onClose={() => setPreviewVisible(false)}
+        />
+      )}
     </View>
   );
 }

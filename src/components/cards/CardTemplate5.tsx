@@ -5,6 +5,7 @@ import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
+import LogoPlaceholder from '../LogoPlaceholder';
 
 type CardData = any;
 
@@ -115,14 +116,15 @@ export default function CardTemplate5(props: Props) {
       <View style={styles.logoProfileSection}>
         {/* Logo on left */}
         <View style={styles.logoContainer}>
-          <Image
-            source={card.companyLogo && getImageUrl(card.companyLogo) ? 
-              { uri: getImageUrl(card.companyLogo) } : 
-              require('../../../assets/images/logoplaceholder.jpg')
-            }
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          {card.companyLogo && getImageUrl(card.companyLogo) ? (
+            <Image
+              source={{ uri: getImageUrl(card.companyLogo) || '' }}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          ) : (
+            <LogoPlaceholder style={styles.logo} />
+          )}
         </View>
 
         {/* Profile on right */}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { isTablet, scale } from '../utils/responsive';
 
@@ -13,7 +13,7 @@ interface GradientAvatarProps {
 export default function GradientAvatar({ size, style }: GradientAvatarProps) {
   // Default size based on device type
   const avatarSize = size || (isTablet() ? scale(120) : 120);
-  const iconSize = avatarSize * 0.7; // Icon is 70% of the avatar size (enlarged from 50%)
+  const iconSize = avatarSize * 0.72; // Icon is ~72% of the avatar size
   
   return (
     <LinearGradient
@@ -30,10 +30,10 @@ export default function GradientAvatar({ size, style }: GradientAvatarProps) {
         style,
       ]}
     >
-      <MaterialIcons 
-        name="person" 
-        size={iconSize} 
-        color={COLORS.white} 
+      <MaterialCommunityIcons
+        name="account"
+        size={iconSize}
+        color={COLORS.white}
       />
     </LinearGradient>
   );
