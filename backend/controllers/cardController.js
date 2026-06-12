@@ -497,6 +497,31 @@ exports.updateCard = async (req, res) => {
             }
         }
 
+        // Speaker & Engagement activity windows: record exactly when each card was
+        // an active speaker card. A window opens when the card becomes a speaker and
+        // closes when it stops. CSV export only counts contacts captured inside a
+        // window. Idempotent — runs every save, only acts on a real on/off transition.
+        const speakerWindowNow = new Date().toISOString();
+        const reconcileSpeakerWindow = (card) => {
+            const isSpeaker = card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true';
+            const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+            const last = windows[windows.length - 1];
+            const hasOpenWindow = last && (last.end === null || last.end === undefined);
+
+            if (isSpeaker && !hasOpenWindow) {
+                windows.push({ start: speakerWindowNow, end: null });
+                return { ...card, speakerWindows: windows };
+            }
+            if (!isSpeaker && hasOpenWindow) {
+                windows[windows.length - 1] = { ...last, end: speakerWindowNow };
+                return { ...card, speakerWindows: windows };
+            }
+            return card;
+        };
+        for (let i = 0; i < updatedCards.length; i += 1) {
+            updatedCards[i] = reconcileSpeakerWindow(updatedCards[i]);
+        }
+
         // Update the document
         await cardRef.update({
             cards: updatedCards

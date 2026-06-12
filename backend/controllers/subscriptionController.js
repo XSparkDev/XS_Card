@@ -18,11 +18,18 @@ const deactivateSpeakerCardsOnDowngrade = async (userId) => {
         const cards = cardDoc.data().cards;
         if (!Array.isArray(cards)) return;
 
+        const nowIso = new Date().toISOString();
         let changed = false;
         const updatedCards = cards.map((card) => {
             if (card && (card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true')) {
                 changed = true;
-                return { ...card, isSpeakerEngagementCard: false };
+                // Close any open speaker activity window so the export window ends at downgrade.
+                const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+                const last = windows[windows.length - 1];
+                if (last && (last.end === null || last.end === undefined)) {
+                    windows[windows.length - 1] = { ...last, end: nowIso };
+                }
+                return { ...card, isSpeakerEngagementCard: false, speakerWindows: windows };
             }
             return card;
         });

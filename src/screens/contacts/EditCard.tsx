@@ -25,6 +25,8 @@ import { WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
 import { getPlanLimits, getUserPlan as getStoredUserPlan, UserPlan } from '../../utils/userPlan';
 import { useAuth } from '../../context/AuthContext';
 import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
+import * as FileSystem from 'expo-file-system';
+import Share from 'react-native-share';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -128,7 +130,8 @@ export default function EditCard() {
   const [existingSpeakerCardIndex, setExistingSpeakerCardIndex] = useState<number | null>(null);
   const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
   const [speakerConflictLoaded, setSpeakerConflictLoaded] = useState(false);
-  
+  const [isExportingContacts, setIsExportingContacts] = useState(false);
+
   // Widget state
   const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
   const [activeWidgets, setActiveWidgets] = useState<WidgetConfig[]>([]);
@@ -495,10 +498,150 @@ export default function EditCard() {
   };
 
   const handleSpeakerTooltipPress = () => {
+    // For premium users on the active speaker card, offer the CSV export
+    // directly from the info popup as well as the inline button.
+    if (isPremium && isSpeakerEngagementCard) {
+      Alert.alert(
+        'Speaker and Engagement Card',
+        'Use this to mark the one card you want to use for speaking engagements and event networking. Contacts captured from this card can be identified in your Contacts filter.\n\nYou can download everyone who scanned this card as a CSV.',
+        [
+          { text: 'Close', style: 'cancel' },
+          { text: 'Download CSV', onPress: () => handleExportSpeakerContacts() },
+        ]
+      );
+      return;
+    }
     Alert.alert(
       'Speaker and Engagement Card',
       'Use this to mark the one card you want to use for speaking engagements and event networking. Contacts captured from this card can be identified in your Contacts filter.'
     );
+  };
+
+  // CSV-escape a single value (quote if it contains comma, quote, or newline).
+  const csvEscape = (value: unknown): string => {
+    const s = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const formatContactDate = (createdAt: unknown): string => {
+    if (!createdAt) return '';
+    try {
+      const d = new Date(createdAt as string);
+      if (isNaN(d.getTime())) return String(createdAt);
+      return d.toLocaleString('en-GB');
+    } catch {
+      return String(createdAt);
+    }
+  };
+
+  // True if a scan/save time falls inside any speaker-active window for the card.
+  // An open window (end === null) runs up to "now".
+  const inAnySpeakerWindow = (createdAt: unknown, windows: any[]): boolean => {
+    if (!Array.isArray(windows) || windows.length === 0) return false;
+    const t = new Date(createdAt as string).getTime();
+    if (isNaN(t)) return false;
+    return windows.some((w) => {
+      const start = new Date(w?.start).getTime();
+      if (isNaN(start)) return false;
+      const end = w?.end ? new Date(w.end).getTime() : Date.now();
+      return t >= start && t <= end;
+    });
+  };
+
+  const buildContactsCsv = (contacts: any[]): string => {
+    const headers = ['Name', 'Surname', 'Phone', 'Email', 'Company', 'How We Met', 'Date Saved', 'Location'];
+    const lines = contacts.map((c) => {
+      const loc = c?.location
+        ? [c.location.area, c.location.city, c.location.country].filter(Boolean).join(', ') ||
+          c.location.formattedAddress ||
+          ''
+        : '';
+      return [
+        c?.name,
+        c?.surname,
+        c?.phone,
+        c?.email,
+        c?.company,
+        c?.howWeMet,
+        formatContactDate(c?.createdAt),
+        loc,
+      ]
+        .map(csvEscape)
+        .join(',');
+    });
+    return [headers.join(','), ...lines].join('\n');
+  };
+
+  // Export everyone who scanned THIS speaker & engagement card as a CSV.
+  // Premium-only: free users are redirected to Unlock Premium (defense in depth;
+  // the button is only rendered for premium users anyway).
+  const handleExportSpeakerContacts = async () => {
+    if (triggerUpsell({
+      featureName: 'Speaker & Engagement Card',
+      description: 'Exporting your speaker & engagement contacts is a premium feature. Upgrade to Premium to download them.',
+    })) return;
+
+    if (isExportingContacts) return;
+    setIsExportingContacts(true);
+    try {
+      const userId = await getUserId();
+      if (!userId) throw new Error('Not signed in');
+
+      // Fetch contacts AND the card (for its server-recorded speaker activity windows).
+      const [contactsRes, cardsRes] = await Promise.all([
+        authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CONTACTS}/${userId}`),
+        authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`),
+      ]);
+      if (!contactsRes.ok) throw new Error('Failed to load contacts');
+
+      const contactsData = await contactsRes.json();
+      const contactList = Array.isArray(contactsData?.contactList) ? contactsData.contactList : [];
+
+      // Speaker windows for THIS card (intervals during which it was the speaker card).
+      let speakerWindows: any[] = [];
+      if (cardsRes.ok) {
+        const cardsData = await cardsRes.json();
+        const cardsArray = Array.isArray(cardsData?.cards)
+          ? cardsData.cards
+          : (Array.isArray(cardsData) ? cardsData : []);
+        speakerWindows = cardsArray?.[cardIndex]?.speakerWindows || [];
+      }
+
+      // Only contacts captured by THIS card WHILE it was an active speaker card.
+      const speakerContacts = contactList.filter(
+        (c: any) =>
+          Number(c?.sourceCardIndex) === Number(cardIndex) &&
+          inAnySpeakerWindow(c?.createdAt, speakerWindows)
+      );
+
+      if (speakerContacts.length === 0) {
+        Alert.alert(
+          'No Contacts Yet',
+          'No one scanned this card while it was set as your speaker & engagement card.'
+        );
+        return;
+      }
+
+      const csv = buildContactsCsv(speakerContacts);
+      const fileName = `speaker-contacts-${Date.now()}.csv`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+      await Share.open({
+        url: fileUri,
+        type: 'text/csv',
+        filename: fileName,
+        failOnCancel: false,
+      });
+    } catch (error: any) {
+      // react-native-share throws on user cancel — treat as a no-op.
+      const msg = String(error?.message || '');
+      if (msg.includes('User did not share') || msg.includes('cancel')) return;
+      console.error('Export speaker contacts failed:', error);
+      Alert.alert('Export Failed', 'Could not export contacts. Please try again.');
+    } finally {
+      setIsExportingContacts(false);
+    }
   };
 
   // Load active widgets for this card
@@ -1724,6 +1867,27 @@ export default function EditCard() {
               </TouchableOpacity>
             </View>
 
+            {/* Export speaker & engagement contacts (premium + active speaker card only) */}
+            {isPremium && isSpeakerEngagementCard && (
+              <TouchableOpacity
+                style={styles.exportContactsButton}
+                onPress={handleExportSpeakerContacts}
+                disabled={isExportingContacts}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Download contacts who scanned this card as CSV"
+              >
+                {isExportingContacts ? (
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                ) : (
+                  <MaterialIcons name="file-download" size={20} color={COLORS.primary} />
+                )}
+                <Text style={styles.exportContactsButtonText}>
+                  {isExportingContacts ? 'Preparing CSV…' : 'Download scanned contacts (CSV)'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* Social Media URL Inputs */}
             {selectedSocials.map((socialId) => (
               <Animated.View 
@@ -2830,6 +2994,24 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  exportContactsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
+  },
+  exportContactsButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   previewModalContainer: {
     flex: 1,
