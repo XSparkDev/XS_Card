@@ -521,7 +521,7 @@ export default function AdminDashboard() {
         <View style={styles.overviewContainer}>
           <FeatureTip
             tipKey="dashboard_total_cards"
-            content="Total cards you have created"
+            content="Total no. of cards created"
             position="bottom"
             bubbleAlign="left"
             inScrollView={true}
@@ -540,7 +540,7 @@ export default function AdminDashboard() {
 
           <FeatureTip
             tipKey="dashboard_total_contacts"
-            content="Total contacts who scanned your card"
+            content="Total no. of contacts"
             position="bottom"
             bubbleAlign="right"
             inScrollView={true}

@@ -11,6 +11,7 @@ import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
 import PremiumUpsellProvider from './src/components/PremiumUpsellProvider';
 import { TooltipProvider } from './src/context/TooltipContext';
+import { ScanLimitProvider } from './src/context/ScanLimitContext';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
@@ -19,6 +20,11 @@ import { MeetingNotificationProvider } from './src/context/MeetingNotificationCo
 import { checkForUpdate, VersionInfo } from './src/services/updateCheckService';
 import { UpdateModal } from './src/components/UpdateModal';
 import LocationPermissionModal from './src/components/LocationPermissionModal';
+import { useFonts } from 'expo-font';
+import { applyGlobalMontserrat, MONTSERRAT_FONTS } from './src/utils/globalFont';
+
+// Make Montserrat the app-wide default font (must run before any Text renders).
+applyGlobalMontserrat();
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
@@ -156,6 +162,7 @@ function AppContent() {
           <MeetingNotificationProvider>
           <ToastProvider>
             <TooltipProvider>
+            <ScanLimitProvider>
             <NavigationContainer ref={navigationRef}>
               <PremiumUpsellProvider>
                 <ExpoStatusBar style="auto" translucent={true} />
@@ -165,6 +172,7 @@ function AppContent() {
                 </Stack.Navigator>
               </PremiumUpsellProvider>
             </NavigationContainer>
+            </ScanLimitProvider>
             </TooltipProvider>
 
             {/* First-launch location permission rationale (optional feature) */}
@@ -188,6 +196,10 @@ function AppContent() {
 }
 
 export default function App() {
+  // Load Montserrat before rendering so the global default font is available.
+  const [fontsLoaded] = useFonts(MONTSERRAT_FONTS);
+  if (!fontsLoaded) return null;
+
   return (
     <AppErrorBoundary>
       <AppContent />

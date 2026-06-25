@@ -25,6 +25,7 @@ export default function AddCards() {
   const [error, setError] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [formData, setFormData] = useState({
+    cardName: '',
     firstName: '',
     lastName: '',
     occupation: '',
@@ -132,6 +133,7 @@ export default function AddCards() {
       if (val) socialFields[socialId] = val as string;
     });
     return {
+      cardName: formData.cardName,
       name: formData.firstName,
       surname: formData.lastName,
       occupation: formData.occupation,
@@ -490,6 +492,7 @@ export default function AddCards() {
       const form = new FormData();
       
       // Use formData state to append values
+      form.append('cardName', (formData.cardName || '').trim());
       form.append('company', formData.company);
       form.append('email', formData.email);
       form.append('phone', `${formData.countryCode}${formData.phoneNumber}`);
@@ -603,8 +606,24 @@ export default function AddCards() {
           <View style={styles.warningBox}>
             <MaterialIcons name="info" size={20} color={COLORS.black} />
             <Text style={styles.warningText}>
-              New Card, new you! Create a card that will help you connect with your network. 
+              New Card, new you! Create a card that will help you connect with your network.
             </Text>
+          </View>
+
+          {/* Card Name Section — distinct identifier for this card (not shown on the card face) */}
+          <View style={styles.cardNameSection}>
+            <View style={styles.cardNameLabelRow}>
+              <MaterialIcons name="badge" size={18} color={COLORS.primary} />
+              <Text style={styles.cardNameLabel}>Card name</Text>
+            </View>
+            <TextInput
+              style={styles.cardNameInput}
+              placeholder="Give this card a name to identify it"
+              placeholderTextColor="#999"
+              value={formData.cardName}
+              onChangeText={(text) => setFormData({ ...formData, cardName: text })}
+            />
+            <Text style={styles.cardNameHelper}>Give this card a name to identify it</Text>
           </View>
 
           {/* Images & Layout Section */}
@@ -651,7 +670,7 @@ export default function AddCards() {
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 14,
-                  borderRadius: 10,
+                  borderRadius: 20,
                   borderWidth: 2,
                   borderColor: template === n ? COLORS.secondary : '#ddd',
                   backgroundColor: template === n ? '#F6F7FF' : '#FFF',
@@ -847,6 +866,41 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
     marginBottom: 15,
+  },
+  cardNameSection: {
+    backgroundColor: '#FFF0F3',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 20,
+  },
+  cardNameLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  cardNameLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardNameInput: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: 14,
+    fontSize: 16,
+    color: COLORS.black,
+  },
+  cardNameHelper: {
+    marginTop: 8,
+    fontSize: 12,
+    color: COLORS.gray,
   },
   toggleContainer: {
     flexDirection: 'row',

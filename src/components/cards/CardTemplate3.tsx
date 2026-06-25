@@ -6,6 +6,7 @@ import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
+import QrPlaceholder from '../QrPlaceholder';
 
 type CardData = any;
 
@@ -21,10 +22,12 @@ interface Props {
   onPressSocial: (platform: string, value: string) => void;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
   onPressEdit?: () => void;
+  scanLimited?: boolean;
+  scanCountdown?: string;
 }
 
 export default function CardTemplate3(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown } = props;
   const theme = card.colorScheme || colorFallback;
 
   // Use exact same icon mapping as Template 1
@@ -79,7 +82,7 @@ export default function CardTemplate3(props: Props) {
           />
         ) : (
           <View style={styles.qrPlaceholder}>
-            <MaterialIcons name="qr-code-2" size={isTablet() ? scale(80) : 80} color="#ccc" />
+            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} />
           </View>
         )}
       </View>

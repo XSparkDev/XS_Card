@@ -47,6 +47,7 @@ export default function DashboardNavigator() {
           fontSize: 15,
           marginTop: 2,
           paddingBottom: 4,
+          fontFamily: 'Montserrat_500Medium',
         },
       }}
     >

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, Linking, ActivityIndicator, Pressable } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import CardPreviewModal from '../../components/cards/CardPreviewModal';
@@ -9,7 +9,9 @@ import ColorPicker from 'react-native-wheel-color-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import FeatureTip from '../../components/FeatureTip';
+import { useTooltipContext } from '../../context/TooltipContext';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
@@ -18,6 +20,7 @@ import { getImageUrl, pickImage, requestPermissions, checkPermissions, pickImage
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
+import LogoPlaceholder from '../../components/LogoPlaceholder';
 // CardTemplate2–5 are now used inside the shared CardPreviewModal component
 import WidgetConfigModal from '../../components/widgets/WidgetConfigModal';
 import WidgetCard from '../../components/widgets/WidgetCard';
@@ -36,6 +39,9 @@ const isSpeakerCardEnabled = (value: unknown): boolean => {
   return value === true || value === 'true';
 };
 
+// Salutation options for the Title dropdown — primary-card-only, canonical field.
+const TITLE_OPTIONS = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Dr.', 'Prof.'];
+
 const normalizeUserPlan = (plan?: string | null): UserPlan => {
   const normalizedPlan = String(plan || 'free').toLowerCase();
   return normalizedPlan === 'premium' || normalizedPlan === 'enterprise'
@@ -45,9 +51,15 @@ const normalizeUserPlan = (plan?: string | null): UserPlan => {
 
 // Update the FormData interface to properly handle social media fields
 interface FormData {
+  /** User-defined label that identifies the card (separate from the company name). */
+  cardName: string;
   firstName: string;
   lastName: string;
+  /** Salutation (Mr./Mrs./Dr./...) — canonical, primary-card-only field. */
+  salutation: string;
   occupation: string;
+  /** Optional qualification (e.g. "MBA", "PhD") — canonical, primary-card-only field. */
+  qualification: string;
   company: string;
   email: string;
   phoneNumber: string;
@@ -77,16 +89,36 @@ export default function EditCard() {
   // other card the name fields are locked (see the name-change policy).
   const isPrimaryCard = cardIndex === 0;
   const cardData = route.params?.cardData; // Get the passed card data
-  const navigation = useNavigation();
+  // Set when this screen was reached via a redirect from a non-primary card
+  // trying to edit a canonical field — Save returns here instead of the default flow.
+  const originCardIndex = route.params?.originCardIndex;
+  const navigation = useNavigation<any>();
+
+  // Canonical identity fields (name, surname, salutation, qualification) live on
+  // the primary card. Tapping one on a non-primary card asks for confirmation,
+  // then sends the user to the primary card to edit it; on Save there we return
+  // to this origin card (see the success-modal handler + focus reload).
+  const [isRedirectModalVisible, setIsRedirectModalVisible] = useState(false);
+  const redirectToPrimaryCard = useCallback(() => {
+    setIsRedirectModalVisible(true);
+  }, []);
+  const confirmRedirectToPrimaryCard = useCallback(() => {
+    setIsRedirectModalVisible(false);
+    navigation.navigate('EditCard', { cardIndex: 0, originCardIndex: cardIndex });
+  }, [navigation, cardIndex]);
+  const { notifyScroll } = useTooltipContext();
   const { user } = useAuth();
   const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<FormData>({
+    cardName: '',
     firstName: '',
     lastName: '',
+    salutation: '',
     occupation: '',
+    qualification: '',
     company: '',
     email: '',
     phoneNumber: '',
@@ -107,6 +139,7 @@ export default function EditCard() {
   const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
+  const [isTitleModalVisible, setIsTitleModalVisible] = useState(false);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState('');
@@ -129,6 +162,11 @@ export default function EditCard() {
   const [showAltNumber, setShowAltNumber] = useState(false);
   const [altNumberError, setAltNumberError] = useState<string>('');
   const [isSpeakerEngagementCard, setIsSpeakerEngagementCard] = useState(false);
+  // Mirrors isSpeakerEngagementCard but only updates once the toggle has actually
+  // been persisted via Save — the CSV export is gated on this, not the live
+  // switch state, so it can't appear for an unsaved toggle-on (there's no
+  // server-recorded session/window to export yet).
+  const [savedIsSpeakerEngagementCard, setSavedIsSpeakerEngagementCard] = useState(false);
   const [existingSpeakerCardIndex, setExistingSpeakerCardIndex] = useState<number | null>(null);
   const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
   const [speakerConflictLoaded, setSpeakerConflictLoaded] = useState(false);
@@ -139,6 +177,61 @@ export default function EditCard() {
   const [activeWidgets, setActiveWidgets] = useState<WidgetConfig[]>([]);
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | undefined>();
   const widgetManager = WidgetManager.getInstance();
+
+  // ── Unsaved-changes tracking ──
+  // Snapshot of every field handleSave actually persists. Captured once the
+  // initial card data has loaded, re-baselined after every successful save, and
+  // diffed on every render to drive the Save button's enabled state and the
+  // leave-without-saving warning.
+  const initialSnapshotRef = useRef<string | null>(null);
+  const buildChangeSnapshot = () => JSON.stringify({
+    formData,
+    template,
+    selectedColor,
+    selectedSocials,
+    zoomLevel,
+    altNumber,
+    altCountryCode,
+    showAltNumber,
+    isSpeakerEngagementCard,
+  });
+  useEffect(() => {
+    if (!loading && initialSnapshotRef.current === null) {
+      initialSnapshotRef.current = buildChangeSnapshot();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  const hasUnsavedChanges =
+    initialSnapshotRef.current !== null && buildChangeSnapshot() !== initialSnapshotRef.current;
+  // Keep a ref in sync so the beforeRemove listener (registered once) always
+  // reads the latest value instead of the one captured when it was added.
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
+
+  // Intercept swipe-back / hardware-back navigation the same way the explicit
+  // Back button does, so unsaved edits can't be lost via a gesture either.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      if (!hasUnsavedChangesRef.current) return;
+      e.preventDefault();
+      Alert.alert(
+        'Unsaved changes',
+        'You have unsaved changes. Save them before leaving?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+          {
+            text: 'Save',
+            onPress: async () => {
+              const saved = await handleSave({ silent: true });
+              if (saved) navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   // Helper function to parse phone number and extract country code
   const parsePhoneNumber = (phone: string) => {
@@ -174,6 +267,20 @@ export default function EditCard() {
     // Alt number loading is now handled in loadCardDataFromProps and loadUserData
   }, [cardData, cardIndex]);
 
+  // Reload card data when the screen regains focus (e.g. returning from the
+  // primary card after editing canonical fields) so updated name/title/
+  // qualification values show here. Skip the initial focus to avoid a double load.
+  const hasFocusedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+      loadUserData();
+    }, [cardIndex])
+  );
+
   useEffect(() => {
     setUserPlan(normalizeUserPlan(user?.plan));
   }, [user?.plan]);
@@ -205,9 +312,14 @@ export default function EditCard() {
       setSelectedColor(cardData.colorScheme || '#1B2B5B');
       setCustomColor(cardData.colorScheme || '#1B2B5B');
       setFormData({
+        // Pre-populate the card name with the company when none has been set yet,
+        // so the user has a sensible default they can personalise.
+        cardName: cardData.cardName || cardData.company || '',
         firstName: cardData.name || '',
         lastName: cardData.surname || '',
+        salutation: cardData.salutation || '',
         occupation: cardData.occupation || '',
+        qualification: cardData.qualification || '',
         company: cardData.company || '',
         email: cardData.email || '',
         phoneNumber: parsePhoneNumber(cardData.phone || '').number,
@@ -246,6 +358,7 @@ export default function EditCard() {
       }
 
       setIsSpeakerEngagementCard(isSpeakerCardEnabled(cardData.isSpeakerEngagementCard));
+      setSavedIsSpeakerEngagementCard(isSpeakerCardEnabled(cardData.isSpeakerEngagementCard));
       setExistingSpeakerCardIndex(null);
       setExistingSpeakerCardLabel('');
       setSpeakerConflictLoaded(false);
@@ -297,9 +410,14 @@ export default function EditCard() {
         setSelectedColor(userData.colorScheme || '#1B2B5B');
         setCustomColor(userData.colorScheme || '#1B2B5B');
         setFormData({
+          // Pre-populate the card name with the company when none has been set yet,
+          // so the user has a sensible default they can personalise.
+          cardName: userData.cardName || userData.company || '',
           firstName: userData.name || '',
           lastName: userData.surname || '',
+          salutation: userData.salutation || '',
           occupation: userData.occupation || '',
+          qualification: userData.qualification || '',
           company: userData.company || '',
           email: userData.email || '',
           phoneNumber: parsePhoneNumber(userData.phone || '').number,
@@ -338,6 +456,7 @@ export default function EditCard() {
         }
 
         setIsSpeakerEngagementCard(isSpeakerCardEnabled(userData.isSpeakerEngagementCard));
+        setSavedIsSpeakerEngagementCard(isSpeakerCardEnabled(userData.isSpeakerEngagementCard));
         setExistingSpeakerCardIndex(activeSpeakerCardIndex >= 0 ? activeSpeakerCardIndex : null);
         setExistingSpeakerCardLabel(
           activeSpeakerCard?.company?.trim() || (
@@ -501,8 +620,10 @@ export default function EditCard() {
 
   const handleSpeakerTooltipPress = () => {
     // For premium users on the active speaker card, offer the CSV export
-    // directly from the info popup as well as the inline button.
-    if (isPremium && isSpeakerEngagementCard) {
+    // directly from the info popup as well as the inline button. Gated on the
+    // SAVED toggle state — an unsaved toggle-on has no server-recorded session
+    // to export yet, so the option must not appear until Save is pressed.
+    if (isPremium && savedIsSpeakerEngagementCard) {
       Alert.alert(
         'Speaker and Engagement Card',
         'Use this to mark the one card you want to use for speaking engagements and event networking. Contacts captured from this card can be identified in your Contacts filter.\n\nYou can download everyone who scanned this card as a CSV.',
@@ -536,18 +657,21 @@ export default function EditCard() {
     }
   };
 
-  // True if a scan/save time falls inside any speaker-active window for the card.
+  // True if a scan/save time falls inside the CURRENT speaker session only — the
+  // most recently opened window, never an earlier one. `speakerWindows` is an
+  // append-only audit log of every on/off toggle, but each toggle-on starts a
+  // fresh capture session: contacts from a prior session must never carry into
+  // a later one, so only `windows[windows.length - 1]` is ever eligible here.
   // An open window (end === null) runs up to "now".
-  const inAnySpeakerWindow = (createdAt: unknown, windows: any[]): boolean => {
+  const inCurrentSpeakerWindow = (createdAt: unknown, windows: any[]): boolean => {
     if (!Array.isArray(windows) || windows.length === 0) return false;
     const t = new Date(createdAt as string).getTime();
     if (isNaN(t)) return false;
-    return windows.some((w) => {
-      const start = new Date(w?.start).getTime();
-      if (isNaN(start)) return false;
-      const end = w?.end ? new Date(w.end).getTime() : Date.now();
-      return t >= start && t <= end;
-    });
+    const current = windows[windows.length - 1];
+    const start = new Date(current?.start).getTime();
+    if (isNaN(start)) return false;
+    const end = current?.end ? new Date(current.end).getTime() : Date.now();
+    return t >= start && t <= end;
   };
 
   const buildContactsCsv = (contacts: any[]): string => {
@@ -583,6 +707,16 @@ export default function EditCard() {
       description: 'Exporting your speaker & engagement contacts is a premium feature. Upgrade to Premium to download them.',
     })) return;
 
+    // Defense in depth — the button is only rendered once the toggle-on is
+    // saved, but guard here too in case this is ever reached another way.
+    if (!savedIsSpeakerEngagementCard) {
+      Alert.alert(
+        'Save Required',
+        'Save this card with the speaker toggle on before exporting its contacts.'
+      );
+      return;
+    }
+
     if (isExportingContacts) return;
     setIsExportingContacts(true);
     try {
@@ -609,12 +743,13 @@ export default function EditCard() {
         speakerWindows = cardsArray?.[cardIndex]?.speakerWindows || [];
       }
 
-      // Only contacts captured by THIS card WHILE it was an active speaker card.
-      // Use the machine-readable createdAtMs (epoch); createdAt itself is a display string.
+      // Only contacts captured by THIS card during the CURRENT speaker session —
+      // never a prior one. Use the machine-readable createdAtMs (epoch);
+      // createdAt itself is a display string.
       const speakerContacts = contactList.filter(
         (c: any) =>
           Number(c?.sourceCardIndex) === Number(cardIndex) &&
-          inAnySpeakerWindow(c?.createdAtMs ?? c?.createdAt, speakerWindows)
+          inCurrentSpeakerWindow(c?.createdAtMs ?? c?.createdAt, speakerWindows)
       );
 
       if (speakerContacts.length === 0) {
@@ -751,7 +886,25 @@ export default function EditCard() {
   ];
 
   const handleBack = () => {
-    navigation.goBack();
+    if (!hasUnsavedChanges) {
+      navigation.goBack();
+      return;
+    }
+    Alert.alert(
+      'Unsaved changes',
+      'You have unsaved changes. Save them before leaving?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
+        {
+          text: 'Save',
+          onPress: async () => {
+            const saved = await handleSave({ silent: true });
+            if (saved) navigation.goBack();
+          },
+        },
+      ],
+    );
   };
 
   const validateEmail = (email: string) => {
@@ -784,10 +937,14 @@ export default function EditCard() {
     return true;
   };
 
-  const handleSave = async () => {
+  // `silent` skips the success modal (used when saving as part of leaving the
+  // screen via the unsaved-changes prompt — the caller handles navigation itself
+  // right after this resolves). Returns whether the save succeeded.
+  const handleSave = async (options?: { silent?: boolean }): Promise<boolean> => {
+    const silent = !!options?.silent;
     try {
       if (!validateForm()) {
-        return;
+        return false;
       }
 
       setIsSaving(true);
@@ -797,7 +954,7 @@ export default function EditCard() {
       if (!userId) {
         setError('User ID not found');
         setIsSaving(false);
-        return;
+        return false;
       }
 
       // Create socials object with selected socials
@@ -810,8 +967,11 @@ export default function EditCard() {
 
       // Create card data object - ensure logoZoomLevel is included as a number, not a string
       const cardData: any = {
+        cardName: (formData.cardName || '').trim(),
         name: formData.firstName,
         surname: formData.lastName,
+        salutation: formData.salutation,
+        qualification: formData.qualification,
         occupation: formData.occupation,
         company: formData.company,
         email: formData.email,
@@ -864,6 +1024,11 @@ export default function EditCard() {
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
 
+      // The PATCH succeeded with this exact value, regardless of whether the
+      // response includes a refreshed cards array below — safe fallback so the
+      // CSV export option never depends on the response shape.
+      setSavedIsSpeakerEngagementCard(isSpeakerEngagementCard);
+
       if (Array.isArray(result.cards)) {
         try {
           await AsyncStorage.setItem('userCards', JSON.stringify(result.cards));
@@ -877,7 +1042,10 @@ export default function EditCard() {
 
           const refreshedCard = result.cards[cardIndex];
           if (refreshedCard) {
+            // Server-confirmed value — also keep the saved-flag in sync in case it
+            // differs from what was sent (e.g. server-side mutual-exclusivity demotion).
             setIsSpeakerEngagementCard(isSpeakerCardEnabled(refreshedCard.isSpeakerEngagementCard));
+            setSavedIsSpeakerEngagementCard(isSpeakerCardEnabled(refreshedCard.isSpeakerEngagementCard));
 
             const activeSpeakerCardIndex = result.cards.findIndex((card: any, index: number) => (
               index !== cardIndex && isSpeakerCardEnabled(card?.isSpeakerEngagementCard)
@@ -898,11 +1066,17 @@ export default function EditCard() {
       }
       
       // Alt number is now saved to backend, no need for AsyncStorage
-      
-      setModalMessage('Card updated');
-      setIsSuccessModalVisible(true);
+
+      // Re-baseline the unsaved-changes snapshot to the just-saved values so the
+      // Save button greys out again until the next edit.
+      initialSnapshotRef.current = buildChangeSnapshot();
+
       setIsSaving(false);
-      
+      if (!silent) {
+        setModalMessage('Card updated');
+        setIsSuccessModalVisible(true);
+      }
+
       // Sync widget data after successful card update
       try {
         // Generate QR code URL for widget
@@ -933,10 +1107,12 @@ export default function EditCard() {
         // Don't fail the whole save operation if widget sync fails
       }
 
+      return true;
     } catch (error) {
       console.error('Error updating card:', error);
       setError(error instanceof Error && error.message ? error.message : 'Failed to update card');
       setIsSaving(false);
+      return false;
     }
   };
 
@@ -1407,6 +1583,7 @@ export default function EditCard() {
     });
 
     return {
+      cardName: formData.cardName || '',
       name: formData.firstName || '',
       surname: formData.lastName || '',
       occupation: formData.occupation || '',
@@ -1444,7 +1621,11 @@ export default function EditCard() {
               <Text style={styles.previewButtonText}>Preview</Text>
             </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer} disabled={isSaving}>
+        <TouchableOpacity
+          onPress={() => handleSave()}
+          style={[styles.saveButtonContainer, !hasUnsavedChanges && !isSaving && styles.saveButtonContainerDisabled]}
+          disabled={isSaving || !hasUnsavedChanges}
+        >
           {isSaving ? (
             <ActivityIndicator size="small" color={COLORS.white} />
           ) : (
@@ -1454,7 +1635,7 @@ export default function EditCard() {
         </View>
       </View>
 
-      <KeyboardAwareScrollView 
+      <KeyboardAwareScrollView
           ref={scrollViewRef}
           style={styles.content}
           contentContainerStyle={[
@@ -1463,10 +1644,29 @@ export default function EditCard() {
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
         enableOnAndroid={true}
+        enableResetScrollToCoords={false}
         extraScrollHeight={20}
         extraHeight={20}
         >
+          {/* Card Name Section — distinct identifier for this card (not shown on the card face) */}
+          <View style={styles.cardNameSection}>
+            <View style={styles.cardNameLabelRow}>
+              <MaterialIcons name="badge" size={18} color={COLORS.primary} />
+              <Text style={styles.cardNameLabel}>Card name</Text>
+            </View>
+            <TextInput
+              style={styles.cardNameInput}
+              placeholder="Give this card a name to identify it"
+              placeholderTextColor="#999"
+              value={formData.cardName}
+              onChangeText={(text) => setFormData({ ...formData, cardName: text })}
+            />
+            <Text style={styles.cardNameHelper}>Give this card a name to identify it</Text>
+          </View>
+
           {/* Card Color Section */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Card color</Text>
@@ -1533,9 +1733,7 @@ export default function EditCard() {
                 fadeDuration={300}
               />
             ) : (
-              <View style={styles.logoPlaceholder}>
-                <Text style={styles.logoPlaceholderText}>LOGO</Text>
-              </View>
+              <LogoPlaceholder textSize={22} />
             )}
             </View>
             {userPlan !== 'enterprise' && (
@@ -1629,75 +1827,32 @@ export default function EditCard() {
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Template</Text>
             <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(1)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 1 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 1 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 1</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(2)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 2 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 2 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 2</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(3)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 3 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 3 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 3</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(4)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 4 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 4 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 4</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(5)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 5 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 5</Text>
-              </TouchableOpacity>
+              {[1, 2, 3, 4, 5].map((tpl) => {
+                const isSelected = template === tpl;
+                return (
+                  <TouchableOpacity
+                    key={tpl}
+                    onPress={() => handleTemplateSelect(tpl)}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 14,
+                      borderRadius: 20,
+                      borderWidth: 2,
+                      borderColor: isSelected ? COLORS.secondary : '#ddd',
+                      backgroundColor: isSelected ? '#F6F7FF' : '#FFF',
+                      marginRight: 8,
+                      overflow: 'visible',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.black }}>Template {tpl}</Text>
+                    {isSelected && (
+                      <View style={styles.templateTickBadge}>
+                        <MaterialIcons name="check" size={12} color={COLORS.white} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
           </View>
@@ -1707,14 +1862,73 @@ export default function EditCard() {
             <Text style={styles.sectionTitle}>Personal details</Text>
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            <TextInput
-              style={[styles.input, !isPrimaryCard && styles.disabledInput]}
-              placeholder="First name"
-              placeholderTextColor="#999"
-              value={formData.firstName}
-              onChangeText={(text) => setFormData({...formData, firstName: text})}
-              editable={isPrimaryCard}
-            />
+            {/* First name — canonical (primary card only). On other cards, tap redirects to primary. */}
+            {isPrimaryCard ? (
+              <TextInput
+                style={styles.input}
+                placeholder="First name"
+                placeholderTextColor="#999"
+                value={formData.firstName}
+                onChangeText={(text) => setFormData({...formData, firstName: text})}
+              />
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View pointerEvents="none">
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="First name"
+                    placeholderTextColor="#999"
+                    value={formData.firstName}
+                    editable={false}
+                  />
+                </View>
+              </Pressable>
+            )}
+            {/* Last name — canonical (primary card only). */}
+            {isPrimaryCard ? (
+              <TextInput
+                style={styles.input}
+                placeholder="Last name"
+                placeholderTextColor="#999"
+                value={formData.lastName}
+                onChangeText={(text) => setFormData({...formData, lastName: text})}
+              />
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View pointerEvents="none">
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="Last name"
+                    placeholderTextColor="#999"
+                    value={formData.lastName}
+                    editable={false}
+                  />
+                </View>
+              </Pressable>
+            )}
+            {/* Title / salutation — canonical dropdown (primary card only). */}
+            {isPrimaryCard ? (
+              <TouchableOpacity
+                style={[styles.input, styles.dropdownInput]}
+                onPress={() => setIsTitleModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
+                  {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
+                </Text>
+                <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+              </TouchableOpacity>
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View style={[styles.input, styles.dropdownInput, styles.disabledInput]} pointerEvents="none">
+                  <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
+                    {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
+                  </Text>
+                  <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+                </View>
+              </Pressable>
+            )}
+            {/* Occupation — per-card field (freely editable on any card). */}
             <TextInput
               style={styles.input}
               placeholder="Occupation"
@@ -1722,18 +1936,32 @@ export default function EditCard() {
               value={formData.occupation}
               onChangeText={(text) => setFormData({...formData, occupation: text})}
             />
-            <TextInput
-              style={[styles.input, !isPrimaryCard && styles.disabledInput]}
-              placeholder="Last name"
-              placeholderTextColor="#999"
-              value={formData.lastName}
-              onChangeText={(text) => setFormData({...formData, lastName: text})}
-              editable={isPrimaryCard}
-            />
+            {/* Qualification — canonical, optional (primary card only). */}
+            {isPrimaryCard ? (
+              <TextInput
+                style={styles.input}
+                placeholder="Qualification (optional)"
+                placeholderTextColor="#999"
+                value={formData.qualification}
+                onChangeText={(text) => setFormData({...formData, qualification: text})}
+              />
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View pointerEvents="none">
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="Qualification (optional)"
+                    placeholderTextColor="#999"
+                    value={formData.qualification}
+                    editable={false}
+                  />
+                </View>
+              </Pressable>
+            )}
             <Text style={styles.namePolicyNote}>
               {isPrimaryCard
-                ? 'Your name can only be changed here, once every 30 days.'
-                : 'Your name can only be changed on your primary card.'}
+                ? 'Your name, title and qualification can only be changed here. Name changes are allowed once every 30 days.'
+                : 'Name, title and qualification can only be changed on your primary card. Tap any of these fields to go there.'}
             </Text>
             <TextInput 
               style={[
@@ -1825,14 +2053,22 @@ export default function EditCard() {
                     <Text style={styles.premiumBadgeText}>PREMIUM</Text>
                   </View>
                 )}
-                <TouchableOpacity
-                  style={styles.tooltipButton}
-                  onPress={handleSpeakerTooltipPress}
-                  accessibilityRole="button"
-                  accessibilityLabel="Learn more about speaker and engagement cards"
+                <FeatureTip
+                  tipKey="speaker_engagement_card"
+                  content="Mark one card as your Speaker & Engagement Card to track who scans it during a talk or event, then export those contacts as a CSV."
+                  position="bottom"
+                  bubbleAlign="right"
+                  inScrollView
                 >
-                  <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.tooltipButton}
+                    onPress={handleSpeakerTooltipPress}
+                    accessibilityRole="button"
+                    accessibilityLabel="Learn more about speaker and engagement cards"
+                  >
+                    <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
+                  </TouchableOpacity>
+                </FeatureTip>
               </View>
               <TouchableOpacity
                 style={[
@@ -1869,8 +2105,10 @@ export default function EditCard() {
               </TouchableOpacity>
             </View>
 
-            {/* Export speaker & engagement contacts (premium + active speaker card only) */}
-            {isPremium && isSpeakerEngagementCard && (
+            {/* Export speaker & engagement contacts — premium, and only once the
+                toggle-on has actually been saved (so a real session/window exists
+                server-side to export against). */}
+            {isPremium && savedIsSpeakerEngagementCard && (
               <TouchableOpacity
                 style={styles.exportContactsButton}
                 onPress={handleExportSpeakerContacts}
@@ -2126,12 +2364,96 @@ export default function EditCard() {
             onPress: () => {
               setIsSuccessModalVisible(false);
               if (modalMessage.includes('updated successfully') || modalMessage.includes('deleted successfully')) {
-              navigation.goBack();
+                // goBack() returns to the previous screen. When we arrived via a
+                // canonical-field redirect, that previous screen is the origin
+                // (non-primary) card, which reloads its data on focus.
+                navigation.goBack();
               }
             }
           }
         ]}
       />
+
+      {/* Redirect-to-primary confirmation — shown when a canonical field is tapped on a non-primary card */}
+      <Modal
+        isVisible={isRedirectModalVisible}
+        onBackdropPress={() => setIsRedirectModalVisible(false)}
+        onBackButtonPress={() => setIsRedirectModalVisible(false)}
+        animationIn="zoomIn"
+        animationOut="zoomOut"
+        backdropOpacity={0.5}
+        style={{ margin: 24 }}
+      >
+        <View style={styles.redirectModalCard}>
+          <View style={styles.redirectIconCircle}>
+            <MaterialIcons name="badge" size={28} color={COLORS.primary} />
+          </View>
+          <Text style={styles.redirectModalTitle}>Edit on your primary card</Text>
+          <Text style={styles.redirectModalBody}>
+            Your name, title and qualification are shared across all your cards, so
+            they're managed in one place — your primary card.
+          </Text>
+          <View style={styles.redirectStepsRow}>
+            <MaterialIcons name="arrow-forward" size={18} color={COLORS.primary} />
+            <Text style={styles.redirectStepsText}>We'll take you to your primary card to make the change.</Text>
+          </View>
+          <View style={styles.redirectStepsRow}>
+            <MaterialIcons name="check-circle" size={18} color={COLORS.primary} />
+            <Text style={styles.redirectStepsText}>Once you save, you'll come right back to this card.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.redirectPrimaryBtn}
+            onPress={confirmRedirectToPrimaryCard}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.redirectPrimaryBtnText}>Continue to primary card</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.redirectCancelBtn}
+            onPress={() => setIsRedirectModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.redirectCancelBtnText}>Stay here</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Title / salutation selection modal — primary card only */}
+      <Modal
+        isVisible={isTitleModalVisible}
+        onBackdropPress={() => setIsTitleModalVisible(false)}
+        onBackButtonPress={() => setIsTitleModalVisible(false)}
+      >
+        <View style={styles.titleModalContainer}>
+          <Text style={styles.titleModalHeading}>Select title</Text>
+          {TITLE_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option}
+              style={styles.titleOptionRow}
+              onPress={() => {
+                setFormData({ ...formData, salutation: option });
+                setIsTitleModalVisible(false);
+              }}
+            >
+              <Text style={styles.titleOptionText}>{option}</Text>
+              {formData.salutation === option && (
+                <MaterialIcons name="check" size={20} color={COLORS.primary} />
+              )}
+            </TouchableOpacity>
+          ))}
+          {!!formData.salutation && (
+            <TouchableOpacity
+              style={styles.titleOptionRow}
+              onPress={() => {
+                setFormData({ ...formData, salutation: '' });
+                setIsTitleModalVisible(false);
+              }}
+            >
+              <Text style={[styles.titleOptionText, { color: COLORS.gray }]}>Clear</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
 
       {/* Draggable template preview overlay — shows when previewing/selecting templates */}
       {previewVisible && (
@@ -2301,7 +2623,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    marginTop: 130,
+    marginTop: 150,
     marginBottom: 20,
   },
   warningBox: {
@@ -2351,6 +2673,41 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
     marginBottom: 15,
+  },
+  cardNameSection: {
+    backgroundColor: '#FFF0F3',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 24,
+  },
+  cardNameLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  cardNameLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardNameInput: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: 14,
+    fontSize: 16,
+    color: COLORS.black,
+  },
+  cardNameHelper: {
+    marginTop: 8,
+    fontSize: 12,
+    color: COLORS.gray,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -2416,6 +2773,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 15,
+  },
+  // Greyed out until an edit is made — signals there's nothing to save yet.
+  saveButtonContainerDisabled: {
+    backgroundColor: COLORS.gray,
   },
   saveButton: {
     color: COLORS.white,
@@ -2720,6 +3081,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   scrollContent: {
+    paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 20 : 20,
   },
   modalContainer: {
@@ -2825,6 +3187,115 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginBottom: 8,
     lineHeight: 16,
+  },
+  redirectModalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    paddingTop: 28,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  redirectIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF0F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  redirectModalTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: COLORS.black,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  redirectModalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  redirectStepsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+    gap: 10,
+    marginBottom: 12,
+  },
+  redirectStepsText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.black,
+  },
+  redirectPrimaryBtn: {
+    alignSelf: 'stretch',
+    backgroundColor: COLORS.primary,
+    borderRadius: 25,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  redirectPrimaryBtnText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  redirectCancelBtn: {
+    alignSelf: 'stretch',
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  redirectCancelBtnText: {
+    color: '#888',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dropdownInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  templateTickBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  titleModalContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  titleModalHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.black,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  titleOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  titleOptionText: {
+    fontSize: 16,
+    color: COLORS.black,
   },
   zoomSliderContainer: {
     width: '100%',

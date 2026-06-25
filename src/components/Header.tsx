@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar, Switch } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Platform, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from '../context/ColorSchemeContext';
-import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
 import { useTooltipContext } from '../context/TooltipContext';
 import FeatureTip from './FeatureTip';
+import SideMenu from './SideMenu';
+import ScanLimitBanner from './ScanLimitBanner';
 
 // Update this type to match your actual navigation type
 type RootStackParamList = {
@@ -34,29 +36,27 @@ interface HeaderProps {
   title: string;
   rightIcon?: React.ReactNode;
   showAddButton?: boolean;
+  /**
+   * When set, the Add-card feature tip is held back until the tip with this key
+   * has been dismissed. Lets a screen sequence the two header tips so they never
+   * appear (and collide) at the same time.
+   */
+  deferAddTipUntil?: string;
 }
 
-export default function Header({ title, rightIcon, showAddButton = false }: HeaderProps) {
+export default function Header({ title, rightIcon, showAddButton = false, deferAddTipUntil }: HeaderProps) {
   const [userPlan, setUserPlan] = useState<string>('free');
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const { colorScheme } = useColorScheme();
-  const { logout, updateUserPlan } = useAuth(); // Use our centralized auth context
-  const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
-  const { tooltipsEnabled, setTooltipsEnabled, resetTips } = useTooltipContext();
-  // Only show premium lock badges once the plan is definitively known.
-  const showLock = !isLoadingUserStatus && !isPremium;
-
-  const handleResetTips = () => {
-    Alert.alert(
-      'Reset tips',
-      'This will show all feature tips again. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Yes', onPress: () => { resetTips(); } },
-      ],
-    );
-  };
+  const { updateUserPlan } = useAuth(); // Use our centralized auth context
+  const { triggerUpsell } = usePremiumUpsell();
+  const { dismissedTips } = useTooltipContext();
+  // Hold the Add-card tip back until the deferred-until tip (e.g. the Edit-card
+  // tip on the Cards screen) has been dismissed, so the two header tooltips show
+  // one at a time instead of overlapping.
+  const deferAddTip = !!deferAddTipUntil && !dismissedTips[deferAddTipUntil];
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
   const syncUserPlan = async () => {
@@ -149,106 +149,10 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
     navigation.navigate('EditCard');
   };
 
-  const handleLogout = async () => {
-    try {
-      console.log('Header: Starting logout process...');
-      setIsMenuVisible(false); // Close menu immediately
-      
-      // Perform server logout first (non-blocking)
-      try {
-        await performServerLogout();
-      } catch (serverError) {
-        console.log('Header: Server logout failed, continuing with local logout:', serverError);
-        // Continue with local logout even if server logout fails
-      }
-      
-      // Use our centralized logout from AuthContext
-      await logout();
-      
-      console.log('Header: Logout completed, navigating to SignIn');
-      
-      // Navigate to Auth
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Auth' }],
-      });
-      
-    } catch (error) {
-      console.error('Header: Error during logout:', error);
-      
-      // If everything fails, still try to navigate to sign in
-      Alert.alert(
-        'Logout Error', 
-        'There was an issue logging out. You will be redirected to the sign-in screen.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Auth' }],
-              });
-            }
-          }
-        ]
-      );
-    }
-  };
-
-  const handleNavigate = (screenName: keyof RootStackParamList, screen?: string) => {
-    // Premium-gated menu items (Dashboard / Calendar): for FREE users we must NOT
-    // close the side menu — the upsell modal overlays it (it lives above the
-    // navigator and renders on top). Closing the menu here previously caused
-    // freezes. The menu stays mounted; the modal sits over it.
-    if (screenName === 'AdminDashboard') {
-      const isCalendar = screen === 'Calendar';
-      const featureName = isCalendar ? 'Calendar' : 'Dashboard';
-      const description = isCalendar
-        ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
-        : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
-      const icon = isCalendar ? 'calendar-clock' : 'chart-bar';
-      const bodyText = isCalendar
-        ? 'Never miss an event. You have contacts ready to create an appointment and send a real invite.'
-        : undefined; // Dashboard uses the dynamic contacts sentence
-      // Free user → overlay the upsell, leave the menu mounted/open behind it.
-      if (triggerUpsell({ featureName, description, icon, bodyText })) return;
-      // Premium user → close the menu, then navigate once it has animated out.
-      setIsMenuVisible(false);
-      setTimeout(() => {
-        try {
-          if (screen) {
-            navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
-          } else {
-            navigation.navigate('AdminDashboard');
-          }
-        } catch (error) {
-          console.error('Navigation error:', error);
-          Alert.alert('Error', 'Failed to navigate. Please try again.');
-        }
-      }, 400);
-      return;
-    }
-
-    // Non-gated items: close the menu, then navigate after the fade-out.
-    setIsMenuVisible(false);
-    setTimeout(() => {
-      try {
-        if (screenName === 'Cards' || screenName === 'Contacts') {
-          (navigation as any).navigate('MainTabs', { screen: screenName });
-        } else {
-          navigation.navigate(screenName);
-        }
-      } catch (error) {
-        console.error('Navigation error:', error);
-        Alert.alert('Error', 'Failed to navigate. Please try again.');
-      }
-    }, 400);
-  };
-
   return (
     <>
-      <View style={styles.header}>
-        <TouchableOpacity 
+      <View style={styles.header} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+        <TouchableOpacity
           style={styles.icon}
           onPress={() => setIsMenuVisible(true)}
         >
@@ -267,6 +171,8 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
               tipKey="home_add_button"
               content="Tap to add a new card"
               position="bottom"
+              arrowAtAnchor
+              suppressed={deferAddTip}
             >
               <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
                 <Text style={styles.iconContainer}>
@@ -279,130 +185,11 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
         </View>
       </View>
 
-      <Modal
-        visible={isMenuVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsMenuVisible(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsMenuVisible(false)}
-        >
-          <View style={styles.menuContainer}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleNavigate('AdminDashboard')}
-            >
-              <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
-              {showLock && (
-                <MaterialIcons name="lock" size={14} color={COLORS.primary} style={styles.premiumBadge} />
-              )}
-            </TouchableOpacity>
+      {/* Docks flush below this header's bottom edge while a free user is rate-limited */}
+      <ScanLimitBanner top={headerHeight} />
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleNavigate('AdminDashboard', 'Calendar')}
-            >
-              <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
-              {showLock && (
-                <MaterialIcons name="lock" size={14} color={COLORS.primary} style={styles.premiumBadge} />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Cards')}
-            >
-              <MaterialIcons name="credit-card" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Cards</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Events')}
-            >
-              <MaterialIcons name="event" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Events</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Contacts')}
-            >
-              <MaterialIcons name="people" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Contacts</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Settings')}
-            >
-              <MaterialIcons name="settings" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Settings</Text>
-            </TouchableOpacity>
-
-
-
-            {/* Premium upgrade — free users only */}
-            {showLock && (
-              <FeatureTip
-                tipKey="menu_premium"
-                content="Upgrade for analytics, more cards and paid events"
-                position="right"
-              >
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setIsMenuVisible(false);
-                    setTimeout(() => {
-                      try { navigation.navigate('UnlockPremium'); } catch {}
-                    }, 400);
-                  }}
-                >
-                  <MaterialIcons name="workspace-premium" size={24} color={COLORS.primary} />
-                  <Text style={[styles.menuText, { color: COLORS.primary }]}>Upgrade to Premium</Text>
-                </TouchableOpacity>
-              </FeatureTip>
-            )}
-
-            {/* ── Feature Tips controls (separated from navigation) ── */}
-            <View style={styles.tipsDivider} />
-
-            <View style={styles.menuItem}>
-              <MaterialIcons name="lightbulb-outline" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Feature Tips</Text>
-              <Switch
-                value={tooltipsEnabled}
-                onValueChange={setTooltipsEnabled}
-                trackColor={{ false: COLORS.disabled, true: COLORS.primary }}
-                thumbColor={COLORS.white}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={styles.resetTipsButton}
-              onPress={handleResetTips}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.resetTipsText}>Reset tips</Text>
-            </TouchableOpacity>
-
-            <View style={styles.tipsDivider} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={handleLogout}
-            >
-              <MaterialIcons name="logout" size={24} color={COLORS.error} />
-              <Text style={[styles.menuText, { color: COLORS.error }]}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Shared app-wide side menu */}
+      <SideMenu visible={isMenuVisible} onClose={() => setIsMenuVisible(false)} />
     </>
   );
 }
@@ -432,6 +219,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
+    fontFamily: 'Montserrat_700Bold',
     color: COLORS.white,
   },
   icon: {
@@ -445,56 +233,5 @@ const styles = StyleSheet.create({
   rightIconContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  menuContainer: {
-    position: 'absolute',
-    top: 100,
-    left: 20,
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 8,
-    minWidth: 200,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 12,
-  },
-  menuText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.secondary,
-    flex: 1,
-  },
-  premiumBadge: {
-    marginLeft: 4,
-  },
-  tipsDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 6,
-    marginHorizontal: 4,
-  },
-  resetTipsButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignItems: 'flex-start',
-  },
-  resetTipsText: {
-    fontSize: 13,
-    color: COLORS.gray,
   },
 });

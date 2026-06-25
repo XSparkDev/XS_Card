@@ -85,6 +85,30 @@ const normalizeSpeakerCards = (cards = []) => {
     };
 };
 
+// Speaker & Engagement activity windows: record exactly when each card was an
+// active speaker card. A window opens when the card becomes a speaker and
+// closes when it stops. CSV export only counts contacts captured inside a
+// window. Idempotent — safe to run on every card-array write, only acts on a
+// real on/off transition. Shared by addCard (a card can start out as the
+// speaker card from creation) and updateCard (the toggle endpoint) so neither
+// path can leave a card's window state un-recorded.
+const reconcileSpeakerWindow = (card, now) => {
+    const isSpeaker = card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true';
+    const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+    const last = windows[windows.length - 1];
+    const hasOpenWindow = last && (last.end === null || last.end === undefined);
+
+    if (isSpeaker && !hasOpenWindow) {
+        windows.push({ start: now, end: null });
+        return { ...card, speakerWindows: windows };
+    }
+    if (!isSpeaker && hasOpenWindow) {
+        windows[windows.length - 1] = { ...last, end: now };
+        return { ...card, speakerWindows: windows };
+    }
+    return card;
+};
+
 // Add this function at the top with other helper functions
 const logPasscreatorConfig = () => {
   console.log('=== Passcreator Configuration ===');
@@ -138,14 +162,27 @@ exports.getCardById = async (req, res) => {
         
         const { normalizedCards, didNormalize } = normalizeSpeakerCards(data.cards || []);
 
-        if (didNormalize) {
+        // Self-heal missing speaker windows on read too, not just on save. A card
+        // that was already marked as the speaker card before this windowing system
+        // existed (or one whose isSpeakerEngagementCard was set by some other path)
+        // would otherwise never get a window opened until the user happens to save
+        // an edit — leaving its CSV export permanently empty in the meantime. Opening
+        // the window the moment we observe it's missing means tracking starts now
+        // (the earliest honest cutoff we can know), never a fabricated past date.
+        const speakerWindowNow = new Date().toISOString();
+        const reconciledCards = normalizedCards.map((card) => reconcileSpeakerWindow(card, speakerWindowNow));
+        const windowsChanged = reconciledCards.some(
+            (card, i) => card.speakerWindows !== normalizedCards[i].speakerWindows
+        );
+
+        if (didNormalize || windowsChanged) {
             await cardRef.update({
-                cards: normalizedCards
+                cards: reconciledCards
             });
         }
 
-        if (normalizedCards) {
-            cards = normalizedCards.map(card => ({
+        if (reconciledCards) {
+            cards = reconciledCards.map(card => ({
                 ...card,
                 createdAt: formatDate(card.createdAt), // Format for display
                 scans: card.scans || 0 // Initialize scans field if missing
@@ -218,16 +255,21 @@ exports.addCard = async (req, res) => {
         console.log('Request body:', req.body);
         console.log('Firebase Storage URLs:', req.firebaseStorageUrls);
 
-        const { 
-            company, 
-            email, 
-            phone, 
-            title, 
+        const {
+            cardName,
+            company,
+            email,
+            phone,
+            title,
             name,
             surname,
             altNumber,
             altCountryCode,
-            showAltNumber
+            showAltNumber,
+            // Salutation (Mr./Mrs./Dr./...) — named distinctly from `title` above,
+            // which (confusingly, for historical reasons) carries the job title/occupation.
+            salutation,
+            qualification
         } = req.body;
 
         // Validate fields are not only present but also have values
@@ -280,6 +322,7 @@ exports.addCard = async (req, res) => {
             (req.body.isSpeakerEngagementCard === 'true' || req.body.isSpeakerEngagementCard === true);
         
         const newCard = {
+            cardName: (cardName || '').trim(),
             company,
             email,
             phone: normalizedPhone,
@@ -287,6 +330,8 @@ exports.addCard = async (req, res) => {
             occupation: title,
             name: name || '',
             surname: surname || '',
+            salutation: (salutation || '').trim(),
+            qualification: (qualification || '').trim(),
             socials: {},
             colorScheme: '#1B2B5B',
             createdAt: admin.firestore.Timestamp.now(), // Store as Firestore Timestamp
@@ -300,6 +345,13 @@ exports.addCard = async (req, res) => {
 
         console.log('Creating new card:', newCard); // Debug log
 
+        // Record the toggle-on cutoff for the new card if it's created as the speaker
+        // card directly, and close out any existing card's window it displaces — a
+        // card created already-active never had its own updateCard PATCH to open a
+        // window, so without this the CSV export would have no window to match against
+        // and would always come back empty even when there are genuine post-creation scans.
+        const speakerWindowNow = new Date().toISOString();
+
         if (cardDoc.exists) {
             const existingCards = Array.isArray(cardDoc.data()?.cards) ? [...cardDoc.data().cards] : [];
             const { normalizedCards: sanitizedExistingCards } = normalizeSpeakerCards(existingCards);
@@ -307,14 +359,27 @@ exports.addCard = async (req, res) => {
                 ? sanitizedExistingCards.map(card => ({ ...card, isSpeakerEngagementCard: false }))
                 : sanitizedExistingCards;
 
+            // Name, surname, salutation and qualification are canonical fields owned by
+            // the primary card (index 0) — a new non-primary card always inherits them,
+            // regardless of whatever was submitted for it.
+            if (sanitizedExistingCards.length > 0) {
+                const primaryCard = sanitizedExistingCards[0];
+                newCard.name = primaryCard.name || '';
+                newCard.surname = primaryCard.surname || '';
+                newCard.salutation = primaryCard.salutation || '';
+                newCard.qualification = primaryCard.qualification || '';
+            }
+
             normalizedCards.push(newCard);
 
+            const reconciledCards = normalizedCards.map((card) => reconcileSpeakerWindow(card, speakerWindowNow));
+
             await cardRef.update({
-                cards: normalizedCards
+                cards: reconciledCards
             });
         } else {
             await cardRef.set({
-                cards: [newCard]
+                cards: [reconcileSpeakerWindow(newCard, speakerWindowNow)]
             });
         }
         
@@ -434,6 +499,14 @@ exports.updateCard = async (req, res) => {
             }
         }
 
+        // Salutation (Mr./Mrs./Dr./...) and qualification are also canonical,
+        // primary-card-only fields, but unlike name/surname they carry no 30-day
+        // throttle — only the primary-card restriction applies.
+        if (Number(cardIndex) !== 0) {
+            delete updateData.salutation;
+            delete updateData.qualification;
+        }
+
         if (Object.prototype.hasOwnProperty.call(updateData, 'isSpeakerEngagementCard')) {
             if (hasSpeakerCardAccess) {
                 updateData.isSpeakerEngagementCard =
@@ -497,29 +570,26 @@ exports.updateCard = async (req, res) => {
             }
         }
 
-        // Speaker & Engagement activity windows: record exactly when each card was
-        // an active speaker card. A window opens when the card becomes a speaker and
-        // closes when it stops. CSV export only counts contacts captured inside a
-        // window. Idempotent — runs every save, only acts on a real on/off transition.
-        const speakerWindowNow = new Date().toISOString();
-        const reconcileSpeakerWindow = (card) => {
-            const isSpeaker = card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true';
-            const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
-            const last = windows[windows.length - 1];
-            const hasOpenWindow = last && (last.end === null || last.end === undefined);
+        // Name, surname, salutation and qualification are owned by the primary
+        // card — mirror its current values onto every other card on every save
+        // (not just when those fields were the ones being edited), so all cards
+        // are always self-consistent regardless of which one triggered the write.
+        const canonicalSource = updatedCards[0] || {};
+        for (let i = 1; i < updatedCards.length; i += 1) {
+            updatedCards[i] = {
+                ...updatedCards[i],
+                name: canonicalSource.name || '',
+                surname: canonicalSource.surname || '',
+                salutation: canonicalSource.salutation || '',
+                qualification: canonicalSource.qualification || '',
+            };
+        }
 
-            if (isSpeaker && !hasOpenWindow) {
-                windows.push({ start: speakerWindowNow, end: null });
-                return { ...card, speakerWindows: windows };
-            }
-            if (!isSpeaker && hasOpenWindow) {
-                windows[windows.length - 1] = { ...last, end: speakerWindowNow };
-                return { ...card, speakerWindows: windows };
-            }
-            return card;
-        };
+        // Record the toggle-on/off cutoff for every card whose speaker status is
+        // affected by this save (the edited card, plus any demoted on mutual-exclusivity).
+        const speakerWindowNow = new Date().toISOString();
         for (let i = 0; i < updatedCards.length; i += 1) {
-            updatedCards[i] = reconcileSpeakerWindow(updatedCards[i]);
+            updatedCards[i] = reconcileSpeakerWindow(updatedCards[i], speakerWindowNow);
         }
 
         // Update the document

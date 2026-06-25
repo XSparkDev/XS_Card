@@ -698,6 +698,7 @@ export default function EventsScreen() {
         </View>
       ) : (
         <FlatList
+          style={styles.eventsList}
           data={events}
           renderItem={renderEventItem}
           keyExtractor={(item) => item.id}
@@ -715,14 +716,13 @@ export default function EventsScreen() {
               tintColor={COLORS.primary}
             />
           }
+          ListHeaderComponent={renderRecentEvents}
           ListEmptyComponent={renderEmptyState}
           onEndReached={loadMoreEvents}
           onEndReachedThreshold={0.3}
           ListFooterComponent={renderFooter}
         />
       )}
-
-      {renderRecentEvents()}
 
       {/* Modal 1 — Events Explainer (all users; "Don't show again", no count) */}
       <EntryInfoModal
@@ -782,6 +782,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.black,
     paddingVertical: 4,
+  },
+  eventsList: {
+    flex: 1,
   },
   listContainer: {
     paddingHorizontal: 16,

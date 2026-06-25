@@ -26,6 +26,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system';
+import RNShare from 'react-native-share';
 
 // Local imports
 import { COLORS } from '../../constants/colors';
@@ -49,6 +51,9 @@ import FeatureTip from '../../components/FeatureTip';
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
 const DEFAULT_COUNTRY_CODE = '+27'; // South Africa
+// Which field carries the bold/primary emphasis on each contact card.
+type ContactEmphasisField = 'name' | 'company';
+const CONTACT_EMPHASIS_STORAGE_KEY = 'contacts_emphasis_field';
 
 // Type definitions
 interface Timestamp {
@@ -112,6 +117,7 @@ interface UserCardFilterOption {
 }
 
 interface UserCardRecord {
+  cardName?: string;
   company?: string;
   isSpeakerEngagementCard?: boolean;
 }
@@ -123,23 +129,28 @@ const isSpeakerCardEnabled = (value: unknown): boolean => {
 const buildCardFilterOptions = (cards: UserCardRecord[]): UserCardFilterOption[] => {
   const companyUsage = new Map<string, number>();
 
+  // Identify each card by its user-defined card name, falling back to the
+  // company name, then to a generic "Card N" label when neither is set.
+  const resolveCardIdentifier = (card: UserCardRecord, index: number) =>
+    (card.cardName || '').trim() || (card.company || '').trim() || `Card ${index + 1}`;
+
   cards.forEach((card, index) => {
-    const companyName = (card.company || '').trim() || `Card ${index + 1}`;
-    companyUsage.set(companyName, (companyUsage.get(companyName) || 0) + 1);
+    const identifier = resolveCardIdentifier(card, index);
+    companyUsage.set(identifier, (companyUsage.get(identifier) || 0) + 1);
   });
 
   const duplicateTracker = new Map<string, number>();
 
   return cards.map((card, index) => {
-    const companyName = (card.company || '').trim() || `Card ${index + 1}`;
-    const occurrence = (duplicateTracker.get(companyName) || 0) + 1;
-    duplicateTracker.set(companyName, occurrence);
-    const needsSuffix = (companyUsage.get(companyName) || 0) > 1;
+    const identifier = resolveCardIdentifier(card, index);
+    const occurrence = (duplicateTracker.get(identifier) || 0) + 1;
+    duplicateTracker.set(identifier, occurrence);
+    const needsSuffix = (companyUsage.get(identifier) || 0) > 1;
 
     return {
       cardIndex: index,
-      company: companyName,
-      label: needsSuffix ? `${companyName} (Card ${index + 1})` : companyName,
+      company: identifier,
+      label: needsSuffix ? `${identifier} (Card ${index + 1})` : identifier,
       isSpeakerEngagementCard: isSpeakerCardEnabled(card.isSpeakerEngagementCard),
     };
   });
@@ -409,7 +420,10 @@ export default function ContactsScreen() {
   const [cardFilterOptions, setCardFilterOptions] = useState<UserCardFilterOption[]>([]);
   const [selectedCardFilter, setSelectedCardFilter] = useState<number | 'all'>('all');
   const [isCardFilterDropdownVisible, setIsCardFilterDropdownVisible] = useState(false);
-  
+  const [isDownloadingSpeakerCsv, setIsDownloadingSpeakerCsv] = useState(false);
+  // Which field (name or company) is shown bold/primary on each contact card.
+  const [emphasisField, setEmphasisField] = useState<ContactEmphasisField>('name');
+
   // Plan and limits
   const [remainingContacts, setRemainingContacts] = useState<number | 'unlimited'>(FREE_PLAN_CONTACT_LIMIT);
   
@@ -456,6 +470,20 @@ export default function ContactsScreen() {
 
   const clearSelection = useCallback(() => {
     setSelectedContactKeys(new Set());
+  }, []);
+
+  // Load the saved emphasis preference once on mount.
+  useEffect(() => {
+    AsyncStorage.getItem(CONTACT_EMPHASIS_STORAGE_KEY).then((saved) => {
+      if (saved === 'name' || saved === 'company') {
+        setEmphasisField(saved);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const updateEmphasisField = useCallback((field: ContactEmphasisField) => {
+    setEmphasisField(field);
+    AsyncStorage.setItem(CONTACT_EMPHASIS_STORAGE_KEY, field).catch(() => {});
   }, []);
 
   const hasAdvancedFeatures = getPlanLimits(userPlan).hasAdvancedFeatures;
@@ -991,6 +1019,97 @@ export default function ContactsScreen() {
     }
   }, []);
 
+  // True if a scan time falls inside the CURRENT speaker session only — the
+  // most recently opened window for the card, never an earlier one. Mirrors
+  // EditCard.tsx's inCurrentSpeakerWindow so both surfaces agree on what counts.
+  const isContactInCurrentSpeakerWindow = (createdAt: unknown, windows: any[]): boolean => {
+    if (!Array.isArray(windows) || windows.length === 0) return false;
+    const t = new Date(createdAt as string).getTime();
+    if (isNaN(t)) return false;
+    const current = windows[windows.length - 1];
+    const start = new Date(current?.start).getTime();
+    if (isNaN(start)) return false;
+    const end = current?.end ? new Date(current.end).getTime() : Date.now();
+    return t >= start && t <= end;
+  };
+
+  const csvEscape = (value: unknown): string => {
+    const s = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  // Export everyone who scanned the currently-selected Speaker & Engagement
+  // Card during its current session only (never a prior toggle-on/off cycle).
+  const handleDownloadSpeakerCsv = useCallback(async () => {
+    if (typeof selectedCardFilter !== 'number' || !selectedCardFilterOption?.isSpeakerEngagementCard) {
+      return;
+    }
+    if (triggerUpsell({
+      featureName: 'Speaker & Engagement Card',
+      description: 'Exporting your speaker & engagement contacts is a premium feature. Upgrade to Premium to download them.',
+    })) return;
+
+    if (isDownloadingSpeakerCsv) return;
+    setIsDownloadingSpeakerCsv(true);
+    try {
+      const userId = await getUserId();
+      if (!userId) throw new Error('Not signed in');
+
+      const cardsRes = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`);
+      if (!cardsRes.ok) throw new Error('Failed to load card');
+
+      const cardsData = await cardsRes.json();
+      const cardsArray = Array.isArray(cardsData?.cards)
+        ? cardsData.cards
+        : (Array.isArray(cardsData) ? cardsData : []);
+      const speakerWindows = cardsArray?.[selectedCardFilter]?.speakerWindows || [];
+
+      const speakerContacts = contacts.filter(
+        (c) =>
+          Number(c?.sourceCardIndex) === Number(selectedCardFilter) &&
+          isContactInCurrentSpeakerWindow((c as any)?.createdAtMs ?? c?.createdAt, speakerWindows)
+      );
+
+      if (speakerContacts.length === 0) {
+        Alert.alert(
+          'No Contacts Yet',
+          'No one scanned this card while it was set as your speaker & engagement card.'
+        );
+        return;
+      }
+
+      const headers = ['Name', 'Surname', 'Phone', 'Email', 'Company', 'How We Met', 'Date Saved'];
+      const lines = speakerContacts.map((c) => [
+        c?.name,
+        c?.surname,
+        c?.phone,
+        c?.email,
+        c?.company,
+        c?.howWeMet,
+        formatTimestamp(c?.createdAt),
+      ].map(csvEscape).join(','));
+      const csv = [headers.join(','), ...lines].join('\n');
+
+      const fileName = `speaker-contacts-${Date.now()}.csv`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+      await RNShare.open({
+        url: fileUri,
+        type: 'text/csv',
+        filename: fileName,
+        failOnCancel: false,
+      });
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      if (msg.includes('User did not share') || msg.includes('cancel')) return;
+      console.error('Export speaker contacts failed:', error);
+      toast.error('Export Failed', 'Could not export contacts. Please try again.');
+    } finally {
+      setIsDownloadingSpeakerCsv(false);
+    }
+  }, [contacts, selectedCardFilter, selectedCardFilterOption, isDownloadingSpeakerCsv, triggerUpsell, toast]);
+
   // ============= SHARE OPTIONS =============
   
   const shareOptions: ShareOption[] = [
@@ -1432,6 +1551,31 @@ export default function ContactsScreen() {
             />
           </View>
 
+          {/* Emphasis toggle — choose whether name or company is the bold/primary line */}
+          <View style={styles.emphasisToggleRow}>
+            <Text style={styles.emphasisToggleLabel}>Show by</Text>
+            <View style={styles.emphasisToggleGroup}>
+              <TouchableOpacity
+                style={[styles.emphasisOption, emphasisField === 'name' && styles.emphasisOptionActive]}
+                onPress={() => updateEmphasisField('name')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.emphasisOptionText, emphasisField === 'name' && styles.emphasisOptionTextActive]}>
+                  Name
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.emphasisOption, emphasisField === 'company' && styles.emphasisOptionActive]}
+                onPress={() => updateEmphasisField('company')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.emphasisOptionText, emphasisField === 'company' && styles.emphasisOptionTextActive]}>
+                  Company
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           {cardFilterOptions.length > 0 && (
             <View style={styles.filterSection}>
               <Text style={styles.filterSectionLabel}>Filter</Text>
@@ -1473,6 +1617,23 @@ export default function ContactsScreen() {
                   />
                 </TouchableOpacity>
               </FeatureTip>
+
+              {/* Only visible while a Speaker & Engagement Card is the active filter */}
+              {selectedCardFilterOption?.isSpeakerEngagementCard && (
+                <TouchableOpacity
+                  style={styles.downloadSpeakerCsvButton}
+                  onPress={handleDownloadSpeakerCsv}
+                  disabled={isDownloadingSpeakerCsv}
+                  activeOpacity={0.8}
+                >
+                  {isDownloadingSpeakerCsv ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <MaterialIcons name="file-download" size={18} color={COLORS.primary} />
+                  )}
+                  <Text style={styles.downloadSpeakerCsvText}>Download CSV</Text>
+                </TouchableOpacity>
+              )}
 
               {isCardFilterDropdownVisible && (
                 <View style={styles.filterDropdownMenu}>
@@ -1661,47 +1822,38 @@ export default function ContactsScreen() {
                           style={styles.contactImage}
                         />
                         <View style={styles.contactInfo}>
-                          <Text style={styles.contactName}>
-                            {contact.name} {contact.surname}
-                          </Text>
+                          {/* List view shows only name, company, phone and timestamp — the rest
+                              (email, met-at, location) is one tap away in the detail modal.
+                              The emphasis toggle controls both bold weight AND vertical order:
+                              the selected field is always bold and appears first/top. */}
+                          {emphasisField === 'company' && contact.company ? (
+                            <>
+                              <Text style={styles.contactPrimaryText} numberOfLines={1}>
+                                {contact.company}
+                              </Text>
+                              <Text style={styles.contactSecondaryText} numberOfLines={1}>
+                                {contact.name} {contact.surname}
+                              </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text style={styles.contactPrimaryText} numberOfLines={1}>
+                                {contact.name} {contact.surname}
+                              </Text>
+                              {!!contact.company && (
+                                <Text style={styles.contactSecondaryText} numberOfLines={1}>
+                                  {contact.company}
+                                </Text>
+                              )}
+                            </>
+                          )}
                           <View style={styles.contactSubInfo}>
                             <Text style={styles.contactPhone}>
                               {formatPhoneWithCountryCode(contact.phone)}
                             </Text>
-                            {contact.email && (
-                              <Text style={styles.contactEmail}>
-                                {contact.email}
-                              </Text>
-                            )}
-                            {contact.company && (
-                              <Text style={styles.contactCompany}>
-                                {contact.company}
-                              </Text>
-                            )}
-                            <Text style={styles.contactHowWeMet}>
-                              Met at: {contact.howWeMet}
-                            </Text>
                             <Text style={styles.contactDate}>
                               {formatTimestamp(contact.createdAt)}
                             </Text>
-                            {hasContactLocation(contact.location) && (
-                              <TouchableOpacity
-                                style={styles.contactLocationRow}
-                                onPress={() => openContactLocationInMaps(contact.location!)}
-                                activeOpacity={0.6}
-                                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                              >
-                                <MaterialCommunityIcons
-                                  name="map-marker"
-                                  size={16}
-                                  color={COLORS.primary}
-                                  style={styles.contactLocationIcon}
-                                />
-                                <Text style={styles.contactLocationText} numberOfLines={1}>
-                                  {getContactLocationLabel(contact.location) || 'Location available'}
-                                </Text>
-                              </TouchableOpacity>
-                            )}
                           </View>
                         </View>
                       </View>
@@ -1713,7 +1865,7 @@ export default function ContactsScreen() {
                   <FeatureTip
                     key={contactKey}
                     tipKey="contacts_list_item"
-                    content="Tap a contact to view their details"
+                    content="Tap contact to view more, export to device etc"
                     position="bottom"
                   >
                     {card}
@@ -1933,6 +2085,26 @@ export default function ContactsScreen() {
                     <Pressable
                       onPressIn={() => setPressedCopyRowId('row_phone')}
                       onPressOut={() => setPressedCopyRowId(null)}
+                      onPress={() => {
+                        const display = formatPhoneWithCountryCode(selectedContactForOptions.phone || '');
+                        const dialNumber = String(selectedContactForOptions.phone || '').replace(/[^0-9+]/g, '');
+                        if (!dialNumber) return;
+                        Alert.alert(
+                          'Call contact',
+                          `Call ${display}?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Call',
+                              onPress: () => {
+                                Linking.openURL(`tel:${dialNumber}`).catch(() =>
+                                  Alert.alert('Unable to call', 'No phone app is available to place this call.')
+                                );
+                              },
+                            },
+                          ],
+                        );
+                      }}
                       onLongPress={() => {
                         copyToClipboard('Phone number', formatPhoneWithCountryCode(selectedContactForOptions.phone || ''));
                         setTimeout(() => setPressedCopyRowId(null), 150);
@@ -1951,6 +2123,25 @@ export default function ContactsScreen() {
                       <Pressable
                         onPressIn={() => setPressedCopyRowId('row_email')}
                         onPressOut={() => setPressedCopyRowId(null)}
+                        onPress={() => {
+                          const emailAddress = String(selectedContactForOptions.email || '').trim();
+                          if (!emailAddress) return;
+                          Alert.alert(
+                            'Email contact',
+                            `Send an email to ${emailAddress}?`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Email',
+                                onPress: () => {
+                                  Linking.openURL(`mailto:${emailAddress}`).catch(() =>
+                                    Alert.alert('Unable to email', 'No email app is available on this device.')
+                                  );
+                                },
+                              },
+                            ],
+                          );
+                        }}
                         onLongPress={() => {
                           copyToClipboard('Email', String(selectedContactForOptions.email || '').trim());
                           setTimeout(() => setPressedCopyRowId(null), 150);
@@ -2225,7 +2416,7 @@ export default function ContactsScreen() {
                     />
                     <Text style={styles.upsellHeadline}>Your Network is Your Net Worth</Text>
                     <Text style={styles.upsellBody}>
-                      85% of opportunities in business come through people you know — not job boards, not cold emails. The professionals who grow fastest aren't the most talented, they're the most connected.
+                      85% of opportunities in business come through people you know, not job boards, not cold emails. The professionals who grow fastest aren't the most talented, they're the most connected.
                     </Text>
                     <Text style={[styles.upsellBody, { marginTop: 10 }]}>
                       The average person needs over 200 meaningful connections to fully unlock the opportunities around them. Right now, you're building something real. Don't let your network hit a ceiling.
@@ -2397,7 +2588,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     margin: 15,
     marginTop: 10,
-    borderRadius: 8,
+    borderRadius: 25,
   },
   searchIcon: {
     marginRight: 10,
@@ -2406,6 +2597,46 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: COLORS.black,
+  },
+  emphasisToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 15,
+    marginBottom: 10,
+    gap: 10,
+  },
+  emphasisToggleLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  emphasisToggleGroup: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.gray + '15',
+    borderRadius: 20,
+    padding: 3,
+  },
+  emphasisOption: {
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+  },
+  emphasisOptionActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  emphasisOptionText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.gray,
+  },
+  emphasisOptionTextActive: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   filterSection: {
     marginHorizontal: 15,
@@ -2425,7 +2656,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.gray + '35',
-    borderRadius: 10,
+    borderRadius: 25,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -2440,11 +2671,28 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     fontWeight: '500',
   },
+  downloadSpeakerCsvButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
+  },
+  downloadSpeakerCsvText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
   filterDropdownMenu: {
     marginTop: 8,
     borderWidth: 1,
     borderColor: COLORS.gray + '25',
-    borderRadius: 12,
+    borderRadius: 18,
     backgroundColor: COLORS.white,
     overflow: 'hidden',
   },
@@ -2573,22 +2821,24 @@ const styles = StyleSheet.create({
   contactCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 15,
+    padding: 16,
     backgroundColor: COLORS.white,
-    borderRadius: 12,
-    margin: 5,
+    borderRadius: 18,
+    marginHorizontal: 10,
+    marginVertical: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 0,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: COLORS.gray + '20',
+    borderColor: COLORS.gray + '15',
   },
   contactCardSelected: {
     borderColor: COLORS.primary,
   },
   contactLeft: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -2608,10 +2858,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   contactImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 15,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 16,
   },
   xsCardBadge: {
     position: 'absolute',
@@ -2635,40 +2885,54 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
   contactInfo: {
+    flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  contactName: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  // Primary line carries the emphasis (bold, larger) — either the person's
+  // name or their company, depending on the "Show by" toggle. Centered to
+  // match the reference layout.
+  contactPrimaryText: {
+    fontSize: 20,
+    fontWeight: '700',
     color: COLORS.black,
+    textAlign: 'center',
+  },
+  // Secondary line is always the smaller, regular-weight counterpart.
+  contactSecondaryText: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: COLORS.gray,
+    textAlign: 'center',
   },
   contactSubInfo: {
-    marginTop: 4,
-    gap: 2,
+    marginTop: 6,
+    gap: 4,
+    alignItems: 'center',
   },
   contactPhone: {
-    fontSize: 14,
-    color: COLORS.black,
-    marginBottom: 4,
+    fontSize: 15,
+    color: COLORS.gray,
+    textAlign: 'center',
   },
   contactEmail: {
     fontSize: 14,
     color: COLORS.black,
     marginBottom: 4,
-  },
-  contactCompany: {
-    fontSize: 14,
-    color: COLORS.gray,
+    textAlign: 'center',
   },
   contactHowWeMet: {
     fontSize: 13,
     color: COLORS.gray,
     marginBottom: 2,
+    textAlign: 'center',
   },
   contactDate: {
     fontSize: 12,
-    color: COLORS.gray,
-    fontStyle: 'italic',
+    color: COLORS.gray + '99',
+    marginTop: 4,
+    textAlign: 'center',
   },
   // Geolocation — list row
   contactLocationRow: {

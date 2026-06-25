@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS } from '../constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScanLimitBanner from './ScanLimitBanner';
 
 interface EventHeaderProps {
   title: string;
@@ -35,26 +36,31 @@ export default function EventHeader({
   };
 
   return (
-    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.leftContainer}>
-        {showBackButton && (
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={handleBackPress}
-          >
-            <MaterialIcons name="arrow-back" size={24} color={COLORS.black} />
-          </TouchableOpacity>
-        )}
+    <>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.leftContainer}>
+          {showBackButton && (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={handleBackPress}
+            >
+              <MaterialIcons name="arrow-back" size={24} color={COLORS.black} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>{title}</Text>
+        </View>
+
+        <View style={styles.rightContainer}>
+          {rightIcon}
+        </View>
       </View>
 
-      <View style={styles.titleContainer}>
-        <Text style={styles.title}>{title}</Text>
-      </View>
-
-      <View style={styles.rightContainer}>
-        {rightIcon}
-      </View>
-    </View>
+      {/* Already in normal document flow right below the header — docks flush automatically */}
+      <ScanLimitBanner />
+    </>
   );
 }
 
@@ -92,6 +98,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '600',
+    fontFamily: 'Montserrat_600SemiBold',
     color: COLORS.black,
   },
   rightContainer: {

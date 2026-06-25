@@ -6,6 +6,7 @@ import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
+import QrPlaceholder from '../QrPlaceholder';
 
 type CardData = any;
 
@@ -21,6 +22,8 @@ interface Props {
   onPressSocial: (platform: string, value: string) => void;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
   onPressEdit?: () => void;
+  scanLimited?: boolean;
+  scanCountdown?: string;
 }
 
 // Social icons mapping - EXACT same as Template 1
@@ -35,7 +38,7 @@ const socialIcons: { [key: string]: keyof typeof MaterialCommunityIcons.glyphMap
 };
 
 export default function CardTemplate4(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown } = props;
   const theme = card.colorScheme || colorFallback;
 
   // EXACT same getDynamicStyles as Template 1
@@ -122,7 +125,7 @@ export default function CardTemplate4(props: Props) {
             />
           ) : (
             <View style={styles.qrPlaceholder}>
-              <MaterialIcons name="qr-code-2" size={isTablet() ? scale(80) : 80} color="#ccc" />
+              <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} />
             </View>
           )}
         </View>

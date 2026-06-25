@@ -55,6 +55,11 @@ interface BubbleSpec {
    * 'right' → bubble right edge aligns with anchor right edge; arrow at ~¼ from right.
    */
   bubbleAlign?: 'center' | 'left' | 'right';
+  /**
+   * Force the arrow to point at the horizontal centre of the anchor (derived from
+   * its measured rect) regardless of `bubbleAlign`.
+   */
+  arrowAtAnchor?: boolean;
 }
 
 type DismissedMap = Record<string, boolean>;
@@ -237,7 +242,12 @@ function BubbleView({
     if (b.pos === 'top' || b.pos === 'bottom') {
       let al: number;
       const align = b.spec.bubbleAlign ?? 'center';
-      if (align === 'left') {
+      if (b.spec.arrowAtAnchor) {
+        // Pin the arrow to the anchor's horizontal centre regardless of how the
+        // bubble itself is aligned (used when the bubble is offset from the anchor
+        // but the arrow must still point precisely at it).
+        al = a.x + a.width / 2 - b.left - ARROW / 2;
+      } else if (align === 'left') {
         // Arrow at ~¼ from the left edge of the bubble.
         al = Math.round(b.w * 0.25);
       } else if (align === 'right') {

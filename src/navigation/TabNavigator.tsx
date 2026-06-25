@@ -107,6 +107,7 @@ function TabNavigator() {
           fontSize: 15,
           marginTop: 2,
           paddingBottom: 4,
+          fontFamily: 'Montserrat_500Medium',
         },
         headerShown: false,
         tabBarIconStyle: {

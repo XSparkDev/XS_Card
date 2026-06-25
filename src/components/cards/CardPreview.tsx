@@ -13,6 +13,8 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
 import GradientAvatar from '../GradientAvatar';
+import LogoPlaceholder from '../LogoPlaceholder';
+import QrPlaceholder from '../QrPlaceholder';
 import CardTemplate2 from './CardTemplate2';
 import CardTemplate3 from './CardTemplate3';
 import CardTemplate4 from './CardTemplate4';
@@ -38,6 +40,8 @@ interface CardPreviewProps {
 export default function CardPreview({ template, card, altNumber }: CardPreviewProps) {
   const accentColor = card.colorScheme || '#1B2B5B';
   const zoomLevel = card.logoZoomLevel ?? 1.0;
+  // Card-name identifier shown above the card design (not part of the card face).
+  const cardNameLabel = (card.cardName || '').trim() || (card.company || '').trim();
 
   const sharedTemplateProps = {
     card,
@@ -55,12 +59,20 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <View style={styles.cardContainer}>
+        {cardNameLabel ? (
+          <View style={[styles.cardNameBadge, { borderColor: accentColor }]}>
+            <MaterialIcons name="badge" size={16} color={accentColor} />
+            <Text style={[styles.cardNameBadgeText, { color: accentColor }]} numberOfLines={1}>
+              {cardNameLabel}
+            </Text>
+          </View>
+        ) : null}
         {template === 1 ? (
           <>
             {/* QR Code placeholder */}
             <View style={styles.qrContainer}>
               <View style={styles.qrPlaceholder}>
-                <MaterialIcons name="qr-code-2" size={80} color="#ccc" />
+                <QrPlaceholder />
               </View>
               <Text style={styles.qrLabel}>QR Code</Text>
             </View>
@@ -76,9 +88,7 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
                     fadeDuration={300}
                   />
                 ) : (
-                  <View style={styles.logoPlaceholder}>
-                    <Text style={styles.logoPlaceholderText}>LOGO</Text>
-                  </View>
+                  <LogoPlaceholder textSize={22} />
                 )}
               </View>
 
@@ -150,6 +160,20 @@ const styles = StyleSheet.create({
     padding: 16,
     margin: 16,
   },
+  cardNameBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    backgroundColor: '#F6F7FF',
+    marginBottom: 16,
+    maxWidth: '100%',
+  },
+  cardNameBadgeText: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
   qrContainer: { alignItems: 'center', marginBottom: 20 },
   qrPlaceholder: {
     width: 150,
