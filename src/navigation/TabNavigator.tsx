@@ -1,7 +1,8 @@
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import React, { Component, ErrorInfo, ReactNode, useEffect, useState } from 'react';
+import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { tabBarScrollY } from '../utils/tabBarScroll';
 import { COLORS } from '../constants/colors';
 import CardsScreen from '../screens/cards/CardsScreen';
 import ContactsScreen from '../screens/contacts/ContactScreen';
@@ -9,9 +10,6 @@ import { RootTabParamList, RootStackParamList } from '../types';
 import { createStackNavigator } from '@react-navigation/stack';
 import AddCards from '../screens/cards/AddCards';
 import EditCard from '../screens/contacts/EditCard';
-import { API_BASE_URL, ENDPOINTS, buildUrl } from '../utils/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
 import UnlockPremium from '../screens/Unlockpremium/UnlockPremium';
 import { useColorScheme } from '../context/ColorSchemeContext';
 import EventsScreen from '../screens/events/EventsScreen';
@@ -84,61 +82,79 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-function TabNavigator() {
+
+const TAB_ITEMS = [
+  { name: 'Cards', icon: 'credit-card' as const, label: 'Cards' },
+  { name: 'Contacts', icon: 'people' as const, label: 'Contacts' },
+];
+
+function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { colorScheme } = useColorScheme();
+  const [opacity, setOpacity] = useState(1);
+
+  // Subscribe to scroll position and derive pill opacity
+  useEffect(() => {
+    const id = tabBarScrollY.addListener(({ value }) => {
+      // 0px → 1.0 opacity, 140px+ → 0.65 opacity (subtle fade, stays readable)
+      setOpacity(Math.max(0.65, 1 - (Math.min(value, 140) / 140) * 0.35));
+    });
+    return () => tabBarScrollY.removeListener(id);
+  }, []);
+
+  // Restore full opacity when switching tabs
+  useEffect(() => {
+    tabBarScrollY.setValue(0);
+    setOpacity(1);
+  }, [state.index]);
 
   return (
+    <View style={pillStyles.wrapper} pointerEvents="box-none">
+      <View style={[pillStyles.pill, { opacity }]}>
+        {state.routes.map((route, index) => {
+          const isFocused = state.index === index;
+          const item = TAB_ITEMS[index];
+          const color = isFocused ? colorScheme : COLORS.gray;
+
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={pillStyles.tab}
+              onPress={onPress}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name={item.icon} size={24} color={color} style={{ marginTop: 6 }} />
+              <Text style={[pillStyles.label, { color }]}>{item.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function TabNavigator() {
+  return (
     <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: colorScheme,
-        tabBarInactiveTintColor: COLORS.gray,
-        tabBarStyle: {
-          backgroundColor: COLORS.white,
-          borderTopWidth: 1,
-          borderTopColor: '#eee',
-          height: 90,
-          paddingBottom: 8,
-          paddingTop: 8,
-        },
-        tabBarItemStyle: {
-          padding: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 15,
-          marginTop: 2,
-          paddingBottom: 4,
-          fontFamily: 'Montserrat_500Medium',
-        },
         headerShown: false,
-        tabBarIconStyle: {
-          marginBottom: 2,
-        },
-        tabBarActiveBackgroundColor: 'transparent',
-        tabBarInactiveBackgroundColor: 'transparent',
       }}
     >
-      <Tab.Screen
-        name="Cards"
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="credit-card" size={24} color={color} />
-          ),
-        }}
-      >
+      <Tab.Screen name="Cards">
         {() => (
           <ErrorBoundary>
             <CardsScreen />
           </ErrorBoundary>
         )}
       </Tab.Screen>
-      <Tab.Screen
-        name="Contacts"
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="people" size={24} color={color} />
-          ),
-        }}
-      >
+      <Tab.Screen name="Contacts">
         {() => (
           <ErrorBoundary>
             <ContactsScreen />
@@ -183,6 +199,42 @@ export default function AppNavigator() {
     </Stack.Navigator>
   );
 }
+
+const pillStyles = StyleSheet.create({
+  wrapper: {
+    position: 'absolute',
+    bottom: 28,
+    left: 24,
+    right: 24,
+    alignItems: 'center',
+  },
+  pill: {
+    flexDirection: 'row',
+    height: 64,
+    width: '100%',
+    borderRadius: 32,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontSize: 12,
+    fontFamily: 'Montserrat_500Medium',
+    marginBottom: 6,
+    marginTop: 2,
+  },
+});
 
 const errorStyles = StyleSheet.create({
   container: {

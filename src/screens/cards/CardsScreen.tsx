@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions, Share } from 'react-native';
+import { tabBarScrollY } from '../../utils/tabBarScroll';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
@@ -121,6 +122,8 @@ export default function CardsScreen() {
   const navigation = useNavigation<NavigationProp>();
   // Change QR code to map per card index for tablet multi-card support
   const [qrCodes, setQrCodes] = useState<Record<number, string>>({});
+  const [qrTimedOut, setQrTimedOut] = useState<Record<number, boolean>>({});
+  const qrTimeouts = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const [userData, setUserData] = useState<UserData | null>(null);
   const { colorScheme, updateColorScheme } = useColorScheme();
   const { notifyScroll } = useTooltipContext();
@@ -423,6 +426,12 @@ export default function CardsScreen() {
     }
   }, [currentPage, userData]);
 
+  const handleQrRetry = async (cardIndex: number) => {
+    setQrTimedOut(prev => ({ ...prev, [cardIndex]: false }));
+    const userId = await getUserId();
+    if (userId) fetchQRCode(userId, cardIndex);
+  };
+
   const fetchQRCode = async (userId: string, cardIndex: number) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -482,6 +491,28 @@ export default function CardsScreen() {
     }
     // Tablet QR codes are pre-loaded, no need to update on scroll
   }, [currentPage]); // Re-run when currentPage changes
+
+  // Start a 10-second countdown for the visible card — if the QR still hasn't
+  // arrived by then, reveal the gradient refresh button.
+  useEffect(() => {
+    const idx = currentPage;
+    if (qrCodes[idx]) {
+      // QR already loaded — clear any pending timeout and reset timed-out flag
+      clearTimeout(qrTimeouts.current[idx]);
+      delete qrTimeouts.current[idx];
+      setQrTimedOut(prev => ({ ...prev, [idx]: false }));
+      return;
+    }
+    // Not yet loaded: reset timed-out flag and start fresh 10-second timer
+    setQrTimedOut(prev => ({ ...prev, [idx]: false }));
+    clearTimeout(qrTimeouts.current[idx]);
+    qrTimeouts.current[idx] = setTimeout(() => {
+      setQrTimedOut(prev => ({ ...prev, [idx]: true }));
+    }, 10000);
+    return () => {
+      clearTimeout(qrTimeouts.current[idx]);
+    };
+  }, [currentPage, qrCodes]);
 
   useEffect(() => {
     Animated.timing(borderRotation, {
@@ -955,14 +986,16 @@ export default function CardsScreen() {
             >
               <TouchableOpacity onPress={handleEditCard}>
                 <Text style={styles.headerIconContainer}>
-                  <MaterialIcons name="edit" size={24} color={COLORS.white} />
+                  <MaterialIcons name="edit" size={24} color={COLORS.black} />
                 </Text>
               </TouchableOpacity>
             </FeatureTip>
           ) : undefined
         }
       />
-      <ScrollView 
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
+      <ScrollView
         horizontal
         pagingEnabled={!isTablet()}
         showsHorizontalScrollIndicator={false}
@@ -996,7 +1029,7 @@ export default function CardsScreen() {
                   styles.sideShadowLeft,
                   {
                     height: cardHeights[index] - 8, // Subtract margins to match card content height
-                    top: 100 + 4, // pageContainer paddingTop + card marginTop to align with card's top edge
+                    top: 4, // card marginTop to align with card's top edge
                   }
                 ]}>
                   <LinearGradient
@@ -1012,7 +1045,7 @@ export default function CardsScreen() {
                   styles.sideShadowRight,
                   {
                     height: cardHeights[index] - 8, // Subtract margins to match card content height
-                    top: 100 + 4, // pageContainer paddingTop + card marginTop to align with card's top edge
+                    top: 4, // card marginTop to align with card's top edge
                   }
                 ]}>
                   <LinearGradient
@@ -1026,7 +1059,15 @@ export default function CardsScreen() {
                 </View>
               </>
             )}
-            <ScrollView showsVerticalScrollIndicator={false} scrollEventThrottle={1} onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)} contentContainerStyle={isTablet() ? { paddingVertical: 0 } : undefined}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                tabBarScrollY.setValue(e.nativeEvent.contentOffset.y);
+                notifyScroll(e.nativeEvent.contentOffset.y);
+              }}
+              contentContainerStyle={isTablet() ? { paddingVertical: 0, paddingBottom: 150 } : { paddingBottom: 150 }}
+            >
               {/* Render by template: 2 uses alternative layout; 3 uses outlined version; default keeps existing */}
               {card.template === 2 ? (
                 <View
@@ -1197,6 +1238,22 @@ export default function CardsScreen() {
                       source={{ uri: effectiveQrUri(index) }}
                       resizeMode="contain"
                     />
+                  ) : qrTimedOut[index] ? (
+                    <TouchableOpacity
+                      style={[styles.qrCode, isTablet() && { width: scale(150), height: scale(150) }]}
+                      onPress={() => handleQrRetry(index)}
+                      activeOpacity={0.8}
+                    >
+                      <LinearGradient
+                        colors={['#92278F', '#BE1E2D']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.qrRetryGradient}
+                      >
+                        <MaterialIcons name="refresh" size={36} color="#fff" />
+                        <Text style={styles.qrRetryText}>Tap to retry</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
                   ) : (
                     <View style={[styles.qrCode, isTablet() && { width: scale(150), height: scale(150) }]}>
                       <QrPlaceholder
@@ -1403,11 +1460,15 @@ export default function CardsScreen() {
                           size={isTablet() ? scale(30) : 30} 
                           color={card.colorScheme} 
                         />
-                        <Text style={[
-                          styles.contactText,
-                          isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
-                        ]}>
-                          {textValue || ''}
+                        <Text
+                          style={[
+                            styles.contactText,
+                            isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
+                          ]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {textValue.length > 20 ? textValue.substring(0, 20) + '…' : textValue}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1506,6 +1567,8 @@ export default function CardsScreen() {
           </View>
         ))}
       </ScrollView>
+      </View>
+      </View>
 
       {/* Page Indicator */}
       <View style={[
@@ -1792,6 +1855,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    // Shadow points UP onto the flat header, creating the groove/curve effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   scrollView: {
     flex: 1,
   },
@@ -1800,7 +1883,6 @@ const styles = StyleSheet.create({
   },
   pageContainer: {
     width: Dimensions.get('window').width,
-    paddingTop: 100, // Adjust based on your header height
     // Tablet: position relative to contain absolute shadow gradients
     // Mobile: no change
   },
@@ -1898,6 +1980,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 16,
     color: '#333',
+    flex: 1,
   },
   socialLinksContainer: {
     marginVertical: 5,
@@ -2019,7 +2102,20 @@ optionButtonText: {
 qrCode: {
   width: 150,
   height: 150,
-  alignSelf: 'center', // Add this to center the QR code image
+  alignSelf: 'center',
+  borderRadius: 12,
+  overflow: 'hidden',
+},
+qrRetryGradient: {
+  flex: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+},
+qrRetryText: {
+  color: '#fff',
+  fontSize: 12,
+  fontFamily: 'Montserrat_500Medium',
 },
   qrContainer: {
     width: 170,
@@ -2053,15 +2149,15 @@ qrCode: {
   },
   pageIndicator: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 104, // float just above the floating tab-bar pill
     left: 0,
     right: 0,
     alignItems: 'center',
   },
   dotContainer: {
     flexDirection: 'row',
-    gap: 1,
-    marginLeft:320
+    gap: 6,
+    alignSelf: 'center',
   },
   // Scan rate-limit UI
   scanCounterWrap: {

@@ -503,6 +503,8 @@ export default function AdminDashboard() {
     <View style={styles.container}>
       <AdminHeader title="Dashboard" />
       
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -681,6 +683,8 @@ export default function AdminDashboard() {
         */}
         </ScrollView>
       )}
+      </View>
+      </View>
 
       <ContactsModal 
         visible={showContactsModal}
@@ -719,16 +723,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#fff',
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    marginTop: 100,
   },
   scrollContent: {
-    paddingBottom: Platform.select({
-      ios: 10,
-      android: 10,
-    }),
+    paddingBottom: 120,
     flexGrow: 1,
   },
   sectionTitle: {

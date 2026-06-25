@@ -12,7 +12,7 @@ import Header from '../../components/Header';
 import FeatureTip from '../../components/FeatureTip';
 import { useTooltipContext } from '../../context/TooltipContext';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
+import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh, useToast } from '../../utils/api';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
@@ -93,6 +93,7 @@ export default function EditCard() {
   // trying to edit a canonical field — Save returns here instead of the default flow.
   const originCardIndex = route.params?.originCardIndex;
   const navigation = useNavigation<any>();
+  const toast = useToast();
 
   // Canonical identity fields (name, surname, salutation, qualification) live on
   // the primary card. Tapping one on a non-primary card asks for confirmation,
@@ -2053,22 +2054,6 @@ export default function EditCard() {
                     <Text style={styles.premiumBadgeText}>PREMIUM</Text>
                   </View>
                 )}
-                <FeatureTip
-                  tipKey="speaker_engagement_card"
-                  content="Mark one card as your Speaker & Engagement Card to track who scans it during a talk or event, then export those contacts as a CSV."
-                  position="bottom"
-                  bubbleAlign="right"
-                  inScrollView
-                >
-                  <TouchableOpacity
-                    style={styles.tooltipButton}
-                    onPress={handleSpeakerTooltipPress}
-                    accessibilityRole="button"
-                    accessibilityLabel="Learn more about speaker and engagement cards"
-                  >
-                    <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </FeatureTip>
               </View>
               <TouchableOpacity
                 style={[
@@ -2103,6 +2088,23 @@ export default function EditCard() {
                   />
                 )}
               </TouchableOpacity>
+              {/* Tooltip sits below the toggle so the bubble appears under the card */}
+              <FeatureTip
+                tipKey="speaker_engagement_card"
+                content="Have a speaking engagement? Make one card as your speaker and engagement card to track who scanned it during your delivery (then export to CSV)"
+                position="bottom"
+                bubbleAlign="left"
+                inScrollView
+              >
+                <TouchableOpacity
+                  style={styles.tooltipButton}
+                  onPress={handleSpeakerTooltipPress}
+                  accessibilityRole="button"
+                  accessibilityLabel="Learn more about speaker and engagement cards"
+                >
+                  <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
+                </TouchableOpacity>
+              </FeatureTip>
             </View>
 
             {/* Export speaker & engagement contacts — premium, and only once the
@@ -2461,7 +2463,10 @@ export default function EditCard() {
           template={template}
           card={buildCardObject()}
           altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-          onSelectTemplate={setTemplate}
+          onSelectTemplate={(n) => {
+            setTemplate(n);
+            toast.success('Template Selected', `Template ${n} applied to your card`);
+          }}
           onClose={() => setPreviewVisible(false)}
         />
       )}

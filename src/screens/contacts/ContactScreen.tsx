@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  Image, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput, 
-  Alert, 
-  Modal, 
-  Linking, 
-  RefreshControl, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Alert,
+  Modal,
+  Linking,
+  RefreshControl,
   ActivityIndicator,
   SafeAreaView,
   Share,
@@ -47,6 +47,8 @@ import GradientAvatar from '../../components/GradientAvatar';
 import { getPlanLimits, UserPlan } from '../../utils/userPlan';
 import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 import FeatureTip from '../../components/FeatureTip';
+import ContactDetailPanel from '../../components/ContactDetailPanel';
+import { tabBarScrollY } from '../../utils/tabBarScroll';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
@@ -433,6 +435,18 @@ export default function ContactsScreen() {
   const [isCopyFieldSheetVisible, setIsCopyFieldSheetVisible] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
   
+  // Contact detail panel (replaces the options popup on tap)
+  const [contactPanelVisible, setContactPanelVisible] = useState(false);
+  const [contactPanelDockedTop, setContactPanelDockedTop] = useState(0);
+  const [contactPanelContact, setContactPanelContact] = useState<Contact | null>(null);
+  // Refs that let us scroll a tapped contact up into the visible "priority" zone
+  // above the docked panel (so the panel stops right at the contact's bottom and
+  // the space above stays scrollable for picking another contact).
+  const contactsScrollRef = useRef<ScrollView>(null);
+  const contactsScrollY = useRef(0);
+  const listWrapperRef = useRef<View>(null);
+  const cardLayouts = useRef<Map<string, { y: number; height: number }>>(new Map());
+
   // Selected items
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedContactForOptions, setSelectedContactForOptions] = useState<Contact | null>(null);
@@ -946,16 +960,46 @@ export default function ContactsScreen() {
 
 
   // Contact press handler
-  const handleContactPress = useCallback((contact: Contact) => {
+  const handleContactPress = useCallback((contact: Contact, contactKey: string, touchY: number = 0) => {
     if (isSelectionMode) {
       toggleContactSelection(contact);
       return;
     }
-    console.log('📱 Contact pressed:', `${contact.name} ${contact.surname}`);
-    console.log('📱 Setting contact options modal visible');
-    setSelectedContactForOptions(contact);
-    setIsContactOptionsVisible(true);
-    console.log('📱 Contact options modal should now be visible');
+    const windowH = Dimensions.get('window').height;
+    // The panel should never dock lower than this — keeps the tapped contact and
+    // a scrollable strip above it visible while the panel covers the lower half.
+    const MAX_DOCK = windowH * 0.5;
+
+    // Show immediately at a first estimate (touch point + ~half card height) so the
+    // panel never flashes from the top while we refine the position below.
+    const initialDock = Math.max(180, Math.min(touchY + 55, MAX_DOCK));
+    setContactPanelContact(contact);
+    setContactPanelDockedTop(initialDock);
+    setContactPanelVisible(true);
+
+    // After the layout settles: the filter / select rows have collapsed and the
+    // expanded bottom padding is in place, so the list has moved up and grown.
+    // Now scroll the tapped contact up until its bottom sits at the dock line, then
+    // dock the panel exactly there. Works for the last contact too.
+    setTimeout(() => {
+      const wrapper = listWrapperRef.current;
+      const layout = cardLayouts.current.get(contactKey);
+      if (!wrapper || !layout) return;
+      wrapper.measureInWindow((_x, listTopY) => {
+        const cardBottomInContent = layout.y + layout.height;
+        const cardBottomOnScreen = listTopY + cardBottomInContent - contactsScrollY.current;
+        // Where we want the contact's bottom (and therefore the panel's top) to land.
+        const targetDock = Math.max(180, Math.min(cardBottomOnScreen, MAX_DOCK));
+        const delta = cardBottomOnScreen - targetDock; // > 0 when we must scroll up
+        if (delta > 1) {
+          contactsScrollRef.current?.scrollTo({
+            y: Math.max(0, contactsScrollY.current + delta),
+            animated: true,
+          });
+        }
+        setContactPanelDockedTop(targetDock);
+      });
+    }, 60);
   }, [isSelectionMode, toggleContactSelection]);
 
   // Refresh handler
@@ -1484,7 +1528,9 @@ export default function ContactsScreen() {
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.container}>
         <Header title="Contacts" />
-        
+
+        <View style={styles.contentShell}>
+        <View style={styles.contentShellInner}>
         {/* Contact Count Container - Only show for free users */}
         {remainingContacts !== 'unlimited' && (
           <View style={styles.contactCountContainer}>
@@ -1551,7 +1597,9 @@ export default function ContactsScreen() {
             />
           </View>
 
-          {/* Emphasis toggle — choose whether name or company is the bold/primary line */}
+          {/* Emphasis toggle — choose whether name or company is the bold/primary line.
+              Hidden while the detail panel is open so the tapped contact gets the room. */}
+          {!contactPanelVisible && (
           <View style={styles.emphasisToggleRow}>
             <Text style={styles.emphasisToggleLabel}>Show by</Text>
             <View style={styles.emphasisToggleGroup}>
@@ -1575,8 +1623,9 @@ export default function ContactsScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          )}
 
-          {cardFilterOptions.length > 0 && (
+          {!contactPanelVisible && cardFilterOptions.length > 0 && (
             <View style={styles.filterSection}>
               <Text style={styles.filterSectionLabel}>Filter</Text>
               <FeatureTip
@@ -1702,7 +1751,7 @@ export default function ContactsScreen() {
             </View>
           )}
 
-          {contacts.length > 0 && (
+          {!contactPanelVisible && contacts.length > 0 && (
             <View style={styles.selectionToggleRow}>
               <TouchableOpacity
                 onPress={toggleSelectionMode}
@@ -1766,23 +1815,30 @@ export default function ContactsScreen() {
             </View>
           ) : (
             /* Contact List */
+            <View ref={listWrapperRef} style={styles.contactsListWrapper}>
             <ScrollView
+              ref={contactsScrollRef}
               style={styles.contactsList}
+              contentContainerStyle={{
+                // While the panel is open, pad the bottom so even the last contact
+                // can scroll up into the priority zone above the docked panel.
+                // Otherwise keep enough room to clear the floating tab-bar pill.
+                paddingBottom: contactPanelVisible ? Dimensions.get('window').height * 0.6 : 110,
+              }}
               refreshControl={
-                <RefreshControl 
+                <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
                   colors={[colorScheme]}
                   tintColor={colorScheme}
                 />
               }
-              onScroll={() => {
-                // Trigger visibility checks on scroll
-                setTimeout(() => {
-                  // This will trigger visibility checks for all LazyContactImage components
-                }, 100);
+              onScroll={(e) => {
+                const y = e.nativeEvent.contentOffset.y;
+                tabBarScrollY.setValue(y);
+                contactsScrollY.current = y;
               }}
-              scrollEventThrottle={200}
+              scrollEventThrottle={16}
             >
               {filteredContacts.map((contact, index) => {
                 const contactKey = getContactKey(contact);
@@ -1799,9 +1855,9 @@ export default function ContactsScreen() {
                       RenderLeftActions(progress, dragX, contact)
                     }
                   >
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.contactCard, isSelected && styles.contactCardSelected]}
-                      onPress={() => handleContactPress(contact)}
+                      onPress={(e) => handleContactPress(contact, contactKey, e.nativeEvent.pageY)}
                       onLongPress={() => openCopyFieldSheet(contact)}
                       activeOpacity={0.7}
                       delayLongPress={250}
@@ -1856,14 +1912,14 @@ export default function ContactsScreen() {
                             </Text>
                           </View>
                         </View>
+                        <View style={styles.contactImageSpacer} />
                       </View>
                     </TouchableOpacity>
                   </Swipeable>
                 );
                 // Anchor the contacts tip to the first item only.
-                return index === 0 ? (
+                const item = index === 0 ? (
                   <FeatureTip
-                    key={contactKey}
                     tipKey="contacts_list_item"
                     content="Tap contact to view more, export to device etc"
                     position="bottom"
@@ -1871,8 +1927,22 @@ export default function ContactsScreen() {
                     {card}
                   </FeatureTip>
                 ) : card;
+                // Wrap in a measured View so we know each card's offset within the
+                // list and can scroll the tapped one up to the dock line.
+                return (
+                  <View
+                    key={contactKey}
+                    onLayout={(e) => {
+                      const { y, height } = e.nativeEvent.layout;
+                      cardLayouts.current.set(contactKey, { y, height });
+                    }}
+                  >
+                    {item}
+                  </View>
+                );
               })}
             </ScrollView>
+            </View>
           )}
         </View>
 
@@ -2509,6 +2579,18 @@ export default function ContactsScreen() {
           </TouchableWithoutFeedback>
         </Modal>
       </View>
+      </View>
+      </View>
+
+      {/* Draggable contact detail panel — replaces the options popup */}
+      {contactPanelVisible && contactPanelContact && (
+        <ContactDetailPanel
+          contact={contactPanelContact}
+          visible={contactPanelVisible}
+          dockedTop={contactPanelDockedTop}
+          onClose={() => setContactPanelVisible(false)}
+        />
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -2519,12 +2601,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   contactCountContainer: {
     padding: 12,
     backgroundColor: '#ffffff',
     borderRadius: 10,
     marginHorizontal: 15,
-    marginTop: 120,
+    marginTop: 8,
     marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -2576,10 +2677,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   premiumContactsContainer: {
-    paddingTop: 120,
+    paddingTop: 8,
   },
   selectionModeActiveContainer: {
-    paddingBottom: 90,
+    paddingBottom: 120,
   },
   searchContainer: {
     padding: 15,
@@ -2815,6 +2916,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  contactsListWrapper: {
+    flex: 1,
+  },
   contactsList: {
     flex: 1,
   },
@@ -2862,6 +2966,9 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     marginRight: 16,
+  },
+  contactImageSpacer: {
+    width: 72, // matches contactImage (56) + marginRight (16)
   },
   xsCardBadge: {
     position: 'absolute',

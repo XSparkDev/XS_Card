@@ -417,12 +417,13 @@ export const CheckInDashboard: React.FC = () => {
           style={styles.backButton} 
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons name="arrow-back" size={24} color={COLORS.white} />
+          <MaterialIcons name="arrow-back" size={24} color={COLORS.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Check-in Dashboard</Text>
         <View style={styles.headerRight} />
       </View>
 
+      <View style={styles.contentShell}>
       <ScrollView
         style={styles.scrollView}
         refreshControl={
@@ -575,6 +576,7 @@ export const CheckInDashboard: React.FC = () => {
           />
         </View>
       </ScrollView>
+      </View>
 
       {/* Attendee Details Modal */}
       <Modal
@@ -668,8 +670,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  contentShell: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#f5f5f5',
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 20,
+  },
   scrollView: {
     flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#f5f5f5',
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,
@@ -863,10 +881,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.white,
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingTop: 40,
+    zIndex: 1,
   },
   backButton: {
     width: 40,
@@ -876,7 +895,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    color: 'white',
+    color: COLORS.black,
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',

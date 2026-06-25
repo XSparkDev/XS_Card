@@ -44,7 +44,7 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
           style={styles.icon}
           onPress={() => setIsMenuVisible(true)}
         >
-          <MaterialIcons name="menu" size={24} color={COLORS.white} />
+          <MaterialIcons name="menu" size={24} color={COLORS.black} />
         </TouchableOpacity>
 
         <View style={styles.titleContainer}>
@@ -57,7 +57,7 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
             onPress={() => setIsNotificationsVisible(true)}
             disabled={notificationCount === 0 && startingSoon.length === 0 && recentBookings.length === 0}
           >
-            <MaterialIcons name="notifications" size={24} color={COLORS.white} />
+            <MaterialIcons name="notifications" size={24} color={COLORS.black} />
             {notificationCount > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     zIndex: 1,
   },
   titleContainer: {
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     fontFamily: 'Montserrat_700Bold',
-    color: COLORS.white,
+    color: COLORS.black,
   },
   icon: {
     width: 24,

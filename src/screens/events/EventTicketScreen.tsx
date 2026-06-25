@@ -645,8 +645,7 @@ const styles = StyleSheet.create({
     // Add safe-area aware top padding similar to other screens
     paddingTop: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight ? StatusBar.currentHeight + 16 : 40,
     backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    zIndex: 1,
   },
   headerTitle: {
     fontSize: 18,

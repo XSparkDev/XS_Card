@@ -8,7 +8,7 @@ import Header from '../../components/Header';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../types';
-import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE_URL } from '../../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE_URL, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
@@ -22,6 +22,7 @@ type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 export default function AddCards() {
   const navigation = useNavigation<AddCardsNavigationProp>();
   const { user } = useAuth();
+  const toast = useToast();
   const [error, setError] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [formData, setFormData] = useState({
@@ -775,7 +776,10 @@ export default function AddCards() {
           template={template}
           card={buildCardObject()}
           altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-          onSelectTemplate={setTemplate}
+          onSelectTemplate={(n) => {
+            setTemplate(n);
+            toast.success('Template Selected', `Template ${n} applied to your card`);
+          }}
           onClose={() => setPreviewVisible(false)}
         />
       )}

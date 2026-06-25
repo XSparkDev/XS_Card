@@ -2346,7 +2346,9 @@ const renderEventDate = (dateStr: string) => {
     <TouchableWithoutFeedback onPress={closeMenu}>
       <View style={styles.container}>
       <AdminHeader title="Calendar" />
-      <ScrollView 
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
+      <ScrollView
         style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -2511,6 +2513,8 @@ const renderEventDate = (dateStr: string) => {
           })()}
         </View>
       </ScrollView>
+      </View>
+      </View>
 
       <ContactsModal
         visible={isContactsModalVisible}
@@ -2752,16 +2756,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
-  content: {
+  contentShell: {
     flex: 1,
     marginTop: 90,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  content: {
+    flex: 1,
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: Platform.select({
-      ios: 20,
-      android: 80,
-    }),
+    paddingBottom: 120,
   },
   calendar: {
     borderRadius: 10,

@@ -224,6 +224,8 @@ export default function PrivacySecurityScreen() {
         <View style={styles.placeholder} />
       </View>
 
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Account Security Section */}
         <View style={styles.section}>
@@ -324,6 +326,8 @@ export default function PrivacySecurityScreen() {
           </Text>
         </View>
       </ScrollView>
+      </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -340,8 +344,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    zIndex: 1,
   },
   backButton: {
     padding: 8,
@@ -353,6 +356,24 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
+  },
+  contentShell: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#FFFFFF',
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
   },
   content: {
     flex: 1,

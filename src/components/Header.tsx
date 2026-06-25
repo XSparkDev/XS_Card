@@ -157,7 +157,7 @@ export default function Header({ title, rightIcon, showAddButton = false, deferA
           onPress={() => setIsMenuVisible(true)}
         >
           <Text style={styles.iconContainer}>
-            <MaterialIcons name="menu" size={24} color={COLORS.white} />
+            <MaterialIcons name="menu" size={24} color={COLORS.black} />
           </Text>
         </TouchableOpacity>
 
@@ -176,7 +176,7 @@ export default function Header({ title, rightIcon, showAddButton = false, deferA
             >
               <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
                 <Text style={styles.iconContainer}>
-                  <MaterialIcons name="add" size={24} color={COLORS.white} />
+                  <MaterialIcons name="add" size={24} color={COLORS.black} />
                 </Text>
               </TouchableOpacity>
             </FeatureTip>
@@ -205,10 +205,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     zIndex: 1,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   titleContainer: {
     paddingTop: 52,
@@ -220,7 +218,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     fontFamily: 'Montserrat_700Bold',
-    color: COLORS.white,
+    color: COLORS.black,
   },
   icon: {
     width: 24,

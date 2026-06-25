@@ -71,16 +71,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 16,
     backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    zIndex: 1,
   },
   leftContainer: {
     width: 40,

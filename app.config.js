@@ -4,7 +4,7 @@ export default {
   expo: {
     name: "XSCard",
     slug: "xscard-app",
-    version: "2.0.0",
+    version: "2.0.3",
     orientation: "portrait",
     icon: "./assets/icons/icon.png",
     userInterfaceStyle: "light",
