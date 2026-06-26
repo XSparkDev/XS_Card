@@ -24,6 +24,8 @@ interface Props {
   onPressEdit?: () => void;
   scanLimited?: boolean;
   scanCountdown?: string;
+  qrTimedOut?: boolean;
+  onRetryQr?: () => void;
 }
 
 // Social icons mapping - EXACT same as Template 1
@@ -38,7 +40,7 @@ const socialIcons: { [key: string]: keyof typeof MaterialCommunityIcons.glyphMap
 };
 
 export default function CardTemplate5(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
   const theme = card.colorScheme || colorFallback;
 
   // EXACT same getDynamicStyles as Template 1
@@ -110,7 +112,7 @@ export default function CardTemplate5(props: Props) {
           />
         ) : (
           <View style={styles.qrPlaceholder}>
-            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} />
+            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} timedOut={qrTimedOut} onRetry={onRetryQr} />
           </View>
         )}
       </View>

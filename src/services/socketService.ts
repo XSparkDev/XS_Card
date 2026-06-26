@@ -26,6 +26,10 @@ class SocketService {
   private reconnectInterval = 5000; // 5 seconds
   private isConnecting = false;
   private isAuthenticated = false;
+  // Set on 'connect'; only zeros reconnectAttempts once the connection has held
+  // for a few seconds. Cleared on 'disconnect' so a connect→immediate-drop flap
+  // keeps counting toward maxReconnectAttempts instead of resetting every cycle.
+  private connectionStableTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Initialize the socket service with configuration
@@ -59,7 +63,21 @@ class SocketService {
       }
 
       const user = JSON.parse(userData);
-      
+
+      // Tear down any previous socket BEFORE creating a new one. With forceNew
+      // each connect() makes a fresh socket; without this, the old instance (and
+      // all its listeners) leaks, so a few reconnects stack up multiple live
+      // sockets all firing onConnectionChange/onError — amplifying the storm.
+      if (this.socket) {
+        try {
+          this.socket.removeAllListeners();
+          this.socket.disconnect();
+        } catch (cleanupError) {
+          console.warn('[SocketService] Error cleaning up previous socket:', cleanupError);
+        }
+        this.socket = null;
+      }
+
       // Create socket connection with authentication
       this.socket = io(API_BASE_URL, {
         auth: {
@@ -69,7 +87,14 @@ class SocketService {
         },
         transports: ['websocket', 'polling'],
         timeout: 10000,
-        forceNew: true
+        forceNew: true,
+        // Disable socket.io's built-in auto-reconnection. By default it retries
+        // forever (reconnectionAttempts: Infinity); on a persistent failure such as
+        // a revoked auth token it fired `connect_error` thousands of times, and each
+        // one ran console.error + the onError callback — saturating the JS thread and
+        // freezing scrolling/taps app-wide. Reconnection is handled in a controlled,
+        // capped way by scheduleReconnect() below instead.
+        reconnection: false
       });
 
       // Set up event listeners
@@ -88,7 +113,14 @@ class SocketService {
           clearTimeout(timeout);
           this.isConnecting = false;
           this.isAuthenticated = true;
-          this.reconnectAttempts = 0;
+          // Reset the reconnect counter only after the connection proves stable
+          // (5s). If it drops before then (e.g. the server rejects it), the drop
+          // still counts toward the cap so a connect→drop flap can't loop forever.
+          if (this.connectionStableTimer) clearTimeout(this.connectionStableTimer);
+          this.connectionStableTimer = setTimeout(() => {
+            this.reconnectAttempts = 0;
+            this.connectionStableTimer = null;
+          }, 5000);
           this.config.onConnectionChange?.(true);
           resolve(true);
         });
@@ -120,8 +152,14 @@ class SocketService {
     this.socket.on('disconnect', (reason) => {
       console.log('[SocketService] Disconnected:', reason);
       this.isAuthenticated = false;
+      // A drop before the stability window means this connection didn't "stick",
+      // so don't let it reset the reconnect counter.
+      if (this.connectionStableTimer) {
+        clearTimeout(this.connectionStableTimer);
+        this.connectionStableTimer = null;
+      }
       this.config.onConnectionChange?.(false);
-      
+
       // Auto-reconnect unless it was a manual disconnect
       if (reason !== 'io client disconnect') {
         this.scheduleReconnect();
@@ -245,8 +283,13 @@ class SocketService {
    * Disconnect from the socket server
    */
   disconnect() {
+    if (this.connectionStableTimer) {
+      clearTimeout(this.connectionStableTimer);
+      this.connectionStableTimer = null;
+    }
     if (this.socket) {
       console.log('[SocketService] Disconnecting...');
+      this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
       this.isAuthenticated = false;

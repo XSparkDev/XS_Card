@@ -100,13 +100,18 @@ export default function EventsScreen() {
     React.useCallback(() => {
       loadEvents(true);
       loadRecentEvents();
-      
-      // Auto-connect to real-time updates if not connected
-      if (!connected) {
-        console.log('[EventsScreen] Auto-connecting to real-time updates...');
-        connectToSocket();
-      }
-    }, [filters, connected])
+
+      // Attempt a real-time connection once per focus. We deliberately do NOT
+      // gate this on `connected`, nor list it in the deps: socketService.connect()
+      // is already guarded against duplicate/in-flight connections, and keeping
+      // `connected` in the deps meant every socket connect/disconnect flap re-ran
+      // this whole effect — wiping + re-fetching the entire list (which flips it
+      // back to the full-screen loading spinner) and reconnecting on a loop. That
+      // storm is what froze scrolling. Connect here is fire-and-forget.
+      console.log('[EventsScreen] Auto-connecting to real-time updates...');
+      connectToSocket();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters])
   );
 
   // Listen for real-time event notifications

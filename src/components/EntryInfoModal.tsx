@@ -27,6 +27,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   TouchableWithoutFeedback,
+  InteractionManager,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -158,6 +159,27 @@ export default function EntryInfoModal({
     onResolvedRef.current?.();
   }, []);
 
+  // Present the modal only AFTER the current navigation/transition settles.
+  // Presenting an RN Modal mid-transition (entering the screen, or while a sibling
+  // modal is still animating out) overlaps two native modal presentations — on iOS
+  // that crashes ("present while a presentation is in progress") or makes the modal
+  // silently fail to appear. A real device's slower timing makes it reproducible;
+  // the simulator is usually fast enough to dodge it.
+  const showModalSafely = useCallback(() => {
+    setDontShow(false); // always unchecked on open
+    let shown = false;
+    const show = () => {
+      if (shown) return;
+      shown = true;
+      if (focusedRef.current) setVisible(true);
+    };
+    // Prefer to present right after the transition settles…
+    InteractionManager.runAfterInteractions(show);
+    // …but never withhold the modal indefinitely if an interaction handle stays
+    // open — guarantee it appears within 600ms (whichever fires first wins).
+    setTimeout(show, 600);
+  }, []);
+
   // Single eligibility check. Stable identity (reads loading via ref) so the
   // focus effect doesn't churn. Runs the sequence: loading gate → dont-show-again
   // → seen-count → show + increment. On any AsyncStorage failure it DEFAULTS TO
@@ -211,22 +233,19 @@ export default function EntryInfoModal({
           return;
         }
         console.log(`[Events] Setting modal visible: ${name}`);
-        setDontShow(false); // always unchecked on open
-        setVisible(true);
+        showModalSafely();
         await AsyncStorage.setItem(storageKey, String(count + 1));
         return; // resolve fires on dismiss
       }
 
       // No seen-count: show every focus until "Don't show again" is set.
       console.log(`[Events] Setting modal visible: ${name}`);
-      setDontShow(false); // always unchecked on open
-      setVisible(true); // resolve fires on dismiss
+      showModalSafely(); // resolve fires on dismiss
     } catch {
       console.log(`[Events] AsyncStorage read failed for ${name}, defaulting to show`);
-      setDontShow(false);
-      setVisible(true); // resolve fires on dismiss
+      showModalSafely(); // resolve fires on dismiss
     }
-  }, [storageKey, maxShows, dontShowAgainKey, requireFreeUser, resolve, name]);
+  }, [storageKey, maxShows, dontShowAgainKey, requireFreeUser, resolve, showModalSafely, name]);
 
   // Run the eligibility check every time the screen comes into FOCUS (not just
   // mount) — critical for tab navigators where screens are not remounted.
@@ -267,7 +286,12 @@ export default function EntryInfoModal({
     }
     setHowVisible(false);
     setVisible(false);
-    resolve(); // this visit's lifecycle is complete → release any follow-up modal
+    // Release any follow-up (sequenced) modal only AFTER this one has finished
+    // dismissing. Firing resolve() synchronously made the next modal present while
+    // this one was still animating out — two overlapping native modal transitions,
+    // which on iOS crashes ("present while a presentation is in progress") or drops
+    // the second modal on a real device. The delay covers the fade-out animation.
+    setTimeout(() => resolve(), 350);
   };
 
   const handleUnlockPremium = () => {
@@ -289,7 +313,15 @@ export default function EntryInfoModal({
       visible={true}
       transparent
       animationType="fade"
-      onRequestClose={dismiss}
+      onRequestClose={() => {
+        // Android back: close the in-place "how" overlay first if it's open,
+        // otherwise dismiss the whole modal.
+        if (howVisible) {
+          setHowVisible(false);
+          return;
+        }
+        dismiss();
+      }}
       statusBarTranslucent
     >
       <TouchableWithoutFeedback onPress={dismiss}>
@@ -413,35 +445,31 @@ export default function EntryInfoModal({
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Nested "How does this work?" modal — closing it returns to this modal */}
+      {/* "How does this work?" overlay — rendered IN-PLACE inside this same Modal,
+          NOT as a nested RN Modal. Nesting two native modal presentations is an
+          iOS crash hazard (same class as the entry-handoff race); an absolute-fill
+          overlay gives the identical look without a second native modal. Closing it
+          returns to the main modal content. */}
       {howVisible && (
-        <Modal
-          visible={true}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setHowVisible(false)}
-          statusBarTranslucent
-        >
-          <TouchableWithoutFeedback onPress={() => setHowVisible(false)}>
-            <View style={styles.overlay}>
-              <TouchableWithoutFeedback onPress={() => {}}>
-                <View style={styles.card}>
-                  <TouchableOpacity
-                    style={styles.closeButton}
-                    onPress={() => setHowVisible(false)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialIcons name="close" size={22} color={COLORS.gray} />
-                  </TouchableOpacity>
+        <TouchableWithoutFeedback onPress={() => setHowVisible(false)}>
+          <View style={[styles.overlay, StyleSheet.absoluteFillObject]}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.card}>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setHowVisible(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                </TouchableOpacity>
 
-                  <Text style={styles.howHeadline}>How does this work?</Text>
-                  <Text style={styles.body}>{howItWorksText}</Text>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
+                <Text style={styles.howHeadline}>How does this work?</Text>
+                <Text style={styles.body}>{howItWorksText}</Text>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
       )}
     </Modal>
   );

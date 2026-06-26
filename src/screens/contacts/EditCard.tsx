@@ -105,8 +105,18 @@ export default function EditCard() {
   }, []);
   const confirmRedirectToPrimaryCard = useCallback(() => {
     setIsRedirectModalVisible(false);
-    navigation.navigate('EditCard', { cardIndex: 0, originCardIndex: cardIndex });
+    // push (not navigate) so the primary card layers OVER this one with a slide
+    // transition — goBack later peels it away to reveal this origin card again.
+    navigation.push('EditCard', { cardIndex: 0, originCardIndex: cardIndex });
   }, [navigation, cardIndex]);
+  // Tracks whether a save has just completed, so leaving a redirected primary
+  // card after saving is not mistaken for a cancellation.
+  const didSaveRef = useRef(false);
+  // Always points at the LATEST handleSave. The beforeRemove listener is
+  // registered once, so calling handleSave directly there would capture the
+  // first-render closure (with empty form data) and fail validation — this ref
+  // keeps the back-button "Save" using the same up-to-date save the pink button does.
+  const handleSaveRef = useRef<((options?: { silent?: boolean }) => Promise<boolean>) | null>(null);
   const { notifyScroll } = useTooltipContext();
   const { user } = useAuth();
   const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
@@ -220,12 +230,33 @@ export default function EditCard() {
         'You have unsaved changes. Save them before leaving?',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              // Returning to the card they came from after abandoning a shared-field edit.
+              if (originCardIndex !== undefined) {
+                toast.info(
+                  'Editing cancelled',
+                  "Your changes were discarded — you're back on your previous card."
+                );
+              }
+              navigation.dispatch(e.data.action);
+            },
+          },
           {
             text: 'Save',
             onPress: async () => {
-              const saved = await handleSave({ silent: true });
-              if (saved) navigation.dispatch(e.data.action);
+              const saved = await (handleSaveRef.current?.({ silent: true }) ?? Promise.resolve(false));
+              if (saved) {
+                if (originCardIndex !== undefined) {
+                  toast.success(
+                    'Saved',
+                    'Your details were updated across all your cards.'
+                  );
+                }
+                navigation.dispatch(e.data.action);
+              }
             },
           },
         ],
@@ -233,6 +264,13 @@ export default function EditCard() {
     });
     return unsubscribe;
   }, [navigation]);
+
+  // Keep handleSaveRef pointing at the current render's handleSave (which closes
+  // over the latest form data) so the once-registered beforeRemove listener never
+  // saves with stale/empty values. Runs after every render.
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
 
   // Helper function to parse phone number and extract country code
   const parsePhoneNumber = (phone: string) => {
@@ -285,6 +323,19 @@ export default function EditCard() {
   useEffect(() => {
     setUserPlan(normalizeUserPlan(user?.plan));
   }, [user?.plan]);
+
+  // Arrived here via a canonical-field redirect from another card → confirm to
+  // the user (once) that they've landed on their primary card. The persistent
+  // banner at the top of the form reinforces this for as long as they stay.
+  useEffect(() => {
+    if (originCardIndex !== undefined) {
+      toast.info(
+        "You're on your primary card",
+        'Name, title & qualification are shared across all your cards — edit them here.'
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   // Load alt number from temp file
   const loadAltNumber = async () => {
@@ -887,25 +938,11 @@ export default function EditCard() {
   ];
 
   const handleBack = () => {
-    if (!hasUnsavedChanges) {
-      navigation.goBack();
-      return;
-    }
-    Alert.alert(
-      'Unsaved changes',
-      'You have unsaved changes. Save them before leaving?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
-        {
-          text: 'Save',
-          onPress: async () => {
-            const saved = await handleSave({ silent: true });
-            if (saved) navigation.goBack();
-          },
-        },
-      ],
-    );
+    // Just request navigation back. The single `beforeRemove` listener above is
+    // the one source of truth for the unsaved-changes prompt — it catches the
+    // Back button, swipe-back gesture and hardware back alike. Showing an Alert
+    // here too made the prompt appear twice (this alert, then beforeRemove's).
+    navigation.goBack();
   };
 
   const validateEmail = (email: string) => {
@@ -1071,11 +1108,27 @@ export default function EditCard() {
       // Re-baseline the unsaved-changes snapshot to the just-saved values so the
       // Save button greys out again until the next edit.
       initialSnapshotRef.current = buildChangeSnapshot();
+      // Clear the live ref immediately (it's only re-synced on the next render) so a
+      // goBack()/dispatch right after saving doesn't re-trigger the unsaved-changes
+      // guard before the re-render lands.
+      hasUnsavedChangesRef.current = false;
+      // Mark that a save just happened so leaving isn't treated as a cancellation.
+      didSaveRef.current = true;
 
       setIsSaving(false);
       if (!silent) {
-        setModalMessage('Card updated');
-        setIsSuccessModalVisible(true);
+        if (originCardIndex !== undefined) {
+          // Redirected here to edit shared fields — honour the promise to take the
+          // user right back to the card they came from, with the change applied.
+          toast.success(
+            'Saved',
+            'Your name, title & qualification were updated across all your cards.'
+          );
+          navigation.goBack();
+        } else {
+          setModalMessage('Card updated');
+          setIsSuccessModalVisible(true);
+        }
       }
 
       // Sync widget data after successful card update
@@ -1652,6 +1705,24 @@ export default function EditCard() {
         extraScrollHeight={20}
         extraHeight={20}
         >
+          {/* Redirect banner — only when the user was sent here from another card to
+              edit a shared (primary-only) field. Makes it unmistakable that they've
+              landed on their primary card and what happens next. */}
+          {originCardIndex !== undefined && (
+            <View style={styles.primaryRedirectBanner}>
+              <View style={styles.primaryRedirectIconCircle}>
+                <MaterialIcons name="badge" size={20} color={COLORS.primary} />
+              </View>
+              <View style={styles.primaryRedirectTextWrap}>
+                <Text style={styles.primaryRedirectTitle}>You're on your primary card</Text>
+                <Text style={styles.primaryRedirectBody}>
+                  Name, title & qualification are shared across all your cards. Save to apply,
+                  or go back to cancel and return to your other card.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Card Name Section — distinct identifier for this card (not shown on the card face) */}
           <View style={styles.cardNameSection}>
             <View style={styles.cardNameLabelRow}>
@@ -2088,13 +2159,16 @@ export default function EditCard() {
                   />
                 )}
               </TouchableOpacity>
-              {/* Tooltip sits below the toggle so the bubble appears under the card */}
+              {/* Tooltip sits below the toggle so the bubble appears under the
+                  option. disableFlip stops it flipping up (and off the top of the
+                  screen) when the toggle is low in the scroll form. */}
               <FeatureTip
                 tipKey="speaker_engagement_card"
                 content="Have a speaking engagement? Make one card as your speaker and engagement card to track who scanned it during your delivery (then export to CSV)"
                 position="bottom"
-                bubbleAlign="left"
+                bubbleAlign="right"
                 inScrollView
+                disableFlip
               >
                 <TouchableOpacity
                   style={styles.tooltipButton}
@@ -2810,6 +2884,42 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+  },
+  // Redirect banner shown at the top of the primary card when reached via a
+  // canonical-field redirect from another card.
+  primaryRedirectBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.primary + '12',
+    borderWidth: 1,
+    borderColor: COLORS.primary + '33',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  primaryRedirectIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  primaryRedirectTextWrap: {
+    flex: 1,
+  },
+  primaryRedirectTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 3,
+  },
+  primaryRedirectBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.textLight,
   },
   colorSection: {
     marginTop: 20,

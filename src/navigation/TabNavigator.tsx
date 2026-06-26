@@ -7,7 +7,7 @@ import { COLORS } from '../constants/colors';
 import CardsScreen from '../screens/cards/CardsScreen';
 import ContactsScreen from '../screens/contacts/ContactScreen';
 import { RootTabParamList, RootStackParamList } from '../types';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, TransitionPresets } from '@react-navigation/stack';
 import AddCards from '../screens/cards/AddCards';
 import EditCard from '../screens/contacts/EditCard';
 import UnlockPremium from '../screens/Unlockpremium/UnlockPremium';
@@ -174,7 +174,16 @@ export default function AppNavigator() {
     >
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen name="AddCards" component={AddCards} />
-      <Stack.Screen name="EditCard" component={EditCard} />
+      <Stack.Screen
+        name="EditCard"
+        component={EditCard}
+        options={{
+          // Horizontal slide so a pushed EditCard layers OVER the previous one
+          // (e.g. the redirect to the primary card), and peels back on return.
+          ...TransitionPresets.SlideFromRightIOS,
+          gestureEnabled: true,
+        }}
+      />
       <Stack.Screen name="UnlockPremium" component={UnlockPremium} />
       <Stack.Screen name="SubscriptionManagement" component={SubscriptionManagementScreen} />
       <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />

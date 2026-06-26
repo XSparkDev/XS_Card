@@ -166,6 +166,40 @@ export default function CardsScreen() {
   const effectiveQrUri = (idx: number): string | undefined =>
     isFreeUser && scanLimited ? undefined : qrCodes[idx];
 
+  // ===== Page-indicator scroll fade =====
+  // The current-card pill + page dots rest at a low opacity and animate to full
+  // while the user slides between cards, then settle back — a subtle "gain
+  // opacity on scroll" flow shared by the whole indicator.
+  const INDICATOR_REST_OPACITY = 0.45;
+  const indicatorOpacity = useRef(new Animated.Value(INDICATOR_REST_OPACITY)).current;
+  const indicatorFadeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const revealIndicator = useCallback(() => {
+    if (indicatorFadeTimeout.current) clearTimeout(indicatorFadeTimeout.current);
+    Animated.timing(indicatorOpacity, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [indicatorOpacity]);
+
+  const settleIndicator = useCallback(() => {
+    if (indicatorFadeTimeout.current) clearTimeout(indicatorFadeTimeout.current);
+    indicatorFadeTimeout.current = setTimeout(() => {
+      Animated.timing(indicatorOpacity, {
+        toValue: INDICATOR_REST_OPACITY,
+        duration: 450,
+        useNativeDriver: true,
+      }).start();
+    }, 700);
+  }, [indicatorOpacity]);
+
+  useEffect(() => {
+    return () => {
+      if (indicatorFadeTimeout.current) clearTimeout(indicatorFadeTimeout.current);
+    };
+  }, []);
+
   // Add this function to handle scroll events
   const handleScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
@@ -173,6 +207,8 @@ export default function CardsScreen() {
     const pageWidth = isTablet() ? cardWidth : Dimensions.get('window').width;
     const page = Math.round(offsetX / pageWidth);
     setCurrentPage(page);
+    // Slide in progress → keep the indicator at full opacity.
+    revealIndicator();
   };
 
   // Function to load alt numbers for migration purposes (deprecated - alt numbers now come from backend)
@@ -966,6 +1002,17 @@ export default function CardsScreen() {
     }
   }, [userData, currentPage]);
 
+  // ===== Current-card indicator =====
+  // Shown for every user, no plan gating — the pill names the card in view and
+  // its position in the set. It renders whenever at least one card is loaded.
+  const totalCards = userData?.cards?.length ?? 0;
+  const currentCardData = userData?.cards?.[currentPage];
+  const currentCardLabel =
+    currentCardData?.cardName?.trim() ||
+    currentCardData?.company?.trim() ||
+    `Card ${currentPage + 1}`;
+  const showCurrentCardPill = totalCards >= 1;
+
   return (
     <View style={styles.container}>
       <Header
@@ -1008,6 +1055,9 @@ export default function CardsScreen() {
           }
         ]}
         onScroll={handleScroll}
+        onScrollBeginDrag={revealIndicator}
+        onScrollEndDrag={settleIndicator}
+        onMomentumScrollEnd={settleIndicator}
         scrollEventThrottle={16}
         snapToInterval={isTablet() ? cardWidth + 30 : undefined}
         snapToAlignment={isTablet() ? 'start' : undefined}
@@ -1095,6 +1145,8 @@ export default function CardsScreen() {
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                     scanLimited={isFreeUser && scanLimited}
                     scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : card.template === 3 ? (
@@ -1123,6 +1175,8 @@ export default function CardsScreen() {
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                     scanLimited={isFreeUser && scanLimited}
                     scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : card.template === 4 ? (
@@ -1151,6 +1205,8 @@ export default function CardsScreen() {
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                     scanLimited={isFreeUser && scanLimited}
                     scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : card.template === 5 ? (
@@ -1179,6 +1235,8 @@ export default function CardsScreen() {
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
                     scanLimited={isFreeUser && scanLimited}
                     scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : (
@@ -1238,27 +1296,13 @@ export default function CardsScreen() {
                       source={{ uri: effectiveQrUri(index) }}
                       resizeMode="contain"
                     />
-                  ) : qrTimedOut[index] ? (
-                    <TouchableOpacity
-                      style={[styles.qrCode, isTablet() && { width: scale(150), height: scale(150) }]}
-                      onPress={() => handleQrRetry(index)}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={['#92278F', '#BE1E2D']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.qrRetryGradient}
-                      >
-                        <MaterialIcons name="refresh" size={36} color="#fff" />
-                        <Text style={styles.qrRetryText}>Tap to retry</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
                   ) : (
                     <View style={[styles.qrCode, isTablet() && { width: scale(150), height: scale(150) }]}>
                       <QrPlaceholder
                         limited={isFreeUser && scanLimited}
                         countdownLabel={scanCountdown}
+                        timedOut={qrTimedOut[index]}
+                        onRetry={() => handleQrRetry(index)}
                       />
                     </View>
                   )}
@@ -1570,11 +1614,37 @@ export default function CardsScreen() {
       </View>
       </View>
 
-      {/* Page Indicator */}
-      <View style={[
+      {/* Page Indicator — rests dim, fades to full opacity while sliding cards. */}
+      <Animated.View style={[
         styles.pageIndicator,
-        isTablet() && styles.pageIndicatorTablet
+        isTablet() && styles.pageIndicatorTablet,
+        { opacity: indicatorOpacity }
       ]}>
+        {/* Premium-only: name the card currently in view + its position so users
+            with several cards always know which one they're looking at. */}
+        {showCurrentCardPill && (
+          <View style={styles.currentCardPill}>
+            <View style={[
+              styles.currentCardDot,
+              { backgroundColor: currentCardData?.colorScheme || colorScheme }
+            ]} />
+            <Text style={styles.currentCardName} numberOfLines={1}>
+              {currentCardLabel}
+            </Text>
+            {currentCardData?.isSpeakerEngagementCard && (
+              <MaterialCommunityIcons
+                name="microphone"
+                size={13}
+                color={currentCardData?.colorScheme || colorScheme}
+                style={styles.currentCardSpeakerIcon}
+              />
+            )}
+            <View style={styles.currentCardDivider} />
+            <Text style={styles.currentCardCount}>
+              {currentPage + 1} of {totalCards}
+            </Text>
+          </View>
+        )}
         <View style={[
           styles.dotContainer,
           isTablet() && styles.dotContainerTablet
@@ -1591,7 +1661,7 @@ export default function CardsScreen() {
             />
           ))}
         </View>
-      </View>
+      </Animated.View>
 
       {/* ===== Scan counter (free users only) — color escalates 1-2 green, 3-4 orange, 5 red.
             The "limit reached" state itself is now communicated by the persistent header
@@ -2106,17 +2176,6 @@ qrCode: {
   borderRadius: 12,
   overflow: 'hidden',
 },
-qrRetryGradient: {
-  flex: 1,
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 6,
-},
-qrRetryText: {
-  color: '#fff',
-  fontSize: 12,
-  fontFamily: 'Montserrat_500Medium',
-},
   qrContainer: {
     width: 170,
     height: 170,
@@ -2153,11 +2212,61 @@ qrRetryText: {
     left: 0,
     right: 0,
     alignItems: 'center',
+    // Sit above the contentShell (zIndex 2 / elevation 20) so the dots and the
+    // current-card pill are never painted over — on Android the shell's higher
+    // elevation would otherwise hide this whole indicator.
+    zIndex: 21,
+    elevation: 21,
   },
   dotContainer: {
     flexDirection: 'row',
     gap: 6,
     alignSelf: 'center',
+  },
+  // Premium current-card pill (sits just above the page dots)
+  currentCardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    maxWidth: Dimensions.get('window').width - 64,
+    backgroundColor: COLORS.white,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border + '80',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  currentCardDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  currentCardName: {
+    fontSize: 13,
+    fontFamily: 'Montserrat-Bold',
+    color: COLORS.black,
+    flexShrink: 1,
+  },
+  currentCardSpeakerIcon: {
+    marginLeft: 5,
+  },
+  currentCardDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 8,
+  },
+  currentCardCount: {
+    fontSize: 12,
+    fontFamily: 'Montserrat-Regular',
+    color: COLORS.gray,
   },
   // Scan rate-limit UI
   scanCounterWrap: {

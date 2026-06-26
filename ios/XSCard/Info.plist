@@ -32,7 +32,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>7</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -46,15 +46,15 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your camera</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>XS Card uses your location so you can see where you met your contacts. This is optional and can be changed in your device settings at any time.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>XS Card uses your location so you can see where you met your contacts. This is optional and can be changed in your device settings at any time.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your photos</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-		<string>XS Card uses your location so you can see where you met your contacts. This is optional and can be changed in your device settings at any time.</string>
-		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>XS Card uses your location so you can see where you met your contacts. This is optional and can be changed in your device settings at any time.</string>
-		<key>UILaunchStoryboardName</key>
+	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>

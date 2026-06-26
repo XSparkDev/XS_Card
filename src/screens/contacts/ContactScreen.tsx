@@ -48,11 +48,22 @@ import { getPlanLimits, UserPlan } from '../../utils/userPlan';
 import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 import FeatureTip from '../../components/FeatureTip';
 import ContactDetailPanel from '../../components/ContactDetailPanel';
+import AddContactPanel from '../../components/AddContactPanel';
 import { tabBarScrollY } from '../../utils/tabBarScroll';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
 const DEFAULT_COUNTRY_CODE = '+27'; // South Africa
+// Blank manual-add form. Phone is pre-seeded with the default dialling code so the
+// user only types the local part; a lone code is stripped back to empty on submit.
+const EMPTY_ADD_CONTACT_FORM = {
+  name: '',
+  surname: '',
+  email: '',
+  company: '',
+  phone: DEFAULT_COUNTRY_CODE + ' ',
+  howWeMet: '',
+};
 // Which field carries the bold/primary emphasis on each contact card.
 type ContactEmphasisField = 'name' | 'company';
 const CONTACT_EMPHASIS_STORAGE_KEY = 'contacts_emphasis_field';
@@ -460,6 +471,13 @@ export default function ContactsScreen() {
   const [showUpsellInfoModal, setShowUpsellInfoModal] = useState(false);
   const [upsellDontShow, setUpsellDontShow] = useState(false);
 
+  // Manual "Add contact" — mirrors the saveContact.html exchange form so a contact
+  // added by hand is saved exactly like one captured from a scan (same /AddContact
+  // endpoint, same payload, same owner-notification email).
+  const [isAddContactVisible, setIsAddContactVisible] = useState(false);
+  const [isAddingContact, setIsAddingContact] = useState(false);
+  const [addContactForm, setAddContactForm] = useState(EMPTY_ADD_CONTACT_FORM);
+
   // Upsell modal refs
   const upsellFocusedRef = useRef(false);
   const upsellEvaluatedRef = useRef(false);
@@ -814,6 +832,96 @@ export default function ContactsScreen() {
       setIsLoading(false);
     }
   }, []);
+
+  // Open the manual add-contact form. Free users at their limit get the upgrade
+  // prompt instead — same gate the backend enforces, surfaced up front.
+  const openAddContact = useCallback(() => {
+    if (isFreeUser && remainingContacts !== 'unlimited' && remainingContacts <= 0) {
+      setShowLimitModal(true);
+      return;
+    }
+    setAddContactForm(EMPTY_ADD_CONTACT_FORM);
+    setIsAddContactVisible(true);
+  }, [isFreeUser, remainingContacts]);
+
+  const closeAddContact = useCallback(() => {
+    setIsAddContactVisible(false);
+  }, []);
+
+  const updateAddContactField = useCallback(
+    (field: keyof typeof EMPTY_ADD_CONTACT_FORM, value: string) => {
+      setAddContactForm((prev) => ({ ...prev, [field]: value }));
+    },
+    []
+  );
+
+  // Save a hand-entered contact through the SAME public /AddContact endpoint the
+  // saveContact.html scan page uses, with an identical payload shape — so manual
+  // contacts behave exactly like scanned ones (owner email, free-plan limit, etc.).
+  const handleAddContactSubmit = useCallback(async () => {
+    const name = addContactForm.name.trim();
+    const surname = addContactForm.surname.trim();
+    const email = addContactForm.email.trim();
+    const company = addContactForm.company.trim();
+    // Drop a lone country-code prefix so an untouched phone field saves as empty.
+    const phoneRaw = addContactForm.phone.trim();
+    const phone = phoneRaw === DEFAULT_COUNTRY_CODE ? '' : phoneRaw;
+    const howWeMet = addContactForm.howWeMet.trim();
+
+    // Match saveContact.html's required fields (name, surname, email, how we met).
+    if (!name || !surname || !email || !howWeMet) {
+      toast.error('Missing details', 'Please fill in first name, last name, email and how you met.');
+      return;
+    }
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailValid) {
+      toast.error('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
+
+    setIsAddingContact(true);
+    try {
+      const userId = await getUserId();
+      if (!userId) {
+        throw new Error('No user ID found');
+      }
+
+      // Same payload structure saveContact.html sends to /AddContact.
+      const payload = {
+        userId,
+        cardIndex: 0,
+        contactInfo: { name, surname, phone, email, company, howWeMet },
+      };
+
+      const response = await authenticatedFetchWithRefresh(ENDPOINTS.ADD_CONTACT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 403) {
+        // Free-plan contact limit hit on the server — show the upgrade path.
+        setIsAddContactVisible(false);
+        setShowLimitModal(true);
+        return;
+      }
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || `Failed to add contact (${response.status})`);
+      }
+
+      setIsAddContactVisible(false);
+      setAddContactForm(EMPTY_ADD_CONTACT_FORM);
+      toast.success('Contact added', `${name} ${surname} was saved to your contacts.`);
+      await loadContacts();
+    } catch (error) {
+      console.error('Error adding contact manually:', error);
+      toast.error('Could not add contact', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsAddingContact(false);
+    }
+  }, [addContactForm, toast, loadContacts]);
 
   // Delete contact
   const handleDeleteContact = useCallback(async (contact: Contact) => {
@@ -1527,7 +1635,27 @@ export default function ContactsScreen() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.container}>
-        <Header title="Contacts" />
+        <Header
+          title="Contacts"
+          rightIcon={
+            <FeatureTip
+              tipKey="contacts_manual_add"
+              content="Add a contact by hand — saved just like a scanned card"
+              position="bottom"
+              bubbleAlign="right"
+              arrowAtAnchor
+            >
+              <TouchableOpacity
+                onPress={openAddContact}
+                accessibilityRole="button"
+                accessibilityLabel="Add a contact manually"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="person-add-alt-1" size={24} color={COLORS.black} />
+              </TouchableOpacity>
+            </FeatureTip>
+          }
+        />
 
         <View style={styles.contentShell}>
         <View style={styles.contentShellInner}>
@@ -1801,16 +1929,22 @@ export default function ContactsScreen() {
                     : 'When you share your card and they share their details back, they will appear here'}
               </Text>
               {!searchQuery && selectedCardFilter === 'all' && (
-                <FeatureTip
-                  tipKey="contacts_add_button"
-                  content="Contacts appear here after scanning your card"
-                  position="bottom"
-                >
-                  <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
-                    <MaterialIcons name="share" size={24} color={COLORS.white} />
-                    <Text style={styles.shareCardButtonText}>Share my card</Text>
+                <>
+                  <FeatureTip
+                    tipKey="contacts_add_button"
+                    content="Contacts appear here after scanning your card"
+                    position="bottom"
+                  >
+                    <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
+                      <MaterialIcons name="share" size={24} color={COLORS.white} />
+                      <Text style={styles.shareCardButtonText}>Share my card</Text>
+                    </TouchableOpacity>
+                  </FeatureTip>
+                  <TouchableOpacity style={styles.emptyAddManuallyButton} onPress={openAddContact}>
+                    <MaterialIcons name="person-add-alt-1" size={20} color={colorScheme} />
+                    <Text style={[styles.emptyAddManuallyText, { color: colorScheme }]}>Add a contact manually</Text>
                   </TouchableOpacity>
-                </FeatureTip>
+                </>
               )}
             </View>
           ) : (
@@ -2396,6 +2530,9 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
+        {/* Manual add-contact uses a top-docked draggable panel (AddContactPanel),
+            rendered below alongside the contact detail panel. */}
+
         {/* Limit Modal */}
         <Modal
           visible={showLimitModal}
@@ -2591,6 +2728,18 @@ export default function ContactsScreen() {
           onClose={() => setContactPanelVisible(false)}
         />
       )}
+
+      {/* Top-docked draggable add-contact sheet — same mechanics as the contact
+          detail panel, but opens all the way at the top. */}
+      <AddContactPanel
+        visible={isAddContactVisible}
+        form={addContactForm}
+        onChange={updateAddContactField}
+        submitting={isAddingContact}
+        onSubmit={handleAddContactSubmit}
+        onClose={closeAddContact}
+        accentColor={colorScheme}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -2915,6 +3064,19 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
     fontWeight: '500',
+  },
+  emptyAddManuallyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  emptyAddManuallyText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   contactsListWrapper: {
     flex: 1,

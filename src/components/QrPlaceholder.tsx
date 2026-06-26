@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 interface QrPlaceholderProps {
   /** Merged onto the container — typically the same size/box the real QR image uses. */
@@ -11,21 +12,35 @@ interface QrPlaceholderProps {
   limited?: boolean;
   /** "MM:SS" until the limit resets — only rendered when `limited` is true. */
   countdownLabel?: string;
+  /**
+   * The real QR hasn't arrived within the load window. When set (and not
+   * `limited`) together with `onRetry`, the placeholder is dimmed (same treatment
+   * as the scan-limit state) and a circular refresh button is overlaid on top —
+   * the QR stays visible underneath rather than being fully covered.
+   */
+  timedOut?: boolean;
+  /** Called when the user taps the refresh button (re-fetch the QR code). */
+  onRetry?: () => void;
 }
 
 /**
- * Shared QR placeholder shown (a) while the real QR hasn't loaded yet, and
- * (b) when a free user has hit their scan limit — in which case it also
+ * Shared QR placeholder shown (a) while the real QR hasn't loaded yet, (b) when
+ * the load has timed out — in which case it dims the QR and overlays a circular
+ * refresh button — and (c) when a free user has hit their scan limit, where it
  * overlays the limit message and countdown. Used everywhere a card's QR is
  * rendered (Cards screen, template previews, Add/Edit card panels) so the
  * placeholder looks identical across the app.
  */
-export default function QrPlaceholder({ style, limited, countdownLabel }: QrPlaceholderProps) {
+export default function QrPlaceholder({ style, limited, countdownLabel, timedOut, onRetry }: QrPlaceholderProps) {
+  // Limit state always wins — never offer a refresh that the user can't act on.
+  const showRefresh = !limited && !!timedOut && !!onRetry;
+  const dimmed = limited || showRefresh;
+
   return (
     <View style={[styles.container, style]}>
       <Image
         source={require('../../assets/images/PlaceholderQr.jpeg')}
-        style={[styles.image, limited && styles.imageDimmed]}
+        style={[styles.image, dimmed && styles.imageDimmed]}
         resizeMode="contain"
       />
       {limited && (
@@ -35,6 +50,19 @@ export default function QrPlaceholder({ style, limited, countdownLabel }: QrPlac
             <Text style={styles.overlayCountdown}>Resets in {countdownLabel}</Text>
           )}
         </View>
+      )}
+      {showRefresh && (
+        <TouchableOpacity
+          style={styles.overlay}
+          onPress={onRetry}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh QR code"
+        >
+          <View style={styles.refreshCircle}>
+            <MaterialIcons name="refresh" size={28} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -77,5 +105,18 @@ const styles = StyleSheet.create({
     color: '#E53935',
     marginTop: 4,
     textAlign: 'center',
+  },
+  refreshCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1B2B5B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });

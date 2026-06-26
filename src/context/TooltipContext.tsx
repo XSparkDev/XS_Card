@@ -60,6 +60,13 @@ interface BubbleSpec {
    * its measured rect) regardless of `bubbleAlign`.
    */
   arrowAtAnchor?: boolean;
+  /**
+   * Keep the bubble on the requested top/bottom side even when there isn't quite
+   * enough room — i.e. never auto-flip bottom→top (or top→bottom). Used when a tip
+   * MUST sit below its anchor (e.g. the speaker-card info tip, whose flipped-up
+   * bubble fell off the top of the screen on long forms).
+   */
+  disableFlip?: boolean;
 }
 
 type DismissedMap = Record<string, boolean>;
@@ -396,8 +403,12 @@ function TooltipOverlay({
     // behind them.  Left/right are NOT flipped — the coordinate clamping below
     // keeps them on-screen, which is the right behaviour for full-width anchors
     // (buttons that span the whole screen width).
-    if (pos === 'bottom' && a.y + a.height + GAP + s.h > maxY) pos = 'top';
-    else if (pos === 'top' && a.y - GAP - s.h < minY) pos = 'bottom';
+    // `disableFlip` opts a tip out of this entirely so it always stays on the
+    // requested side (the speaker-card tip must always appear below its anchor).
+    if (!spec.disableFlip) {
+      if (pos === 'bottom' && a.y + a.height + GAP + s.h > maxY) pos = 'top';
+      else if (pos === 'top' && a.y - GAP - s.h < minY) pos = 'bottom';
+    }
 
     let top: number, left: number;
     if (pos === 'top' || pos === 'bottom') {

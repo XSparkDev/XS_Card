@@ -59,6 +59,12 @@ interface FeatureTipProps {
    * the Edit-card tip to be dismissed so the two header bubbles never collide.
    */
   suppressed?: boolean;
+  /**
+   * Never auto-flip this bubble to the opposite side. Use when the tip MUST stay
+   * on its requested side — e.g. a `position="bottom"` tip low in a scroll form
+   * that would otherwise flip up and run off the top of the screen.
+   */
+  disableFlip?: boolean;
 }
 
 export default function FeatureTip({
@@ -72,6 +78,7 @@ export default function FeatureTip({
   remeasureKey,
   arrowAtAnchor,
   suppressed = false,
+  disableFlip,
 }: FeatureTipProps) {
   const { tooltipsEnabled, dismissedTips, registerBubble, unregisterBubble, scrollNonce, scrollYRef } = useTooltipContext();
   const isFocused = useIsFocused();
@@ -165,12 +172,13 @@ export default function FeatureTip({
         scrollYAtMeasure: inScrollView ? scrollYAtMeasureRef.current : undefined,
         bubbleAlign,
         arrowAtAnchor,
+        disableFlip,
       });
     } else {
       unregisterBubble(tipKey);
     }
     return () => unregisterBubble(tipKey);
-  }, [isVisible, anchor, content, position, tipKey, inScrollView, bubbleAlign, arrowAtAnchor, registerBubble, unregisterBubble]);
+  }, [isVisible, anchor, content, position, tipKey, inScrollView, bubbleAlign, arrowAtAnchor, disableFlip, registerBubble, unregisterBubble]);
 
   return (
     <View ref={wrapperRef} style={[styles.wrapper, style]} onLayout={onLayout} collapsable={false}>

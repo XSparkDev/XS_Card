@@ -24,10 +24,12 @@ interface Props {
   onPressEdit?: () => void;
   scanLimited?: boolean;
   scanCountdown?: string;
+  qrTimedOut?: boolean;
+  onRetryQr?: () => void;
 }
 
 export default function CardTemplate2(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
   const theme = card.colorScheme || colorFallback;
 
   // Use exact same icon mapping as Template 1
@@ -82,7 +84,7 @@ export default function CardTemplate2(props: Props) {
           />
         ) : (
           <View style={styles.qrPlaceholder}>
-            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} />
+            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} timedOut={qrTimedOut} onRetry={onRetryQr} />
           </View>
         )}
       </View>
