@@ -491,16 +491,21 @@ export default function EventsScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.recentHeaderContent}>
+            <View style={styles.recentHeaderIconCircle}>
+              <MaterialIcons name="history" size={20} color={COLORS.primary} />
+            </View>
             <Text style={styles.recentTitle}>Recently Viewed</Text>
             <Text style={styles.recentCount}>({recentEvents.length})</Text>
           </View>
-          <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
-            <MaterialIcons 
-              name="expand-more" 
-              size={24} 
-              color={COLORS.gray} 
-            />
-          </Animated.View>
+          <View style={styles.recentChevronCircle}>
+            <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+              <MaterialIcons
+                name="expand-more"
+                size={22}
+                color={COLORS.primary}
+              />
+            </Animated.View>
+          </View>
         </TouchableOpacity>
 
         {/* Collapsible Content */}
@@ -608,10 +613,14 @@ export default function EventsScreen() {
         }
       />
 
+      {/* Curved, shadowed content shell — matches Cards/Contacts/Dashboard so the
+          content lifts off the header with the same groove. */}
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <MaterialIcons name="search" size={20} color={COLORS.gray} />
+          <MaterialIcons name="search" size={24} color={COLORS.gray} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search events..."
@@ -642,17 +651,23 @@ export default function EventsScreen() {
             <TouchableOpacity
               style={styles.quickActionButton}
               onPress={() => navigation.navigate('MyEvents')}
+              activeOpacity={0.85}
             >
-              <MaterialIcons name="event-note" size={20} color={COLORS.primary} />
+              <View style={styles.quickActionIconCircle}>
+                <MaterialIcons name="event-note" size={22} color={COLORS.primary} />
+              </View>
               <Text style={styles.quickActionText}>My Events</Text>
             </TouchableOpacity>
           </FeatureTip>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => navigation.navigate('EventPreferences')}
+            activeOpacity={0.85}
           >
-            <MaterialIcons name="tune" size={20} color={COLORS.primary} />
+            <View style={styles.quickActionIconCircle}>
+              <MaterialIcons name="tune" size={22} color={COLORS.primary} />
+            </View>
             <Text style={styles.quickActionText}>Personalize</Text>
           </TouchableOpacity>
 
@@ -665,8 +680,11 @@ export default function EventsScreen() {
             <TouchableOpacity
               style={styles.quickActionButton}
               onPress={() => navigation.navigate('CreateEvent')}
+              activeOpacity={0.85}
             >
-              <MaterialIcons name="add" size={20} color={COLORS.primary} />
+              <View style={[styles.quickActionIconCircle, styles.quickActionIconCirclePrimary]}>
+                <MaterialIcons name="add" size={22} color={COLORS.white} />
+              </View>
               <Text style={styles.quickActionText}>New Event</Text>
             </TouchableOpacity>
           </FeatureTip>
@@ -728,6 +746,8 @@ export default function EventsScreen() {
           ListFooterComponent={renderFooter}
         />
       )}
+      </View>
+      </View>
 
       {/* Modal 1 — Events Explainer (all users; "Don't show again", no count) */}
       <EntryInfoModal
@@ -768,19 +788,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  // Curved, shadowed content shell (identical to Cards/Contacts) — lifts the
+  // content off the flat header with an upward groove shadow.
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   searchContainer: {
     paddingHorizontal: 16,
-    paddingTop: 120, // Account for header height
+    paddingTop: 16, // Header clearance now handled by contentShell's marginTop
     paddingBottom: 16,
   },
+  // Rounded pill matching the Contacts page search input.
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.background,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 10,
   },
   searchInput: {
     flex: 1,
@@ -891,46 +933,90 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'nowrap',
     justifyContent: 'space-between',
-    marginTop: 12,
-    paddingHorizontal: 8,
-    gap: 8,
+    marginTop: 16,
+    paddingHorizontal: 4,
+    gap: 10,
   },
+  // White, softly-shadowed cards (same shadow language as the contacts list) with
+  // a tinted icon circle and a black label — strengthens the UI and drops the
+  // pink-outline/pink-text look for a cleaner, more defined feel.
   quickActionButton: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: COLORS.background,
-    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.primary,
-    minWidth: 100,
-    flex: 1,
-    maxWidth: '32%',
-    gap: 4,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 8,
+  },
+  quickActionIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Primary action (New Event) — filled accent circle so it reads as the main CTA.
+  quickActionIconCirclePrimary: {
+    backgroundColor: COLORS.primary,
   },
   quickActionText: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '500',
+    fontSize: 13,
+    color: COLORS.black,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   recentSection: {
     padding: 16,
   },
+  // White, softly-shadowed card with the same circular-icon language as the rest
+  // of the Events page.
   recentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     marginHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: COLORS.background,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   recentHeaderContent: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  recentHeaderIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentChevronCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   recentTitle: {
     fontSize: 18,
@@ -952,17 +1038,16 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     width: 140,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.white,
     borderRadius: 12,
     padding: 8,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
   },
   recentImage: {

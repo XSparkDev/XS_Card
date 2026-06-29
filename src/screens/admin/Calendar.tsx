@@ -2157,179 +2157,159 @@ const renderEventDate = (dateStr: string) => {
     setPendingNoteModal(true); // Set flag to open note modal when contacts modal is fully closed
   };
 
-  const renderEventCard = (event: Event, index: number) => (
-    <TouchableOpacity 
-      key={event.id ? `event-${event.id}-${index}` : `event-${index}`}
-      style={[
-        styles.eventCard,
-        (event as any).source === 'public' && styles.publicEventCard
-      ]}
-      onPress={() => setSelectedEventIndex(selectedEventIndex === index ? null : index)}
-    >
-      {selectedEventIndex === index && (
-        <View style={styles.eventActionsContainer}>
-          <TouchableOpacity 
-            style={styles.menuButton}
-            onPress={() => toggleMenu(index)}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color={COLORS.primary} />
-          </TouchableOpacity>
-          
-          <MeetingActionsMenu
-            visible={expandedMenuIndex === index}
-            onEdit={() => handleEditMeeting(index)}
-            onDelete={() => {
-              setMeetingToDelete(index);
-              setIsDeleteModalVisible(true);
-            }}
-          />
-        </View>
-      )}
-      
-      {/* Title and Date */}
-      <View style={styles.eventTitleRow}>
-        <Text style={styles.eventTitle}>{event.title || `Meeting with ${event.meetingWith}`}</Text>
-        {(event as any).source === 'public' && (
-          <View style={styles.publicBadge}>
-            <Text style={styles.publicBadgeText}>Public</Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.eventDate}>{renderEventDate(event.meetingWhen)}</Text>
+  // Status accent + tag for a meeting: pink = public booking, teal = has
+  // attendees, grey = private/solo. Drives the card's left accent bar + pill.
+  const getEventMeta = (event: Event): { accent: string; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap } => {
+    const isPublic = (event as any).source === 'public';
+    const attendeeCount = event.attendees?.length || 0;
+    if (isPublic) return { accent: COLORS.primary, label: 'Public', icon: 'calendar-check' };
+    if (attendeeCount > 0) return { accent: '#2A9D8F', label: `${attendeeCount} ${attendeeCount === 1 ? 'person' : 'people'}`, icon: 'account-group' };
+    return { accent: '#888888', label: 'Private', icon: 'lock-outline' };
+  };
 
-      {/* Time Details */}
-      <View style={styles.eventDetailSection}>
-        <View style={styles.eventDetailHeader}>
-          <MaterialCommunityIcons name="clock-outline" size={14} color="#666" />
-          <Text style={styles.eventDetailTitle}>Time</Text>
-        </View>
-        <Text style={styles.eventDetailText}>
-          {renderEventTime(event.meetingWhen)} - {calculateEndTime(renderEventTime(event.meetingWhen), event.duration)}
-        </Text>
-        <Text style={styles.eventDuration}>Duration: {event.duration} minutes</Text>
-      </View>
+  // Human day header ("Today" / "Tomorrow" / "Mon, 21 May").
+  const formatDayLabel = (d: Date): string => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const target = new Date(d); target.setHours(0, 0, 0, 0);
+    const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    if (diff === -1) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  };
 
-      {/* Organizer */}
-      <View style={styles.eventDetailSection}>
-        <View style={styles.eventDetailHeader}>
-          <MaterialCommunityIcons name="account" size={14} color="#666" />
-          <Text style={styles.eventDetailTitle}>Organizer</Text>
-        </View>
-        <Text style={styles.eventDetailText}>{event.meetingWith}</Text>
-      </View>
+  // Group meetings under day headers, preserving each event's index within
+  // filteredEvents (edit/delete/selection still key off that index).
+  const groupEventsByDay = (evts: Event[]) => {
+    const groups = new Map<string, { label: string; ts: number; items: { event: Event; index: number }[] }>();
+    evts.forEach((event, index) => {
+      const d = parseMeetingDateFromString(event.meetingWhen);
+      const key = d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
+      if (!groups.has(key)) {
+        groups.set(key, { label: d ? formatDayLabel(d) : 'Scheduled', ts: d ? d.getTime() : Number.MAX_SAFE_INTEGER, items: [] });
+      }
+      groups.get(key)!.items.push({ event, index });
+    });
+    return Array.from(groups.values()).sort((a, b) => a.ts - b.ts);
+  };
 
-      {/* Location */}
-      {event.location && (
-        <View style={styles.eventDetailSection}>
-          <View style={styles.eventDetailHeader}>
-            <MaterialCommunityIcons name="map-marker" size={14} color="#666" />
-            <Text style={styles.eventDetailTitle}>Location</Text>
-          </View>
-          {isAddressLike(event.location) ? (
-            <TouchableOpacity onPress={() => openLocationInMaps(event.location)}>
-              <View style={styles.locationRow}>
-                <Text style={[styles.eventDetailText, styles.clickableLocation]}>{event.location}</Text>
-                <MaterialCommunityIcons name="open-in-new" size={16} color={COLORS.primary} style={styles.locationIcon} />
+  // Clean agenda card: collapsed two-column summary (title/subtitle/status on the
+  // left, time/duration on the right) with a colored status accent; tap to expand
+  // the full details + edit/delete actions.
+  const renderAgendaCard = (event: Event, index: number) => {
+    const meta = getEventMeta(event);
+    const expanded = selectedEventIndex === index;
+    const startTime = renderEventTime(event.meetingWhen);
+    const subtitle = event.meetingWith ? `with ${event.meetingWith}` : (event.location || '');
+    return (
+      <TouchableOpacity
+        key={event.id ? `event-${event.id}-${index}` : `event-${index}`}
+        style={styles.agendaCard}
+        onPress={() => setSelectedEventIndex(expanded ? null : index)}
+        activeOpacity={0.85}
+      >
+        <View style={styles.agendaInner}>
+          <View style={[styles.agendaAccent, { backgroundColor: meta.accent }]} />
+          <View style={styles.agendaBody}>
+            {/* Collapsed summary */}
+            <View style={styles.agendaSummaryRow}>
+              <View style={styles.agendaSummaryLeft}>
+                <Text style={styles.agendaTitle} numberOfLines={1}>
+                  {event.title || `Meeting with ${event.meetingWith}`}
+                </Text>
+                {!!subtitle && (
+                  <Text style={styles.agendaSubtitle} numberOfLines={1}>{subtitle}</Text>
+                )}
+                <View style={[styles.agendaPill, { backgroundColor: meta.accent + '1A' }]}>
+                  <MaterialCommunityIcons name={meta.icon} size={12} color={meta.accent} />
+                  <Text style={[styles.agendaPillText, { color: meta.accent }]}>{meta.label}</Text>
+                </View>
               </View>
-            </TouchableOpacity>
-          ) : (
-            <Text style={styles.eventDetailText}>{event.location}</Text>
-          )}
-        </View>
-      )}
+              <View style={styles.agendaSummaryRight}>
+                <Text style={styles.agendaTime}>{startTime}</Text>
+                <Text style={styles.agendaDuration}>{event.duration} min</Text>
+                <MaterialCommunityIcons
+                  name={expanded ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color="#B0B0B0"
+                  style={styles.agendaChevron}
+                />
+              </View>
+            </View>
 
-      {/* Attendees */}
-      {event.attendees && event.attendees.length > 0 && (
-        <View style={styles.eventDetailSection}>
-          <View style={styles.eventDetailHeader}>
-            <MaterialCommunityIcons name="account-group" size={14} color="#666" />
-            <Text style={styles.eventDetailTitle}>
-              Attendees ({event.attendees.length})
-            </Text>
+            {/* Expanded details */}
+            {expanded && (
+              <View style={styles.agendaDetails}>
+                <View style={styles.agendaDetailRow}>
+                  <MaterialCommunityIcons name="clock-outline" size={16} color="#666" style={styles.agendaDetailIcon} />
+                  <Text style={styles.agendaDetailText}>
+                    {startTime} - {calculateEndTime(startTime, event.duration)}  ·  {renderEventDate(event.meetingWhen)}
+                  </Text>
+                </View>
+                <View style={styles.agendaDetailRow}>
+                  <MaterialCommunityIcons name="account" size={16} color="#666" style={styles.agendaDetailIcon} />
+                  <Text style={styles.agendaDetailText}>{event.meetingWith}</Text>
+                </View>
+                {event.location ? (
+                  <View style={styles.agendaDetailRow}>
+                    <MaterialCommunityIcons name="map-marker" size={16} color="#666" style={styles.agendaDetailIcon} />
+                    {isAddressLike(event.location) ? (
+                      <TouchableOpacity onPress={() => openLocationInMaps(event.location)} style={styles.locationRow}>
+                        <Text style={[styles.agendaDetailText, styles.clickableLocation]}>{event.location}</Text>
+                        <MaterialCommunityIcons name="open-in-new" size={15} color={COLORS.primary} style={styles.locationIcon} />
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.agendaDetailText}>{event.location}</Text>
+                    )}
+                  </View>
+                ) : null}
+                {event.attendees && event.attendees.length > 0 && (
+                  <View style={styles.agendaDetailRow}>
+                    <MaterialCommunityIcons name="account-group" size={16} color="#666" style={styles.agendaDetailIcon} />
+                    <Text style={styles.agendaDetailText}>
+                      {event.attendees.map((a) => `${a.name} ${a.surname}`).join(', ')}
+                    </Text>
+                  </View>
+                )}
+                {event.description ? (
+                  <View style={styles.agendaDetailRow}>
+                    <MaterialCommunityIcons name="text" size={16} color="#666" style={styles.agendaDetailIcon} />
+                    <Text style={styles.agendaDetailText}>{event.description}</Text>
+                  </View>
+                ) : null}
+                {(event as any).source === 'public' && (event as any).bookerInfo && (
+                  <View style={styles.agendaDetailRow}>
+                    <MaterialCommunityIcons name="calendar-check" size={16} color={COLORS.primary} style={styles.agendaDetailIcon} />
+                    <Text style={styles.agendaDetailText}>
+                      Booked by {(event as any).bookerInfo.email}
+                      {(event as any).bookerInfo.phone ? `  ·  ${(event as any).bookerInfo.phone}` : ''}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.agendaActionsRow}>
+                  <TouchableOpacity style={styles.agendaActionBtn} onPress={() => handleEditMeeting(index)}>
+                    <MaterialCommunityIcons name="pencil-outline" size={16} color={COLORS.primary} />
+                    <Text style={styles.agendaActionText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.agendaActionBtn}
+                    onPress={() => {
+                      setMeetingToDelete(index);
+                      setIsDeleteModalVisible(true);
+                    }}
+                  >
+                    <MaterialCommunityIcons name="trash-can-outline" size={16} color={COLORS.error} />
+                    <Text style={[styles.agendaActionText, { color: COLORS.error }]}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
-          {event.attendees.map((attendee, idx) => (
-            <Text key={idx} style={styles.eventAttendeeItem}>
-              • {attendee.name} {attendee.surname}
-            </Text>
-          ))}
         </View>
-      )}
-
-      {/* Notes */}
-      {event.description && (
-        <View style={styles.eventDetailSection}>
-          <View style={styles.eventDetailHeader}>
-            <MaterialCommunityIcons name="text" size={14} color="#666" />
-            <Text style={styles.eventDetailTitle}>Notes</Text>
-          </View>
-          <Text style={styles.eventNote}>{event.description}</Text>
-        </View>
-      )}
-
-      {/* Booker Information for Public Bookings */}
-      {(event as any).source === 'public' && (event as any).bookerInfo && (
-        <View style={styles.eventDetailSection}>
-          <View style={styles.eventDetailHeader}>
-            <MaterialCommunityIcons name="calendar-check" size={14} color="#007AFF" />
-            <Text style={[styles.eventDetailTitle, { color: '#007AFF' }]}>Booked via Public Calendar</Text>
-          </View>
-          <Text style={styles.eventDetailText}>Email: {(event as any).bookerInfo.email}</Text>
-          <Text style={styles.eventDetailText}>Phone: {(event as any).bookerInfo.phone}</Text>
-          {(event as any).bookerInfo.message && (
-            <Text style={styles.eventNote}>Message: {(event as any).bookerInfo.message}</Text>
-          )}
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
-  const renderAndroidEventCard = (event: Event, index: number) => (
-    <TouchableOpacity 
-      key={event.id ? `event-${event.id}-${index}` : `event-${index}`}
-      style={styles.androidEventCard}
-      onPress={() => setSelectedEventIndex(selectedEventIndex === index ? null : index)}
-    >
-      {selectedEventIndex === index && (
-        <View style={styles.eventActionsContainer}>
-          <TouchableOpacity 
-            style={styles.menuButton}
-            onPress={() => toggleMenu(index)}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color={COLORS.primary} />
-          </TouchableOpacity>
-          
-          <MeetingActionsMenu
-            visible={expandedMenuIndex === index}
-            onEdit={() => handleEditMeeting(index)}
-            onDelete={() => {
-              setMeetingToDelete(index);
-              setIsDeleteModalVisible(true);
-            }}
-          />
-        </View>
-      )}
-      <Text style={styles.eventTitle}>{event.title || `Meeting with ${event.meetingWith}`}</Text>
-      <Text style={styles.eventDate}>{renderEventDate(event.meetingWhen)}</Text>
-      <Text style={styles.eventTime}>
-        {renderEventTime(event.meetingWhen)} ({event.duration} mins)
-      </Text>
-      {event.location && (
-        <View style={styles.eventLocationContainer}>
-          <MaterialCommunityIcons name="map-marker" size={14} color="#666" />
-          <Text style={styles.eventLocation}>{event.location}</Text>
-        </View>
-      )}
-      {event.attendees && event.attendees.length > 0 && (
-        <View style={styles.eventAttendeesContainer}>
-          <MaterialCommunityIcons name="account-group" size={14} color="#666" />
-          <Text style={styles.eventAttendees}>
-            {event.attendees.length} {event.attendees.length === 1 ? 'attendee' : 'attendees'}
-          </Text>
-        </View>
-      )}
-      {event.description && <Text style={styles.eventNote}>{event.description}</Text>}
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   // Note: Removed todayString state update logic since todayString is now a constant
   // The calendar automatically handles date changes through its own state management
@@ -2419,51 +2399,44 @@ const renderEventDate = (dateStr: string) => {
         </TouchableOpacity>
         </FeatureTip>
 
-        {/* Share, Filter, and Settings Buttons */}
+        {/* Share, Filter, and Settings Buttons — same icon-circle white cards as Events */}
         <View style={styles.actionsContainer}>
-          <TouchableOpacity 
-            style={styles.shareButton}
+          <TouchableOpacity
+            style={styles.calendarActionButton}
             onPress={shareCalendarLink}
+            activeOpacity={0.85}
           >
-            <MaterialCommunityIcons 
-              name="share-variant" 
-              size={18} 
-              color={COLORS.primary} 
-            />
-            <Text style={styles.shareButtonText}>
-              Share
-            </Text>
+            <View style={styles.calendarActionIconCircle}>
+              <MaterialCommunityIcons name="share-variant" size={20} color={COLORS.primary} />
+            </View>
+            <Text style={styles.calendarActionText}>Share</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.filterButton}
+          <TouchableOpacity
+            style={styles.calendarActionButton}
             onPress={() => setShowOnlyPublic(!showOnlyPublic)}
+            activeOpacity={0.85}
           >
-            <MaterialCommunityIcons 
-              name="filter" 
-              size={18} 
-              color={COLORS.primary} 
-            />
-            <Text style={styles.filterButtonText}>
+            <View style={styles.calendarActionIconCircle}>
+              <MaterialCommunityIcons name="filter" size={20} color={COLORS.primary} />
+            </View>
+            <Text style={styles.calendarActionText}>
               {showOnlyPublic ? 'All' : 'Public Only'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.shareButton}
+          <TouchableOpacity
+            style={styles.calendarActionButton}
             onPress={() => {
               const parentNav = navigation.getParent();
               if (parentNav) {
                 (parentNav as any).navigate('CalendarPreferences');
               }
             }}
+            activeOpacity={0.85}
           >
-            <Ionicons 
-              name="settings" 
-              size={18} 
-              color={COLORS.primary} 
-            />
-            <Text style={styles.shareButtonText}>
-              Settings
-            </Text>
+            <View style={styles.calendarActionIconCircle}>
+              <Ionicons name="settings" size={18} color={COLORS.primary} />
+            </View>
+            <Text style={styles.calendarActionText}>Settings</Text>
           </TouchableOpacity>
         </View>
 
@@ -2478,37 +2451,21 @@ const renderEventDate = (dateStr: string) => {
               ? events.filter(e => (e as any).source === 'public') 
               : events;
             return filteredEvents.length > 0 ? (
-            Platform.OS === 'ios' ? (
-              <View style={styles.eventsWrapper}>
-                <ScrollView 
-                  horizontal={true}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.eventsScrollView}
-                  style={styles.eventsScrollContainer}
-                  nestedScrollEnabled={true}
-                >
-                  {filteredEvents.map((event, index) => renderEventCard(event, index))}
-                </ScrollView>
+              <View style={styles.agendaList}>
+                {groupEventsByDay(filteredEvents).map((group) => (
+                  <View key={`${group.label}-${group.ts}`} style={styles.agendaGroup}>
+                    <Text style={styles.agendaGroupLabel}>{group.label}</Text>
+                    {group.items.map(({ event, index }) => renderAgendaCard(event, index))}
+                  </View>
+                ))}
               </View>
             ) : (
-              <View style={styles.androidEventsWrapper}>
-                <ScrollView
-                  horizontal={false}
-                  showsVerticalScrollIndicator={true}
-                  contentContainerStyle={styles.androidEventsScrollView}
-                  style={styles.androidEventsScrollContainer}
-                  nestedScrollEnabled={true}
-                >
-                  <View style={styles.androidEventsGrid}>
-                    {filteredEvents.map((event, index) => renderAndroidEventCard(event, index))}
-                  </View>
-                </ScrollView>
+              <View style={styles.agendaEmpty}>
+                <MaterialCommunityIcons name="calendar-blank-outline" size={56} color={COLORS.gray} />
+                <Text style={styles.agendaEmptyText}>
+                  {showOnlyPublic ? 'No public bookings yet' : 'No meetings scheduled'}
+                </Text>
               </View>
-            )
-          ) : (
-              <Text style={styles.emptyEventsMessage}>
-                {showOnlyPublic ? 'No public bookings' : 'No meetings scheduled'}
-            </Text>
             );
           })()}
         </View>
@@ -2783,12 +2740,15 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   calendar: {
-    borderRadius: 10,
-    elevation: 4,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
   },
   eventsSection: {
     marginTop: 20,
@@ -2796,12 +2756,42 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    gap: 8,
+    gap: 10,
     marginTop: 20,
     marginBottom: 10,
-    paddingHorizontal: 20,
+  },
+  // White, softly-shadowed cards with tinted icon circles + black labels —
+  // identical language to the Events quick-action buttons.
+  calendarActionButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 8,
+  },
+  calendarActionIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarActionText: {
+    fontSize: 13,
+    color: COLORS.black,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   eventsSectionHeader: {
     flexDirection: 'row',
@@ -2809,6 +2799,149 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
     paddingHorizontal: 20,
+  },
+  // ===== Agenda list (day-grouped meeting cards) =====
+  agendaList: {
+    paddingHorizontal: 4,
+  },
+  agendaGroup: {
+    marginBottom: 8,
+  },
+  agendaGroupLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.secondary,
+    marginTop: 12,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  // Outer card carries the shadow + border (no overflow, so the shadow shows).
+  agendaCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  // Inner clips the left accent bar to the rounded corners.
+  agendaInner: {
+    flexDirection: 'row',
+    borderRadius: 13,
+    overflow: 'hidden',
+    backgroundColor: COLORS.white,
+  },
+  agendaAccent: {
+    width: 4,
+  },
+  agendaBody: {
+    flex: 1,
+    padding: 14,
+  },
+  agendaSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  agendaSummaryLeft: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 10,
+  },
+  agendaTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.secondary,
+    marginBottom: 3,
+  },
+  agendaSubtitle: {
+    fontSize: 13,
+    color: COLORS.gray,
+    marginBottom: 8,
+  },
+  agendaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+    borderRadius: 20,
+  },
+  agendaPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  agendaSummaryRight: {
+    alignItems: 'flex-end',
+  },
+  agendaTime: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
+  agendaDuration: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  agendaChevron: {
+    marginTop: 6,
+  },
+  agendaDetails: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray + '15',
+    gap: 10,
+  },
+  agendaDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  agendaDetailIcon: {
+    marginRight: 10,
+    marginTop: 1,
+  },
+  agendaDetailText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.black,
+    lineHeight: 20,
+  },
+  agendaActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  agendaActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.lightGray,
+  },
+  agendaActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  agendaEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    gap: 12,
+  },
+  agendaEmptyText: {
+    fontSize: 15,
+    color: COLORS.gray,
+    fontWeight: '500',
   },
   headerButtons: {
     flexDirection: 'row',
@@ -2819,49 +2952,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
-  shareButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F0F8FF',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    gap: 4,
-  },
-  shareButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: COLORS.primary,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F0F8FF',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    gap: 4,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: COLORS.primary,
-  },
   eventCard: {
     backgroundColor: 'white',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     marginRight: 15,
     width: 350, // Increased width to accommodate more content
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
     position: 'relative',
   },
   publicEventCard: {
@@ -2975,12 +3078,19 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 50 : 20, // Add padding for iOS status bar
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: COLORS.white,
     width: '90%',
-    borderRadius: 20,
-    padding: 20,
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 24,
     marginHorizontal: 20,
     marginBottom: Platform.OS === 'ios' ? 40 : 30, // Increased Android bottom margin
+    // Match the polished modal card used on Cards/Contacts: soft, deep shadow.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 60,
+    elevation: 20,
   },
   modalTitle: {
     fontSize: 20,
@@ -3168,11 +3278,17 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   successModalContent: {
-    backgroundColor: 'white',
+    backgroundColor: COLORS.white,
     padding: 30,
-    borderRadius: 20,
+    borderRadius: 24,
     alignItems: 'center',
-    width: '80%',
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 60,
+    elevation: 20,
   },
   successIcon: {
     fontSize: 50,
@@ -3307,12 +3423,14 @@ const styles = StyleSheet.create({
   androidEventCard: {
     backgroundColor: 'white',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.22,
-    shadowRadius: 2.22,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     width: '100%', // Changed to full width for better readability
     marginBottom: 12,
     position: 'relative',

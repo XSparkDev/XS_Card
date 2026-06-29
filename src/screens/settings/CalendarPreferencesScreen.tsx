@@ -2013,8 +2013,16 @@ const styles = StyleSheet.create({
     padding: 15,
   },
   calendar: {
-    borderRadius: 10,
+    borderRadius: 16,
     marginBottom: 20,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   selectedRangeInfo: {
     backgroundColor: COLORS.lightGray,

@@ -1116,7 +1116,7 @@ export default function CardsScreen() {
                 tabBarScrollY.setValue(e.nativeEvent.contentOffset.y);
                 notifyScroll(e.nativeEvent.contentOffset.y);
               }}
-              contentContainerStyle={isTablet() ? { paddingVertical: 0, paddingBottom: 150 } : { paddingBottom: 150 }}
+              contentContainerStyle={isTablet() ? { paddingVertical: 0, paddingBottom: 200 } : { paddingBottom: isFreeUser ? 210 : 170 }}
             >
               {/* Render by template: 2 uses alternative layout; 3 uses outlined version; default keeps existing */}
               {card.template === 2 ? (
@@ -1614,6 +1614,10 @@ export default function CardsScreen() {
       </View>
       </View>
 
+      {/* Floating bottom overlay — keeps the card indicator and the free-user scan
+          counter clear of (above) the floating tab-bar pill, which previously
+          covered the scan counter. */}
+      <View style={styles.bottomOverlay} pointerEvents="box-none">
       {/* Page Indicator — rests dim, fades to full opacity while sliding cards. */}
       <Animated.View style={[
         styles.pageIndicator,
@@ -1684,6 +1688,7 @@ export default function CardsScreen() {
           </View>
         </View>
       )}
+      </View>
 
       <Modal
         visible={isShareModalVisible}
@@ -2206,17 +2211,21 @@ qrCode: {
   phone: {
     fontSize: 16,
   },
-  pageIndicator: {
+  // Absolute floating container that holds the card indicator + scan counter,
+  // anchored just above the floating tab-bar pill (pill spans bottom 28→92).
+  // Sits above the contentShell (zIndex 2 / elevation 20) so it's never painted
+  // over — on Android the shell's higher elevation would otherwise hide it.
+  bottomOverlay: {
     position: 'absolute',
-    bottom: 104, // float just above the floating tab-bar pill
+    bottom: 104,
     left: 0,
     right: 0,
     alignItems: 'center',
-    // Sit above the contentShell (zIndex 2 / elevation 20) so the dots and the
-    // current-card pill are never painted over — on Android the shell's higher
-    // elevation would otherwise hide this whole indicator.
     zIndex: 21,
     elevation: 21,
+  },
+  pageIndicator: {
+    alignItems: 'center',
   },
   dotContainer: {
     flexDirection: 'row',
@@ -2270,9 +2279,9 @@ qrCode: {
   },
   // Scan rate-limit UI
   scanCounterWrap: {
+    alignSelf: 'stretch',
     marginHorizontal: 24,
-    marginTop: 6,
-    marginBottom: 10,
+    marginTop: 8,
     alignItems: 'center',
   },
   scanCounterText: {

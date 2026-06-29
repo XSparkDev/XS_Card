@@ -313,18 +313,25 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 12,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 3,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: 'hidden',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
+    // IMPORTANT: no `overflow: 'hidden'` here. On iOS that clips the shadow, which
+    // made every card look flat/borderless (you couldn't tell where one ended).
+    // The inner `card` view below does the rounded image clipping instead.
   },
   card: {
     flex: 1,
+    borderRadius: 11, // nests cleanly inside the 1px border (12 − 1)
+    overflow: 'hidden',
+    backgroundColor: COLORS.white,
   },
   imageContainer: {
     position: 'relative',

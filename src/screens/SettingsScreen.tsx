@@ -361,11 +361,16 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <Header title="Settings" />
-      
-      <ScrollView 
-        style={styles.content} 
+
+      {/* Curved, shadowed content shell — matches Cards/Contacts/Dashboard. Top
+          safe-area edge is excluded above so the shell docks flush under the
+          absolute header (the header handles the notch), exactly like Cards. */}
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
+      <ScrollView
+        style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         bounces={true}
@@ -573,6 +578,8 @@ export default function SettingsScreen() {
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+      </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -582,10 +589,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  // Curved, shadowed content shell (identical to Cards/Contacts) — lifts the
+  // content off the flat header with an upward groove shadow.
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 100,
+    paddingTop: 16, // Header clearance now handled by contentShell's marginTop
   },
   scrollContent: {
     paddingBottom: 20,
