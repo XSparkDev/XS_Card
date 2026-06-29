@@ -361,8 +361,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    zIndex: 1,
   },
   backButton: {
     padding: 8,
@@ -377,6 +376,15 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 20,
   },
   statusCard: {
     backgroundColor: COLORS.white,

@@ -85,6 +85,30 @@ const normalizeSpeakerCards = (cards = []) => {
     };
 };
 
+// Speaker & Engagement activity windows: record exactly when each card was an
+// active speaker card. A window opens when the card becomes a speaker and
+// closes when it stops. CSV export only counts contacts captured inside a
+// window. Idempotent — safe to run on every card-array write, only acts on a
+// real on/off transition. Shared by addCard (a card can start out as the
+// speaker card from creation) and updateCard (the toggle endpoint) so neither
+// path can leave a card's window state un-recorded.
+const reconcileSpeakerWindow = (card, now) => {
+    const isSpeaker = card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true';
+    const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+    const last = windows[windows.length - 1];
+    const hasOpenWindow = last && (last.end === null || last.end === undefined);
+
+    if (isSpeaker && !hasOpenWindow) {
+        windows.push({ start: now, end: null });
+        return { ...card, speakerWindows: windows };
+    }
+    if (!isSpeaker && hasOpenWindow) {
+        windows[windows.length - 1] = { ...last, end: now };
+        return { ...card, speakerWindows: windows };
+    }
+    return card;
+};
+
 // Add this function at the top with other helper functions
 const logPasscreatorConfig = () => {
   console.log('=== Passcreator Configuration ===');
@@ -138,14 +162,27 @@ exports.getCardById = async (req, res) => {
         
         const { normalizedCards, didNormalize } = normalizeSpeakerCards(data.cards || []);
 
-        if (didNormalize) {
+        // Self-heal missing speaker windows on read too, not just on save. A card
+        // that was already marked as the speaker card before this windowing system
+        // existed (or one whose isSpeakerEngagementCard was set by some other path)
+        // would otherwise never get a window opened until the user happens to save
+        // an edit — leaving its CSV export permanently empty in the meantime. Opening
+        // the window the moment we observe it's missing means tracking starts now
+        // (the earliest honest cutoff we can know), never a fabricated past date.
+        const speakerWindowNow = new Date().toISOString();
+        const reconciledCards = normalizedCards.map((card) => reconcileSpeakerWindow(card, speakerWindowNow));
+        const windowsChanged = reconciledCards.some(
+            (card, i) => card.speakerWindows !== normalizedCards[i].speakerWindows
+        );
+
+        if (didNormalize || windowsChanged) {
             await cardRef.update({
-                cards: normalizedCards
+                cards: reconciledCards
             });
         }
 
-        if (normalizedCards) {
-            cards = normalizedCards.map(card => ({
+        if (reconciledCards) {
+            cards = reconciledCards.map(card => ({
                 ...card,
                 createdAt: formatDate(card.createdAt), // Format for display
                 scans: card.scans || 0 // Initialize scans field if missing
@@ -208,7 +245,9 @@ exports.addCard = async (req, res) => {
         }
 
         const userDoc = await db.collection('users').doc(userId).get();
-        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+        const userPlan = String(userDoc.data()?.plan || 'free').toLowerCase();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userPlan);
+        const hasAltNumberAccess = ['premium', 'enterprise'].includes(userPlan);
 
         // Enhanced debug logging
         console.log('Request headers:', req.headers);
@@ -216,16 +255,21 @@ exports.addCard = async (req, res) => {
         console.log('Request body:', req.body);
         console.log('Firebase Storage URLs:', req.firebaseStorageUrls);
 
-        const { 
-            company, 
-            email, 
-            phone, 
-            title, 
+        const {
+            cardName,
+            company,
+            email,
+            phone,
+            title,
             name,
             surname,
             altNumber,
             altCountryCode,
-            showAltNumber
+            showAltNumber,
+            // Salutation (Mr./Mrs./Dr./...) — named distinctly from `title` above,
+            // which (confusingly, for historical reasons) carries the job title/occupation.
+            salutation,
+            qualification
         } = req.body;
 
         // Validate fields are not only present but also have values
@@ -261,11 +305,24 @@ exports.addCard = async (req, res) => {
 
         // Parse alt number fields from FormData (handle string 'true'/'false' for showAltNumber)
         const parsedShowAltNumber = showAltNumber === 'true' || showAltNumber === true;
+        const enforcedShowAltNumber = hasAltNumberAccess ? parsedShowAltNumber : false;
+
+        // Premium-only validation: showAltNumber requires altNumber
+        if (hasAltNumberAccess && enforcedShowAltNumber) {
+            const trimmedAlt = String(altNumber || '').trim();
+            if (!trimmedAlt) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Alternative number is required when showAltNumber is enabled.'
+                });
+            }
+        }
         const isSpeakerEngagementCard =
             hasSpeakerCardAccess &&
             (req.body.isSpeakerEngagementCard === 'true' || req.body.isSpeakerEngagementCard === true);
         
         const newCard = {
+            cardName: (cardName || '').trim(),
             company,
             email,
             phone: normalizedPhone,
@@ -273,18 +330,27 @@ exports.addCard = async (req, res) => {
             occupation: title,
             name: name || '',
             surname: surname || '',
+            salutation: (salutation || '').trim(),
+            qualification: (qualification || '').trim(),
             socials: {},
             colorScheme: '#1B2B5B',
             createdAt: admin.firestore.Timestamp.now(), // Store as Firestore Timestamp
             profileImage: profileImageUrl,
             companyLogo: companyLogoUrl,
-            altNumber: altNumber || '',
-            altCountryCode: altCountryCode || '+27',
-            showAltNumber: parsedShowAltNumber || false,
+            altNumber: hasAltNumberAccess ? (altNumber || '') : '',
+            altCountryCode: hasAltNumberAccess ? (altCountryCode || '+27') : '+27',
+            showAltNumber: enforcedShowAltNumber || false,
             isSpeakerEngagementCard
         };
 
         console.log('Creating new card:', newCard); // Debug log
+
+        // Record the toggle-on cutoff for the new card if it's created as the speaker
+        // card directly, and close out any existing card's window it displaces — a
+        // card created already-active never had its own updateCard PATCH to open a
+        // window, so without this the CSV export would have no window to match against
+        // and would always come back empty even when there are genuine post-creation scans.
+        const speakerWindowNow = new Date().toISOString();
 
         if (cardDoc.exists) {
             const existingCards = Array.isArray(cardDoc.data()?.cards) ? [...cardDoc.data().cards] : [];
@@ -293,14 +359,27 @@ exports.addCard = async (req, res) => {
                 ? sanitizedExistingCards.map(card => ({ ...card, isSpeakerEngagementCard: false }))
                 : sanitizedExistingCards;
 
+            // Name, surname, salutation and qualification are canonical fields owned by
+            // the primary card (index 0) — a new non-primary card always inherits them,
+            // regardless of whatever was submitted for it.
+            if (sanitizedExistingCards.length > 0) {
+                const primaryCard = sanitizedExistingCards[0];
+                newCard.name = primaryCard.name || '';
+                newCard.surname = primaryCard.surname || '';
+                newCard.salutation = primaryCard.salutation || '';
+                newCard.qualification = primaryCard.qualification || '';
+            }
+
             normalizedCards.push(newCard);
 
+            const reconciledCards = normalizedCards.map((card) => reconcileSpeakerWindow(card, speakerWindowNow));
+
             await cardRef.update({
-                cards: normalizedCards
+                cards: reconciledCards
             });
         } else {
             await cardRef.set({
-                cards: [newCard]
+                cards: [reconcileSpeakerWindow(newCard, speakerWindowNow)]
             });
         }
         
@@ -354,7 +433,9 @@ exports.updateCard = async (req, res) => {
         }
 
         const userDoc = await db.collection('users').doc(userId).get();
-        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userDoc.data()?.plan);
+        const userPlan = String(userDoc.data()?.plan || 'free').toLowerCase();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userPlan);
+        const hasAltNumberAccess = ['premium', 'enterprise'].includes(userPlan);
 
         let updateData = {};
 
@@ -377,6 +458,55 @@ exports.updateCard = async (req, res) => {
             updateData.phoneNormalized = normalizedPhone;
         }
 
+        // ===== Name-change policy =====
+        // First/last name may be changed ONLY on the primary card (index 0), and
+        // at most once every 30 days. Enforced here authoritatively, independent
+        // of the client. Non-primary card name edits are silently ignored.
+        const NAME_CHANGE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+        const existingCardForName = cardsData.cards[cardIndex] || {};
+        const hasIncomingName = Object.prototype.hasOwnProperty.call(updateData, 'name');
+        const hasIncomingSurname = Object.prototype.hasOwnProperty.call(updateData, 'surname');
+        const incomingName = hasIncomingName ? String(updateData.name ?? '').trim() : undefined;
+        const incomingSurname = hasIncomingSurname ? String(updateData.surname ?? '').trim() : undefined;
+        const nameChanged =
+            (incomingName !== undefined && incomingName !== String(existingCardForName.name ?? '').trim()) ||
+            (incomingSurname !== undefined && incomingSurname !== String(existingCardForName.surname ?? '').trim());
+
+        let stampNameChange = false;
+        if (nameChanged) {
+            if (Number(cardIndex) !== 0) {
+                // Names are locked on non-primary cards — keep the existing values.
+                delete updateData.name;
+                delete updateData.surname;
+            } else {
+                const lastChanged = userDoc.data()?.nameLastChangedAt;
+                const lastChangedMs =
+                    lastChanged && typeof lastChanged.toMillis === 'function'
+                        ? lastChanged.toMillis()
+                        : (lastChanged ? new Date(lastChanged).getTime() : 0);
+                const elapsed = Date.now() - lastChangedMs;
+
+                if (lastChangedMs && elapsed < NAME_CHANGE_WINDOW_MS) {
+                    const nextAllowedAt = new Date(lastChangedMs + NAME_CHANGE_WINDOW_MS);
+                    const daysLeft = Math.max(1, Math.ceil((NAME_CHANGE_WINDOW_MS - elapsed) / (24 * 60 * 60 * 1000)));
+                    return res.status(403).send({
+                        message: `You can only change your name once every 30 days. Please try again in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+                        code: 'NAME_CHANGE_TOO_SOON',
+                        nextAllowedAt: nextAllowedAt.toISOString(),
+                    });
+                }
+                stampNameChange = true;
+            }
+        }
+
+        // Salutation (Mr./Mrs./Dr./...) and qualification are also canonical,
+        // primary-card-only fields, but unlike name/surname they carry no 30-day
+        // throttle — only the primary-card restriction applies.
+        if (Number(cardIndex) !== 0) {
+            delete updateData.salutation;
+            delete updateData.qualification;
+        }
+
         if (Object.prototype.hasOwnProperty.call(updateData, 'isSpeakerEngagementCard')) {
             if (hasSpeakerCardAccess) {
                 updateData.isSpeakerEngagementCard =
@@ -384,6 +514,40 @@ exports.updateCard = async (req, res) => {
                     updateData.isSpeakerEngagementCard === 'true';
             } else {
                 updateData.isSpeakerEngagementCard = Boolean(cardsData.cards[cardIndex].isSpeakerEngagementCard);
+            }
+        }
+
+        // Alt number is Premium-only. For Free users: ignore altNumber/altCountryCode and force showAltNumber false.
+        if (!hasAltNumberAccess) {
+            if (Object.prototype.hasOwnProperty.call(updateData, 'altNumber')) {
+                delete updateData.altNumber;
+            }
+            if (Object.prototype.hasOwnProperty.call(updateData, 'altCountryCode')) {
+                delete updateData.altCountryCode;
+            }
+            updateData.showAltNumber = false;
+        } else if (Object.prototype.hasOwnProperty.call(updateData, 'showAltNumber')) {
+            updateData.showAltNumber =
+                updateData.showAltNumber === true ||
+                updateData.showAltNumber === 'true';
+        }
+
+        // Premium-only validation: if showAltNumber is true (incoming or existing), altNumber must be present.
+        if (hasAltNumberAccess) {
+            const nextShowAlt = Object.prototype.hasOwnProperty.call(updateData, 'showAltNumber')
+                ? Boolean(updateData.showAltNumber)
+                : Boolean(cardsData.cards[cardIndex]?.showAltNumber);
+
+            if (nextShowAlt) {
+                const nextAlt = Object.prototype.hasOwnProperty.call(updateData, 'altNumber')
+                    ? String(updateData.altNumber || '').trim()
+                    : String(cardsData.cards[cardIndex]?.altNumber || '').trim();
+
+                if (!nextAlt) {
+                    return res.status(400).send({
+                        message: 'Alternative number is required when showAltNumber is enabled.'
+                    });
+                }
             }
         }
 
@@ -406,12 +570,47 @@ exports.updateCard = async (req, res) => {
             }
         }
 
+        // Name, surname, salutation and qualification are owned by the primary
+        // card — mirror its current values onto every other card on every save
+        // (not just when those fields were the ones being edited), so all cards
+        // are always self-consistent regardless of which one triggered the write.
+        const canonicalSource = updatedCards[0] || {};
+        for (let i = 1; i < updatedCards.length; i += 1) {
+            updatedCards[i] = {
+                ...updatedCards[i],
+                name: canonicalSource.name || '',
+                surname: canonicalSource.surname || '',
+                salutation: canonicalSource.salutation || '',
+                qualification: canonicalSource.qualification || '',
+            };
+        }
+
+        // Record the toggle-on/off cutoff for every card whose speaker status is
+        // affected by this save (the edited card, plus any demoted on mutual-exclusivity).
+        const speakerWindowNow = new Date().toISOString();
+        for (let i = 0; i < updatedCards.length; i += 1) {
+            updatedCards[i] = reconcileSpeakerWindow(updatedCards[i], speakerWindowNow);
+        }
+
         // Update the document
         await cardRef.update({
             cards: updatedCards
         });
 
-        res.status(200).send({ 
+        // Record the name change on the user record (canonical name + 30-day stamp).
+        if (stampNameChange) {
+            try {
+                await db.collection('users').doc(userId).update({
+                    name: String(updatedCards[cardIndex].name ?? ''),
+                    surname: String(updatedCards[cardIndex].surname ?? ''),
+                    nameLastChangedAt: admin.firestore.Timestamp.now(),
+                });
+            } catch (stampError) {
+                console.error('Failed to stamp nameLastChangedAt:', stampError);
+            }
+        }
+
+        res.status(200).send({
             message: 'Card updated successfully',
             updatedCard: updatedCards[cardIndex],
             cards: updatedCards

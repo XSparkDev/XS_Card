@@ -4,6 +4,46 @@ const { SUBSCRIPTION_PLANS, SUBSCRIPTION_CONSTANTS, getPlanById } = require('../
 const { logSubscriptionEvent } = require('../models/subscriptionLog');
 
 /**
+ * Speaker & Engagement Card is premium-only. When a user downgrades to free,
+ * deactivate the designation on all of their cards. The collected contact data
+ * is left untouched so it returns if they re-upgrade — only the flag is cleared.
+ * Non-blocking: a failure here must never fail the downgrade.
+ */
+const deactivateSpeakerCardsOnDowngrade = async (userId) => {
+    try {
+        const cardRef = db.collection('cards').doc(userId);
+        const cardDoc = await cardRef.get();
+        if (!cardDoc.exists) return;
+
+        const cards = cardDoc.data().cards;
+        if (!Array.isArray(cards)) return;
+
+        const nowIso = new Date().toISOString();
+        let changed = false;
+        const updatedCards = cards.map((card) => {
+            if (card && (card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true')) {
+                changed = true;
+                // Close any open speaker activity window so the export window ends at downgrade.
+                const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+                const last = windows[windows.length - 1];
+                if (last && (last.end === null || last.end === undefined)) {
+                    windows[windows.length - 1] = { ...last, end: nowIso };
+                }
+                return { ...card, isSpeakerEngagementCard: false, speakerWindows: windows };
+            }
+            return card;
+        });
+
+        if (changed) {
+            await cardRef.update({ cards: updatedCards });
+            console.log(`Deactivated Speaker & Engagement designation for downgraded user ${userId}`);
+        }
+    } catch (error) {
+        console.error('Failed to deactivate speaker cards on downgrade (non-blocking):', error);
+    }
+};
+
+/**
  * Save bank card data to user_bank_cards collection
  * @param {string} userId - User ID
  * @param {object} bankingData - Banking information
@@ -771,7 +811,10 @@ const handleSubscriptionWebhook = async (req, res) => {
                     cancellationDate: new Date().toISOString(),
                     lastUpdated: new Date().toISOString()
                 });
-                
+
+                // Premium-only feature: deactivate Speaker & Engagement designation on downgrade.
+                await deactivateSpeakerCardsOnDowngrade(userId);
+
                 console.log(`Subscription cancelled for user ${userId} and plan changed to free`);
             } else {
                 console.error(`No matching user found for cancellation event`);
@@ -1201,6 +1244,9 @@ const updateCancellationInDatabase = async (userDoc, userId) => {
             cancellationDate: new Date().toISOString(),
             lastUpdated: new Date().toISOString()
         });
+
+        // Premium-only feature: deactivate Speaker & Engagement designation on downgrade.
+        await deactivateSpeakerCardsOnDowngrade(userId);
 
         // Log database update
         await logSubscriptionEvent(userId, 'subscription_status_updated', {

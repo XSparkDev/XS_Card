@@ -1,32 +1,36 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, SafeAreaView, Linking, ActivityIndicator } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image, Platform, BackHandler, GestureResponderEvent, LayoutChangeEvent, Dimensions, Linking, ActivityIndicator, Pressable } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { Modal as RNModal } from 'react-native';
+import CardPreviewModal from '../../components/cards/CardPreviewModal';
+import TemplatePreviewOverlay from '../../components/cards/TemplatePreviewOverlay';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
+import FeatureTip from '../../components/FeatureTip';
+import { useTooltipContext } from '../../context/TooltipContext';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh, useToast } from '../../utils/api';
 import { EditCardScreenRouteProp, RootStackParamList } from '../../types/navigation';
 import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
-import { getImageUrl, pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import { getImageUrl, pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
 import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
-import CardTemplate2 from '../../components/cards/CardTemplate2';
-import CardTemplate3 from '../../components/cards/CardTemplate3';
-import CardTemplate4 from '../../components/cards/CardTemplate4';
-import CardTemplate5 from '../../components/cards/CardTemplate5';
+import LogoPlaceholder from '../../components/LogoPlaceholder';
+// CardTemplate2–5 are now used inside the shared CardPreviewModal component
 import WidgetConfigModal from '../../components/widgets/WidgetConfigModal';
 import WidgetCard from '../../components/widgets/WidgetCard';
 import { WidgetManager } from '../../widgets/WidgetManager';
 import { WidgetConfig, WidgetData } from '../../widgets/WidgetTypes';
 import { getPlanLimits, getUserPlan as getStoredUserPlan, UserPlan } from '../../utils/userPlan';
 import { useAuth } from '../../context/AuthContext';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
+import * as FileSystem from 'expo-file-system';
+import Share from 'react-native-share';
 
 // Create a type for social media platforms
 type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website' | 'tiktok' | 'instagram';
@@ -34,6 +38,9 @@ type SocialMediaPlatform = 'whatsapp' | 'x' | 'facebook' | 'linkedin' | 'website
 const isSpeakerCardEnabled = (value: unknown): boolean => {
   return value === true || value === 'true';
 };
+
+// Salutation options for the Title dropdown — primary-card-only, canonical field.
+const TITLE_OPTIONS = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Dr.', 'Prof.'];
 
 const normalizeUserPlan = (plan?: string | null): UserPlan => {
   const normalizedPlan = String(plan || 'free').toLowerCase();
@@ -44,9 +51,15 @@ const normalizeUserPlan = (plan?: string | null): UserPlan => {
 
 // Update the FormData interface to properly handle social media fields
 interface FormData {
+  /** User-defined label that identifies the card (separate from the company name). */
+  cardName: string;
   firstName: string;
   lastName: string;
+  /** Salutation (Mr./Mrs./Dr./...) — canonical, primary-card-only field. */
+  salutation: string;
   occupation: string;
+  /** Optional qualification (e.g. "MBA", "PhD") — canonical, primary-card-only field. */
+  qualification: string;
   company: string;
   email: string;
   phoneNumber: string;
@@ -72,16 +85,51 @@ interface FormData {
 export default function EditCard() {
   const route = useRoute<EditCardScreenRouteProp>();
   const cardIndex = route.params?.cardIndex ?? 0; // Provide default value of 0
+  // First/last name may only be edited on the primary card (index 0). On any
+  // other card the name fields are locked (see the name-change policy).
+  const isPrimaryCard = cardIndex === 0;
   const cardData = route.params?.cardData; // Get the passed card data
-  const navigation = useNavigation();
+  // Set when this screen was reached via a redirect from a non-primary card
+  // trying to edit a canonical field — Save returns here instead of the default flow.
+  const originCardIndex = route.params?.originCardIndex;
+  const navigation = useNavigation<any>();
+  const toast = useToast();
+
+  // Canonical identity fields (name, surname, salutation, qualification) live on
+  // the primary card. Tapping one on a non-primary card asks for confirmation,
+  // then sends the user to the primary card to edit it; on Save there we return
+  // to this origin card (see the success-modal handler + focus reload).
+  const [isRedirectModalVisible, setIsRedirectModalVisible] = useState(false);
+  const redirectToPrimaryCard = useCallback(() => {
+    setIsRedirectModalVisible(true);
+  }, []);
+  const confirmRedirectToPrimaryCard = useCallback(() => {
+    setIsRedirectModalVisible(false);
+    // push (not navigate) so the primary card layers OVER this one with a slide
+    // transition — goBack later peels it away to reveal this origin card again.
+    navigation.push('EditCard', { cardIndex: 0, originCardIndex: cardIndex });
+  }, [navigation, cardIndex]);
+  // Tracks whether a save has just completed, so leaving a redirected primary
+  // card after saving is not mistaken for a cancellation.
+  const didSaveRef = useRef(false);
+  // Always points at the LATEST handleSave. The beforeRemove listener is
+  // registered once, so calling handleSave directly there would capture the
+  // first-render closure (with empty form data) and fail validation — this ref
+  // keeps the back-button "Save" using the same up-to-date save the pink button does.
+  const handleSaveRef = useRef<((options?: { silent?: boolean }) => Promise<boolean>) | null>(null);
+  const { notifyScroll } = useTooltipContext();
   const { user } = useAuth();
+  const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<FormData>({
+    cardName: '',
     firstName: '',
     lastName: '',
+    salutation: '',
     occupation: '',
+    qualification: '',
     company: '',
     email: '',
     phoneNumber: '',
@@ -102,6 +150,7 @@ export default function EditCard() {
   const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
+  const [isTitleModalVisible, setIsTitleModalVisible] = useState(false);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState('');
@@ -110,6 +159,7 @@ export default function EditCard() {
   );
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
   const [socialNotification, setSocialNotification] = useState<string | null>(null);
   const [isCustomColorModalVisible, setIsCustomColorModalVisible] = useState(false);
   const [customColor, setCustomColor] = useState('#1B2B5B');
@@ -121,16 +171,106 @@ export default function EditCard() {
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
   const [showAltNumber, setShowAltNumber] = useState(false);
+  const [altNumberError, setAltNumberError] = useState<string>('');
   const [isSpeakerEngagementCard, setIsSpeakerEngagementCard] = useState(false);
+  // Mirrors isSpeakerEngagementCard but only updates once the toggle has actually
+  // been persisted via Save — the CSV export is gated on this, not the live
+  // switch state, so it can't appear for an unsaved toggle-on (there's no
+  // server-recorded session/window to export yet).
+  const [savedIsSpeakerEngagementCard, setSavedIsSpeakerEngagementCard] = useState(false);
   const [existingSpeakerCardIndex, setExistingSpeakerCardIndex] = useState<number | null>(null);
   const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
   const [speakerConflictLoaded, setSpeakerConflictLoaded] = useState(false);
-  
+  const [isExportingContacts, setIsExportingContacts] = useState(false);
+
   // Widget state
   const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
   const [activeWidgets, setActiveWidgets] = useState<WidgetConfig[]>([]);
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | undefined>();
   const widgetManager = WidgetManager.getInstance();
+
+  // ── Unsaved-changes tracking ──
+  // Snapshot of every field handleSave actually persists. Captured once the
+  // initial card data has loaded, re-baselined after every successful save, and
+  // diffed on every render to drive the Save button's enabled state and the
+  // leave-without-saving warning.
+  const initialSnapshotRef = useRef<string | null>(null);
+  const buildChangeSnapshot = () => JSON.stringify({
+    formData,
+    template,
+    selectedColor,
+    selectedSocials,
+    zoomLevel,
+    altNumber,
+    altCountryCode,
+    showAltNumber,
+    isSpeakerEngagementCard,
+  });
+  useEffect(() => {
+    if (!loading && initialSnapshotRef.current === null) {
+      initialSnapshotRef.current = buildChangeSnapshot();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  const hasUnsavedChanges =
+    initialSnapshotRef.current !== null && buildChangeSnapshot() !== initialSnapshotRef.current;
+  // Keep a ref in sync so the beforeRemove listener (registered once) always
+  // reads the latest value instead of the one captured when it was added.
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
+
+  // Intercept swipe-back / hardware-back navigation the same way the explicit
+  // Back button does, so unsaved edits can't be lost via a gesture either.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      if (!hasUnsavedChangesRef.current) return;
+      e.preventDefault();
+      Alert.alert(
+        'Unsaved changes',
+        'You have unsaved changes. Save them before leaving?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              // Returning to the card they came from after abandoning a shared-field edit.
+              if (originCardIndex !== undefined) {
+                toast.info(
+                  'Editing cancelled',
+                  "Your changes were discarded — you're back on your previous card."
+                );
+              }
+              navigation.dispatch(e.data.action);
+            },
+          },
+          {
+            text: 'Save',
+            onPress: async () => {
+              const saved = await (handleSaveRef.current?.({ silent: true }) ?? Promise.resolve(false));
+              if (saved) {
+                if (originCardIndex !== undefined) {
+                  toast.success(
+                    'Saved',
+                    'Your details were updated across all your cards.'
+                  );
+                }
+                navigation.dispatch(e.data.action);
+              }
+            },
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  // Keep handleSaveRef pointing at the current render's handleSave (which closes
+  // over the latest form data) so the once-registered beforeRemove listener never
+  // saves with stale/empty values. Runs after every render.
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
 
   // Helper function to parse phone number and extract country code
   const parsePhoneNumber = (phone: string) => {
@@ -166,9 +306,36 @@ export default function EditCard() {
     // Alt number loading is now handled in loadCardDataFromProps and loadUserData
   }, [cardData, cardIndex]);
 
+  // Reload card data when the screen regains focus (e.g. returning from the
+  // primary card after editing canonical fields) so updated name/title/
+  // qualification values show here. Skip the initial focus to avoid a double load.
+  const hasFocusedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+      loadUserData();
+    }, [cardIndex])
+  );
+
   useEffect(() => {
     setUserPlan(normalizeUserPlan(user?.plan));
   }, [user?.plan]);
+
+  // Arrived here via a canonical-field redirect from another card → confirm to
+  // the user (once) that they've landed on their primary card. The persistent
+  // banner at the top of the form reinforces this for as long as they stay.
+  useEffect(() => {
+    if (originCardIndex !== undefined) {
+      toast.info(
+        "You're on your primary card",
+        'Name, title & qualification are shared across all your cards — edit them here.'
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   // Load alt number from temp file
   const loadAltNumber = async () => {
@@ -197,9 +364,14 @@ export default function EditCard() {
       setSelectedColor(cardData.colorScheme || '#1B2B5B');
       setCustomColor(cardData.colorScheme || '#1B2B5B');
       setFormData({
+        // Pre-populate the card name with the company when none has been set yet,
+        // so the user has a sensible default they can personalise.
+        cardName: cardData.cardName || cardData.company || '',
         firstName: cardData.name || '',
         lastName: cardData.surname || '',
+        salutation: cardData.salutation || '',
         occupation: cardData.occupation || '',
+        qualification: cardData.qualification || '',
         company: cardData.company || '',
         email: cardData.email || '',
         phoneNumber: parsePhoneNumber(cardData.phone || '').number,
@@ -238,6 +410,7 @@ export default function EditCard() {
       }
 
       setIsSpeakerEngagementCard(isSpeakerCardEnabled(cardData.isSpeakerEngagementCard));
+      setSavedIsSpeakerEngagementCard(isSpeakerCardEnabled(cardData.isSpeakerEngagementCard));
       setExistingSpeakerCardIndex(null);
       setExistingSpeakerCardLabel('');
       setSpeakerConflictLoaded(false);
@@ -289,9 +462,14 @@ export default function EditCard() {
         setSelectedColor(userData.colorScheme || '#1B2B5B');
         setCustomColor(userData.colorScheme || '#1B2B5B');
         setFormData({
+          // Pre-populate the card name with the company when none has been set yet,
+          // so the user has a sensible default they can personalise.
+          cardName: userData.cardName || userData.company || '',
           firstName: userData.name || '',
           lastName: userData.surname || '',
+          salutation: userData.salutation || '',
           occupation: userData.occupation || '',
+          qualification: userData.qualification || '',
           company: userData.company || '',
           email: userData.email || '',
           phoneNumber: parsePhoneNumber(userData.phone || '').number,
@@ -330,6 +508,7 @@ export default function EditCard() {
         }
 
         setIsSpeakerEngagementCard(isSpeakerCardEnabled(userData.isSpeakerEngagementCard));
+        setSavedIsSpeakerEngagementCard(isSpeakerCardEnabled(userData.isSpeakerEngagementCard));
         setExistingSpeakerCardIndex(activeSpeakerCardIndex >= 0 ? activeSpeakerCardIndex : null);
         setExistingSpeakerCardLabel(
           activeSpeakerCard?.company?.trim() || (
@@ -398,6 +577,16 @@ export default function EditCard() {
   };
 
   const hasAdvancedFeatures = getPlanLimits(userPlan as UserPlan).hasAdvancedFeatures;
+  // Alt-number access uses the single canonical premium gate (fail-closed).
+  const hasAltNumberAccess = isPremium;
+  const isAltNumberLocked = !hasAltNumberAccess;
+
+  const showAltNumberUpsell = () => {
+    triggerUpsell({
+      featureName: 'Alternative Number',
+      description: 'The Alternative Number feature lets you display a second phone number on your card. Upgrade to Premium to unlock it.',
+    });
+  };
 
   const loadSpeakerConflictState = async () => {
     try {
@@ -482,10 +671,167 @@ export default function EditCard() {
   };
 
   const handleSpeakerTooltipPress = () => {
+    // For premium users on the active speaker card, offer the CSV export
+    // directly from the info popup as well as the inline button. Gated on the
+    // SAVED toggle state — an unsaved toggle-on has no server-recorded session
+    // to export yet, so the option must not appear until Save is pressed.
+    if (isPremium && savedIsSpeakerEngagementCard) {
+      Alert.alert(
+        'Speaker and Engagement Card',
+        'Use this to mark the one card you want to use for speaking engagements and event networking. Contacts captured from this card can be identified in your Contacts filter.\n\nYou can download everyone who scanned this card as a CSV.',
+        [
+          { text: 'Close', style: 'cancel' },
+          { text: 'Download CSV', onPress: () => handleExportSpeakerContacts() },
+        ]
+      );
+      return;
+    }
     Alert.alert(
       'Speaker and Engagement Card',
       'Use this to mark the one card you want to use for speaking engagements and event networking. Contacts captured from this card can be identified in your Contacts filter.'
     );
+  };
+
+  // CSV-escape a single value (quote if it contains comma, quote, or newline).
+  const csvEscape = (value: unknown): string => {
+    const s = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const formatContactDate = (createdAt: unknown): string => {
+    if (!createdAt) return '';
+    try {
+      const d = new Date(createdAt as string);
+      if (isNaN(d.getTime())) return String(createdAt);
+      return d.toLocaleString('en-GB');
+    } catch {
+      return String(createdAt);
+    }
+  };
+
+  // True if a scan/save time falls inside the CURRENT speaker session only — the
+  // most recently opened window, never an earlier one. `speakerWindows` is an
+  // append-only audit log of every on/off toggle, but each toggle-on starts a
+  // fresh capture session: contacts from a prior session must never carry into
+  // a later one, so only `windows[windows.length - 1]` is ever eligible here.
+  // An open window (end === null) runs up to "now".
+  const inCurrentSpeakerWindow = (createdAt: unknown, windows: any[]): boolean => {
+    if (!Array.isArray(windows) || windows.length === 0) return false;
+    const t = new Date(createdAt as string).getTime();
+    if (isNaN(t)) return false;
+    const current = windows[windows.length - 1];
+    const start = new Date(current?.start).getTime();
+    if (isNaN(start)) return false;
+    const end = current?.end ? new Date(current.end).getTime() : Date.now();
+    return t >= start && t <= end;
+  };
+
+  const buildContactsCsv = (contacts: any[]): string => {
+    const headers = ['Name', 'Surname', 'Phone', 'Email', 'Company', 'How We Met', 'Date Saved', 'Location'];
+    const lines = contacts.map((c) => {
+      const loc = c?.location
+        ? [c.location.area, c.location.city, c.location.country].filter(Boolean).join(', ') ||
+          c.location.formattedAddress ||
+          ''
+        : '';
+      return [
+        c?.name,
+        c?.surname,
+        c?.phone,
+        c?.email,
+        c?.company,
+        c?.howWeMet,
+        formatContactDate(c?.createdAt),
+        loc,
+      ]
+        .map(csvEscape)
+        .join(',');
+    });
+    return [headers.join(','), ...lines].join('\n');
+  };
+
+  // Export everyone who scanned THIS speaker & engagement card as a CSV.
+  // Premium-only: free users are redirected to Unlock Premium (defense in depth;
+  // the button is only rendered for premium users anyway).
+  const handleExportSpeakerContacts = async () => {
+    if (triggerUpsell({
+      featureName: 'Speaker & Engagement Card',
+      description: 'Exporting your speaker & engagement contacts is a premium feature. Upgrade to Premium to download them.',
+    })) return;
+
+    // Defense in depth — the button is only rendered once the toggle-on is
+    // saved, but guard here too in case this is ever reached another way.
+    if (!savedIsSpeakerEngagementCard) {
+      Alert.alert(
+        'Save Required',
+        'Save this card with the speaker toggle on before exporting its contacts.'
+      );
+      return;
+    }
+
+    if (isExportingContacts) return;
+    setIsExportingContacts(true);
+    try {
+      const userId = await getUserId();
+      if (!userId) throw new Error('Not signed in');
+
+      // Fetch contacts AND the card (for its server-recorded speaker activity windows).
+      const [contactsRes, cardsRes] = await Promise.all([
+        authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CONTACTS}/${userId}`),
+        authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`),
+      ]);
+      if (!contactsRes.ok) throw new Error('Failed to load contacts');
+
+      const contactsData = await contactsRes.json();
+      const contactList = Array.isArray(contactsData?.contactList) ? contactsData.contactList : [];
+
+      // Speaker windows for THIS card (intervals during which it was the speaker card).
+      let speakerWindows: any[] = [];
+      if (cardsRes.ok) {
+        const cardsData = await cardsRes.json();
+        const cardsArray = Array.isArray(cardsData?.cards)
+          ? cardsData.cards
+          : (Array.isArray(cardsData) ? cardsData : []);
+        speakerWindows = cardsArray?.[cardIndex]?.speakerWindows || [];
+      }
+
+      // Only contacts captured by THIS card during the CURRENT speaker session —
+      // never a prior one. Use the machine-readable createdAtMs (epoch);
+      // createdAt itself is a display string.
+      const speakerContacts = contactList.filter(
+        (c: any) =>
+          Number(c?.sourceCardIndex) === Number(cardIndex) &&
+          inCurrentSpeakerWindow(c?.createdAtMs ?? c?.createdAt, speakerWindows)
+      );
+
+      if (speakerContacts.length === 0) {
+        Alert.alert(
+          'No Contacts Yet',
+          'No one scanned this card while it was set as your speaker & engagement card.'
+        );
+        return;
+      }
+
+      const csv = buildContactsCsv(speakerContacts);
+      const fileName = `speaker-contacts-${Date.now()}.csv`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+      await Share.open({
+        url: fileUri,
+        type: 'text/csv',
+        filename: fileName,
+        failOnCancel: false,
+      });
+    } catch (error: any) {
+      // react-native-share throws on user cancel — treat as a no-op.
+      const msg = String(error?.message || '');
+      if (msg.includes('User did not share') || msg.includes('cancel')) return;
+      console.error('Export speaker contacts failed:', error);
+      Alert.alert('Export Failed', 'Could not export contacts. Please try again.');
+    } finally {
+      setIsExportingContacts(false);
+    }
   };
 
   // Load active widgets for this card
@@ -592,6 +938,10 @@ export default function EditCard() {
   ];
 
   const handleBack = () => {
+    // Just request navigation back. The single `beforeRemove` listener above is
+    // the one source of truth for the unsaved-changes prompt — it catches the
+    // Back button, swipe-back gesture and hardware back alike. Showing an Alert
+    // here too made the prompt appear twice (this alert, then beforeRemove's).
     navigation.goBack();
   };
 
@@ -611,15 +961,28 @@ export default function EditCard() {
       setError('Please enter a valid email address');
       return false;
     }
+
+    // Premium-only: if showing alt number on card, alt number becomes required.
+    const trimmedAlt = String(altNumber || '').trim();
+    if (hasAltNumberAccess && showAltNumber && !trimmedAlt) {
+      setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
+      setError('Please fix the highlighted fields');
+      return false;
+    }
     
     setError('');
+    setAltNumberError('');
     return true;
   };
 
-  const handleSave = async () => {
+  // `silent` skips the success modal (used when saving as part of leaving the
+  // screen via the unsaved-changes prompt — the caller handles navigation itself
+  // right after this resolves). Returns whether the save succeeded.
+  const handleSave = async (options?: { silent?: boolean }): Promise<boolean> => {
+    const silent = !!options?.silent;
     try {
       if (!validateForm()) {
-        return;
+        return false;
       }
 
       setIsSaving(true);
@@ -629,7 +992,7 @@ export default function EditCard() {
       if (!userId) {
         setError('User ID not found');
         setIsSaving(false);
-        return;
+        return false;
       }
 
       // Create socials object with selected socials
@@ -641,9 +1004,12 @@ export default function EditCard() {
       });
 
       // Create card data object - ensure logoZoomLevel is included as a number, not a string
-      const cardData = {
+      const cardData: any = {
+        cardName: (formData.cardName || '').trim(),
         name: formData.firstName,
         surname: formData.lastName,
+        salutation: formData.salutation,
+        qualification: formData.qualification,
         occupation: formData.occupation,
         company: formData.company,
         email: formData.email,
@@ -653,12 +1019,18 @@ export default function EditCard() {
         profileImage: formData.profileImage,
         companyLogo: formData.companyLogo,
         logoZoomLevel: Number(zoomLevel), // Ensure it's a number
-        altNumber: altNumber || '',
-        altCountryCode: altCountryCode || '+27',
-        showAltNumber: showAltNumber || false,
         isSpeakerEngagementCard
-      } as any;
+      };
       cardData.template = template;
+
+      // Alt number is Premium-only. For Free users, do not submit alt fields.
+      if (hasAltNumberAccess) {
+        cardData.altNumber = altNumber || '';
+        cardData.altCountryCode = altCountryCode || '+27';
+        cardData.showAltNumber = showAltNumber || false;
+      } else {
+        cardData.showAltNumber = false;
+      }
 
       console.log('Saving card with zoom level:', cardData.logoZoomLevel);
       console.log('Full card data:', JSON.stringify(cardData, null, 2));
@@ -673,11 +1045,27 @@ export default function EditCard() {
       );
 
       if (!response.ok) {
+        // Surface the backend's name-change-throttle message specifically.
+        let serverMessage = '';
+        try {
+          const errBody = await response.json();
+          serverMessage = errBody?.message || '';
+        } catch {
+          serverMessage = '';
+        }
+        if (response.status === 403 && serverMessage) {
+          throw new Error(serverMessage);
+        }
         throw new Error('Failed to update card');
       }
 
       const result = await response.json();
       console.log('Server response after save:', JSON.stringify(result, null, 2));
+
+      // The PATCH succeeded with this exact value, regardless of whether the
+      // response includes a refreshed cards array below — safe fallback so the
+      // CSV export option never depends on the response shape.
+      setSavedIsSpeakerEngagementCard(isSpeakerEngagementCard);
 
       if (Array.isArray(result.cards)) {
         try {
@@ -692,7 +1080,10 @@ export default function EditCard() {
 
           const refreshedCard = result.cards[cardIndex];
           if (refreshedCard) {
+            // Server-confirmed value — also keep the saved-flag in sync in case it
+            // differs from what was sent (e.g. server-side mutual-exclusivity demotion).
             setIsSpeakerEngagementCard(isSpeakerCardEnabled(refreshedCard.isSpeakerEngagementCard));
+            setSavedIsSpeakerEngagementCard(isSpeakerCardEnabled(refreshedCard.isSpeakerEngagementCard));
 
             const activeSpeakerCardIndex = result.cards.findIndex((card: any, index: number) => (
               index !== cardIndex && isSpeakerCardEnabled(card?.isSpeakerEngagementCard)
@@ -713,11 +1104,33 @@ export default function EditCard() {
       }
       
       // Alt number is now saved to backend, no need for AsyncStorage
-      
-      setModalMessage('Card updated');
-      setIsSuccessModalVisible(true);
+
+      // Re-baseline the unsaved-changes snapshot to the just-saved values so the
+      // Save button greys out again until the next edit.
+      initialSnapshotRef.current = buildChangeSnapshot();
+      // Clear the live ref immediately (it's only re-synced on the next render) so a
+      // goBack()/dispatch right after saving doesn't re-trigger the unsaved-changes
+      // guard before the re-render lands.
+      hasUnsavedChangesRef.current = false;
+      // Mark that a save just happened so leaving isn't treated as a cancellation.
+      didSaveRef.current = true;
+
       setIsSaving(false);
-      
+      if (!silent) {
+        if (originCardIndex !== undefined) {
+          // Redirected here to edit shared fields — honour the promise to take the
+          // user right back to the card they came from, with the change applied.
+          toast.success(
+            'Saved',
+            'Your name, title & qualification were updated across all your cards.'
+          );
+          navigation.goBack();
+        } else {
+          setModalMessage('Card updated');
+          setIsSuccessModalVisible(true);
+        }
+      }
+
       // Sync widget data after successful card update
       try {
         // Generate QR code URL for widget
@@ -748,10 +1161,12 @@ export default function EditCard() {
         // Don't fail the whole save operation if widget sync fails
       }
 
+      return true;
     } catch (error) {
       console.error('Error updating card:', error);
-      setError('Failed to update card');
+      setError(error instanceof Error && error.message ? error.message : 'Failed to update card');
       setIsSaving(false);
+      return false;
     }
   };
 
@@ -781,55 +1196,56 @@ export default function EditCard() {
 
   const handleProfileImageEdit = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Profile Picture',
         'Choose where you want to get your profile picture from.',
         [
-          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+          { text: 'Choose File', onPress: () => pickImageFromSource('file') },
           { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Profile Picture',
           'Choose where you want to get your profile picture from.',
           [
-            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
             { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
         Alert.alert(
-          'Permission Required', 
+          'Permission Required',
           'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Grant Permission', 
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
                   Alert.alert(
                     'Select Profile Picture',
                     'Choose where you want to get your profile picture from.',
                     [
-                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+                      { text: 'Choose File', onPress: () => pickImageFromSource('file') },
                       { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
@@ -838,55 +1254,56 @@ export default function EditCard() {
 
   const handleLogoEdit = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Company Logo',
         'Choose where you want to get your company logo from.',
         [
-          { text: 'Camera', onPress: () => pickLogo('camera') },
+          { text: 'Choose File', onPress: () => pickLogo('file') },
           { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Camera', onPress: () => pickLogo('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Company Logo',
           'Choose where you want to get your company logo from.',
           [
-            { text: 'Camera', onPress: () => pickLogo('camera') },
+            { text: 'Choose File', onPress: () => pickLogo('file') },
             { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Camera', onPress: () => pickLogo('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
         Alert.alert(
-          'Permission Required', 
+          'Permission Required',
           'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Grant Permission', 
+            { text: 'Choose File', onPress: () => pickLogo('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
                   Alert.alert(
                     'Select Company Logo',
                     'Choose where you want to get your company logo from.',
                     [
-                      { text: 'Camera', onPress: () => pickLogo('camera') },
+                      { text: 'Choose File', onPress: () => pickLogo('file') },
                       { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
@@ -894,13 +1311,16 @@ export default function EditCard() {
   };
 
   // Profile image picker function (simplified like logo picker)
-  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
+  const pickImageFromSource = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Image Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -908,30 +1328,26 @@ export default function EditCard() {
         // iOS: Check permissions first, then pick
         console.log('[Image Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
         }
-        
+
         if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
-            'Photo Library Permission Required', 
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
@@ -1011,13 +1427,16 @@ export default function EditCard() {
   };
 
   // Improved implementation for logo picker with iOS compatibility
-  const pickLogo = async (source: 'camera' | 'gallery') => {
+  const pickLogo = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Logo Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -1025,30 +1444,26 @@ export default function EditCard() {
         // iOS: Check permissions first, then pick
         console.log('[Logo Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
         }
-        
+
         if (source === 'gallery' && !galleryGranted) {
           Alert.alert(
-            'Photo Library Permission Required', 
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                  Linking.openURL('app-settings:');
-              }}
+              { text: 'Open Settings', onPress: () => { Linking.openURL('app-settings:'); } },
             ]
           );
           return;
@@ -1203,14 +1618,13 @@ export default function EditCard() {
   };
 
   const handlePreview = () => {
-    setIsPreviewModalVisible(true);
+    setPreviewVisible(true);
   };
 
-  // Handler for template selection - auto-opens preview
+  // Handler for template selection - auto-opens the draggable preview overlay
   const handleTemplateSelect = (templateNumber: number) => {
     setTemplate(templateNumber);
-    // Auto-open preview when template is selected
-    setIsPreviewModalVisible(true);
+    setPreviewVisible(true);
   };
 
   // Helper function to build card object for preview
@@ -1223,6 +1637,7 @@ export default function EditCard() {
     });
 
     return {
+      cardName: formData.cardName || '',
       name: formData.firstName || '',
       surname: formData.lastName || '',
       occupation: formData.occupation || '',
@@ -1260,7 +1675,11 @@ export default function EditCard() {
               <Text style={styles.previewButtonText}>Preview</Text>
             </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButtonContainer} disabled={isSaving}>
+        <TouchableOpacity
+          onPress={() => handleSave()}
+          style={[styles.saveButtonContainer, !hasUnsavedChanges && !isSaving && styles.saveButtonContainerDisabled]}
+          disabled={isSaving || !hasUnsavedChanges}
+        >
           {isSaving ? (
             <ActivityIndicator size="small" color={COLORS.white} />
           ) : (
@@ -1270,7 +1689,7 @@ export default function EditCard() {
         </View>
       </View>
 
-      <KeyboardAwareScrollView 
+      <KeyboardAwareScrollView
           ref={scrollViewRef}
           style={styles.content}
           contentContainerStyle={[
@@ -1279,10 +1698,47 @@ export default function EditCard() {
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
         enableOnAndroid={true}
+        enableResetScrollToCoords={false}
         extraScrollHeight={20}
         extraHeight={20}
         >
+          {/* Redirect banner — only when the user was sent here from another card to
+              edit a shared (primary-only) field. Makes it unmistakable that they've
+              landed on their primary card and what happens next. */}
+          {originCardIndex !== undefined && (
+            <View style={styles.primaryRedirectBanner}>
+              <View style={styles.primaryRedirectIconCircle}>
+                <MaterialIcons name="badge" size={20} color={COLORS.primary} />
+              </View>
+              <View style={styles.primaryRedirectTextWrap}>
+                <Text style={styles.primaryRedirectTitle}>You're on your primary card</Text>
+                <Text style={styles.primaryRedirectBody}>
+                  Name, title & qualification are shared across all your cards. Save to apply,
+                  or go back to cancel and return to your other card.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Card Name Section — distinct identifier for this card (not shown on the card face) */}
+          <View style={styles.cardNameSection}>
+            <View style={styles.cardNameLabelRow}>
+              <MaterialIcons name="badge" size={18} color={COLORS.primary} />
+              <Text style={styles.cardNameLabel}>Card name</Text>
+            </View>
+            <TextInput
+              style={styles.cardNameInput}
+              placeholder="Give this card a name to identify it"
+              placeholderTextColor="#999"
+              value={formData.cardName}
+              onChangeText={(text) => setFormData({ ...formData, cardName: text })}
+            />
+            <Text style={styles.cardNameHelper}>Give this card a name to identify it</Text>
+          </View>
+
           {/* Card Color Section */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Card color</Text>
@@ -1349,9 +1805,7 @@ export default function EditCard() {
                 fadeDuration={300}
               />
             ) : (
-              <View style={styles.logoPlaceholder}>
-                <Text style={styles.logoPlaceholderText}>LOGO</Text>
-              </View>
+              <LogoPlaceholder textSize={22} />
             )}
             </View>
             {userPlan !== 'enterprise' && (
@@ -1445,75 +1899,32 @@ export default function EditCard() {
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Template</Text>
             <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(1)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 1 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 1 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 1</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(2)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 2 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 2 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 2</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(3)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 3 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 3 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 3</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(4)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 4 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 4 ? '#F6F7FF' : '#FFF',
-                  marginRight: 8
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 4</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleTemplateSelect(5)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
-                  borderRadius: 10,
-                  borderWidth: 2,
-                  borderColor: template === 5 ? COLORS.secondary : '#ddd',
-                  backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
-                }}
-              >
-                <Text style={{ color: COLORS.black }}>Template 5</Text>
-              </TouchableOpacity>
+              {[1, 2, 3, 4, 5].map((tpl) => {
+                const isSelected = template === tpl;
+                return (
+                  <TouchableOpacity
+                    key={tpl}
+                    onPress={() => handleTemplateSelect(tpl)}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 14,
+                      borderRadius: 20,
+                      borderWidth: 2,
+                      borderColor: isSelected ? COLORS.secondary : '#ddd',
+                      backgroundColor: isSelected ? '#F6F7FF' : '#FFF',
+                      marginRight: 8,
+                      overflow: 'visible',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.black }}>Template {tpl}</Text>
+                    {isSelected && (
+                      <View style={styles.templateTickBadge}>
+                        <MaterialIcons name="check" size={12} color={COLORS.white} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
           </View>
@@ -1523,27 +1934,107 @@ export default function EditCard() {
             <Text style={styles.sectionTitle}>Personal details</Text>
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            <TextInput 
-              style={styles.input}
-              placeholder="First name"
-              placeholderTextColor="#999"
-              value={formData.firstName}
-              onChangeText={(text) => setFormData({...formData, firstName: text})}
-            />
-            <TextInput 
+            {/* First name — canonical (primary card only). On other cards, tap redirects to primary. */}
+            {isPrimaryCard ? (
+              <TextInput
+                style={styles.input}
+                placeholder="First name"
+                placeholderTextColor="#999"
+                value={formData.firstName}
+                onChangeText={(text) => setFormData({...formData, firstName: text})}
+              />
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View pointerEvents="none">
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="First name"
+                    placeholderTextColor="#999"
+                    value={formData.firstName}
+                    editable={false}
+                  />
+                </View>
+              </Pressable>
+            )}
+            {/* Last name — canonical (primary card only). */}
+            {isPrimaryCard ? (
+              <TextInput
+                style={styles.input}
+                placeholder="Last name"
+                placeholderTextColor="#999"
+                value={formData.lastName}
+                onChangeText={(text) => setFormData({...formData, lastName: text})}
+              />
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View pointerEvents="none">
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="Last name"
+                    placeholderTextColor="#999"
+                    value={formData.lastName}
+                    editable={false}
+                  />
+                </View>
+              </Pressable>
+            )}
+            {/* Title / salutation — canonical dropdown (primary card only). */}
+            {isPrimaryCard ? (
+              <TouchableOpacity
+                style={[styles.input, styles.dropdownInput]}
+                onPress={() => setIsTitleModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
+                  {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
+                </Text>
+                <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+              </TouchableOpacity>
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View style={[styles.input, styles.dropdownInput, styles.disabledInput]} pointerEvents="none">
+                  <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
+                    {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
+                  </Text>
+                  <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+                </View>
+              </Pressable>
+            )}
+            {/* Occupation — per-card field (freely editable on any card). */}
+            <TextInput
               style={styles.input}
               placeholder="Occupation"
               placeholderTextColor="#999"
               value={formData.occupation}
               onChangeText={(text) => setFormData({...formData, occupation: text})}
             />
-            <TextInput 
-              style={styles.input}
-              placeholder="Last name"
-              placeholderTextColor="#999"
-              value={formData.lastName}
-              onChangeText={(text) => setFormData({...formData, lastName: text})}
-            />
+            {/* Qualification — canonical, optional (primary card only). */}
+            {isPrimaryCard ? (
+              <TextInput
+                style={styles.input}
+                placeholder="Qualification (optional)"
+                placeholderTextColor="#999"
+                value={formData.qualification}
+                onChangeText={(text) => setFormData({...formData, qualification: text})}
+              />
+            ) : (
+              <Pressable onPress={redirectToPrimaryCard}>
+                <View pointerEvents="none">
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="Qualification (optional)"
+                    placeholderTextColor="#999"
+                    value={formData.qualification}
+                    editable={false}
+                  />
+                </View>
+              </Pressable>
+            )}
+            <Text style={styles.namePolicyNote}>
+              {isPrimaryCard
+                ? 'Your name, title and qualification can only be changed here. Name changes are allowed once every 30 days.'
+                : 'Name, title and qualification can only be changed on your primary card. Tap any of these fields to go there.'}
+            </Text>
             <TextInput 
               style={[
                 styles.input, 
@@ -1574,53 +2065,143 @@ export default function EditCard() {
               placeholder="Phone number"
             />
             
-            <PhoneNumberInput
-              value={altNumber}
-              onChangeText={(text) => setAltNumber(text)}
-              onCountryCodeChange={(code) => setAltCountryCode(code)}
-              placeholder="Alt number"
-            />
+            <Pressable
+              onPress={isAltNumberLocked ? showAltNumberUpsell : undefined}
+              style={[isAltNumberLocked && styles.altLockedContainer]}
+            >
+              <View pointerEvents={isAltNumberLocked ? 'none' : 'auto'}>
+                <PhoneNumberInput
+                  value={altNumber}
+                  onChangeText={(text) => {
+                    setAltNumber(text);
+                    if (altNumberError) setAltNumberError('');
+                  }}
+                  onCountryCodeChange={(code) => setAltCountryCode(code)}
+                  placeholder="Alt number"
+                  disabled={isAltNumberLocked}
+                  error={!isAltNumberLocked ? altNumberError : undefined}
+                />
+              </View>
+            </Pressable>
             
             {/* Toggle to show/hide alt number on card */}
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Show alt number on card</Text>
+            <Pressable
+              onPress={isAltNumberLocked ? showAltNumberUpsell : undefined}
+              style={[styles.toggleContainer, isAltNumberLocked && styles.altLockedContainer]}
+            >
+              <View style={styles.toggleLabelRow}>
+                <Text style={styles.toggleLabel}>Show alt number on card</Text>
+                {!isLoadingUserStatus && !isPremium && (
+                  <View style={styles.premiumBadge}>
+                    <MaterialIcons name="lock" size={14} color={COLORS.white} />
+                    <Text style={styles.premiumBadgeText}>Premium</Text>
+                  </View>
+                )}
+              </View>
               <TouchableOpacity
                 style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
-                onPress={() => setShowAltNumber(!showAltNumber)}
+                onPress={() => {
+                  if (isAltNumberLocked) {
+                    showAltNumberUpsell();
+                    return;
+                  }
+                  const next = !showAltNumber;
+                  setShowAltNumber(next);
+                  if (!next && altNumberError) setAltNumberError('');
+                }}
+                disabled={isAltNumberLocked}
+                activeOpacity={0.8}
               >
                 <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
               </TouchableOpacity>
-            </View>
+            </Pressable>
 
-            {hasAdvancedFeatures && (
-              <View style={styles.toggleContainer}>
-                <View style={styles.toggleLabelRow}>
-                  <Text style={styles.toggleLabel}>My Speaker and Engagement Card</Text>
-                  <TouchableOpacity
-                    style={styles.tooltipButton}
-                    onPress={handleSpeakerTooltipPress}
-                    accessibilityRole="button"
-                    accessibilityLabel="Learn more about speaker and engagement cards"
-                  >
-                    <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.toggleSwitch,
-                    isSpeakerEngagementCard && styles.toggleSwitchActive
-                  ]}
-                  onPress={handleSpeakerTogglePress}
-                  activeOpacity={0.8}
-                >
+            <View style={styles.toggleContainer}>
+              <View style={styles.toggleLabelRow}>
+                <Text style={styles.toggleLabel}>My Speaker and Engagement Card</Text>
+                {!isPremium && (
+                  <View style={styles.premiumBadge}>
+                    <MaterialIcons name="lock" size={11} color={COLORS.white} />
+                    <Text style={styles.premiumBadgeText}>PREMIUM</Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.toggleSwitch,
+                  isPremium && isSpeakerEngagementCard && styles.toggleSwitchActive,
+                  !isPremium && styles.toggleSwitchLocked
+                ]}
+                onPress={() => {
+                  // Premium gate: free users get the existing Unlock Premium upsell;
+                  // the toggle never activates for them.
+                  if (triggerUpsell({ featureName: 'Speaker & Engagement Card', description: 'The Speaker & Engagement Card is a premium card type designed for speakers and presenters. Upgrade to Premium to enable it.' })) return;
+                  handleSpeakerTogglePress();
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  !isPremium
+                    ? 'Speaker and Engagement Card. Premium feature, locked. Tap to upgrade.'
+                    : 'Toggle Speaker and Engagement Card'
+                }
+              >
+                {!isPremium ? (
+                  <View style={styles.toggleThumbLocked}>
+                    <MaterialIcons name="lock" size={12} color={COLORS.gray} />
+                  </View>
+                ) : (
                   <View
                     style={[
                       styles.toggleThumb,
                       isSpeakerEngagementCard && styles.toggleThumbActive
                     ]}
                   />
+                )}
+              </TouchableOpacity>
+              {/* Tooltip sits below the toggle so the bubble appears under the
+                  option. disableFlip stops it flipping up (and off the top of the
+                  screen) when the toggle is low in the scroll form. */}
+              <FeatureTip
+                tipKey="speaker_engagement_card"
+                content="Have a speaking engagement? Make one card as your speaker and engagement card to track who scanned it during your delivery (then export to CSV)"
+                position="bottom"
+                bubbleAlign="right"
+                inScrollView
+                disableFlip
+              >
+                <TouchableOpacity
+                  style={styles.tooltipButton}
+                  onPress={handleSpeakerTooltipPress}
+                  accessibilityRole="button"
+                  accessibilityLabel="Learn more about speaker and engagement cards"
+                >
+                  <MaterialIcons name="info-outline" size={18} color={COLORS.primary} />
                 </TouchableOpacity>
-              </View>
+              </FeatureTip>
+            </View>
+
+            {/* Export speaker & engagement contacts — premium, and only once the
+                toggle-on has actually been saved (so a real session/window exists
+                server-side to export against). */}
+            {isPremium && savedIsSpeakerEngagementCard && (
+              <TouchableOpacity
+                style={styles.exportContactsButton}
+                onPress={handleExportSpeakerContacts}
+                disabled={isExportingContacts}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Download contacts who scanned this card as CSV"
+              >
+                {isExportingContacts ? (
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                ) : (
+                  <MaterialIcons name="file-download" size={20} color={COLORS.primary} />
+                )}
+                <Text style={styles.exportContactsButtonText}>
+                  {isExportingContacts ? 'Preparing CSV…' : 'Download scanned contacts (CSV)'}
+                </Text>
+              </TouchableOpacity>
             )}
 
             {/* Social Media URL Inputs */}
@@ -1751,20 +2332,25 @@ export default function EditCard() {
             )}
           </View>
 
-          {/* Delete Button */}
-          {userPlan !== 'free' && (
-            <TouchableOpacity 
-              style={[
-                styles.deleteButton,
-                cardIndex === 0 ? styles.deleteButtonDisabled : null
-              ]}
-              onPress={handleDelete}
-            >
-              <Text style={styles.deleteButtonText}>
-                {cardIndex === 0 ? "Default Card (Cannot Delete)" : "Delete Card"}
-              </Text>
-            </TouchableOpacity>
-          )}
+          {/* Delete Button — visible to all; free users see the upsell popup */}
+          <TouchableOpacity
+            style={[
+              styles.deleteButton,
+              cardIndex === 0 ? styles.deleteButtonDisabled : null
+            ]}
+            onPress={() => {
+              if (cardIndex === 0) {
+                handleDelete(); // Let handleDelete show its own "cannot delete" message
+                return;
+              }
+              if (triggerUpsell({ featureName: 'Delete Card', description: 'Deleting additional cards is a Premium feature. Upgrade to manage and delete multiple cards.' })) return;
+              handleDelete();
+            }}
+          >
+            <Text style={styles.deleteButtonText}>
+              {cardIndex === 0 ? "Default Card (Cannot Delete)" : "Delete Card"}
+            </Text>
+          </TouchableOpacity>
       </KeyboardAwareScrollView>
 
       <CustomModal
@@ -1854,203 +2440,110 @@ export default function EditCard() {
             onPress: () => {
               setIsSuccessModalVisible(false);
               if (modalMessage.includes('updated successfully') || modalMessage.includes('deleted successfully')) {
-              navigation.goBack();
+                // goBack() returns to the previous screen. When we arrived via a
+                // canonical-field redirect, that previous screen is the origin
+                // (non-primary) card, which reloads its data on focus.
+                navigation.goBack();
               }
             }
           }
         ]}
       />
 
-      {/* Preview Modal */}
-      <RNModal
-        visible={isPreviewModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsPreviewModalVisible(false)}
+      {/* Redirect-to-primary confirmation — shown when a canonical field is tapped on a non-primary card */}
+      <Modal
+        isVisible={isRedirectModalVisible}
+        onBackdropPress={() => setIsRedirectModalVisible(false)}
+        onBackButtonPress={() => setIsRedirectModalVisible(false)}
+        animationIn="zoomIn"
+        animationOut="zoomOut"
+        backdropOpacity={0.5}
+        style={{ margin: 24 }}
       >
-        <SafeAreaView style={previewStyles.modalContainer}>
-          <View style={previewStyles.modalHeader}>
-            <Text style={previewStyles.modalTitle}>Card Preview</Text>
-            <TouchableOpacity onPress={() => setIsPreviewModalVisible(false)}>
-              <MaterialIcons name="close" size={24} color="#000" />
-            </TouchableOpacity>
-    </View>
-          
-          <ScrollView style={previewStyles.cardScrollView}>
-            <View style={previewStyles.cardContainer}>
-              {/* Render templates based on selected template */}
-              {template === 1 ? (
-                // Template 1 - Original hardcoded preview
-                <>
-                  {/* QR Code Placeholder */}
-                  <View style={previewStyles.qrContainer}>
-                    <View style={previewStyles.qrPlaceholder}>
-                      <MaterialIcons name="qr-code-2" size={80} color="#ccc" />
-                      <Text style={previewStyles.qrText}>QR Code</Text>
-                    </View>
-                  </View>
-                  
-                  {/* Company Logo and Profile Image */}
-                  <View style={previewStyles.logoContainer}>
-                    <View style={previewStyles.logoFrame}>
-                      {formData.companyLogo && getImageUrl(formData.companyLogo) ? (
-                        <Image 
-                          source={{ uri: getImageUrl(formData.companyLogo) || '' }}
-                          style={{ 
-                            width: '100%', 
-                            height: '100%',
-                            transform: [{ scale: zoomLevel }],
-                            opacity: 1,
-                          }}
-                          resizeMode="contain"
-                          fadeDuration={300}
-                        />
-                      ) : (
-                        <View style={previewStyles.logoPlaceholder}>
-                          <Text style={previewStyles.logoPlaceholderText}>LOGO</Text>
-                        </View>
-                      )}
-                    </View>
-                    
-                    {/* Profile Image */}
-                    <View style={previewStyles.profileContainer}>
-                      <View style={previewStyles.profileImageContainer}>
-                        {formData.profileImage ? (
-                          <Image
-                            style={previewStyles.profileImage}
-                            source={{ uri: getImageUrl(formData.profileImage) || '' }}
-                          />
-                        ) : (
-                          <GradientAvatar 
-                            size={110}
-                            style={previewStyles.profileImage}
-                          />
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                  
-                  {/* Basic Info - these should NOT use the color scheme as per user's request */}
-                  <Text style={previewStyles.name}>
-                    {`${formData.firstName} ${formData.lastName}`}
-                  </Text>
-                  <Text style={previewStyles.position}>
-                    {formData.occupation}
-                  </Text>
-                  <Text style={previewStyles.company}>
-                    {formData.company}
-                  </Text>
-                  
-                  {/* Contact Info - SHOULD use the color scheme */}
-                  <TouchableOpacity style={previewStyles.contactSection}>
-                    <MaterialCommunityIcons name="email-outline" size={24} color={selectedColor} />
-                    <Text style={previewStyles.contactText}>{formData.email}</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={previewStyles.contactSection}>
-                    <MaterialCommunityIcons name="phone-outline" size={24} color={selectedColor} />
-                    <Text style={previewStyles.contactText}>{`${formData.countryCode}${formData.phoneNumber}`}</Text>
-                  </TouchableOpacity>
-                  
-                  {/* Social Links - SHOULD use the color scheme */}
-                  {selectedSocials.map(socialId => {
-                    const social = socials.find(s => s.id === socialId);
-                    if (social && formData[socialId]) {
-                      return (
-                        <TouchableOpacity key={socialId} style={previewStyles.contactSection}>
-                          <MaterialCommunityIcons 
-                            name={social.icon} 
-                            size={24} 
-                            color={selectedColor} 
-                          />
-                          <Text style={previewStyles.contactText}>
-                            {formData[socialId]?.toString() || ''}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                    return null;
-                  })}
-                </>
-              ) : template === 2 ? (
-                <CardTemplate2
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : template === 3 ? (
-                <CardTemplate3
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : template === 4 ? (
-                <CardTemplate4
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : template === 5 ? (
-                <CardTemplate5
-                  card={buildCardObject()}
-                  qrUri={undefined}
-                  colorFallback={selectedColor}
-                  isWalletLoading={false}
-                  onPressShare={() => {}}
-                  onPressWallet={() => {}}
-                  onPressEmail={() => {}}
-                  onPressPhone={() => {}}
-                  onPressSocial={() => {}}
-                  altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
-                />
-              ) : (
-                // Fallback to template 1
-                <Text>Template not found</Text>
-              )}
-            </View>
-          </ScrollView>
-          
-          <View style={previewStyles.modalActions}>
-            <TouchableOpacity 
-              style={[previewStyles.continueButton, { borderColor: selectedColor }]}
-              onPress={() => setIsPreviewModalVisible(false)}
-            >
-              <Text style={[previewStyles.continueText, { color: selectedColor }]}>Continue Editing</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[previewStyles.saveButton, { backgroundColor: selectedColor }]}
+        <View style={styles.redirectModalCard}>
+          <View style={styles.redirectIconCircle}>
+            <MaterialIcons name="badge" size={28} color={COLORS.primary} />
+          </View>
+          <Text style={styles.redirectModalTitle}>Edit on your primary card</Text>
+          <Text style={styles.redirectModalBody}>
+            Your name, title and qualification are shared across all your cards, so
+            they're managed in one place — your primary card.
+          </Text>
+          <View style={styles.redirectStepsRow}>
+            <MaterialIcons name="arrow-forward" size={18} color={COLORS.primary} />
+            <Text style={styles.redirectStepsText}>We'll take you to your primary card to make the change.</Text>
+          </View>
+          <View style={styles.redirectStepsRow}>
+            <MaterialIcons name="check-circle" size={18} color={COLORS.primary} />
+            <Text style={styles.redirectStepsText}>Once you save, you'll come right back to this card.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.redirectPrimaryBtn}
+            onPress={confirmRedirectToPrimaryCard}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.redirectPrimaryBtnText}>Continue to primary card</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.redirectCancelBtn}
+            onPress={() => setIsRedirectModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.redirectCancelBtnText}>Stay here</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Title / salutation selection modal — primary card only */}
+      <Modal
+        isVisible={isTitleModalVisible}
+        onBackdropPress={() => setIsTitleModalVisible(false)}
+        onBackButtonPress={() => setIsTitleModalVisible(false)}
+      >
+        <View style={styles.titleModalContainer}>
+          <Text style={styles.titleModalHeading}>Select title</Text>
+          {TITLE_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option}
+              style={styles.titleOptionRow}
               onPress={() => {
-                setIsPreviewModalVisible(false);
-                handleSave();
+                setFormData({ ...formData, salutation: option });
+                setIsTitleModalVisible(false);
               }}
             >
-              <Text style={previewStyles.saveText}>Save & Exit</Text>
+              <Text style={styles.titleOptionText}>{option}</Text>
+              {formData.salutation === option && (
+                <MaterialIcons name="check" size={20} color={COLORS.primary} />
+              )}
             </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </RNModal>
+          ))}
+          {!!formData.salutation && (
+            <TouchableOpacity
+              style={styles.titleOptionRow}
+              onPress={() => {
+                setFormData({ ...formData, salutation: '' });
+                setIsTitleModalVisible(false);
+              }}
+            >
+              <Text style={[styles.titleOptionText, { color: COLORS.gray }]}>Clear</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
+
+      {/* Draggable template preview overlay — shows when previewing/selecting templates */}
+      {previewVisible && (
+        <TemplatePreviewOverlay
+          template={template}
+          card={buildCardObject()}
+          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          onSelectTemplate={(n) => {
+            setTemplate(n);
+            toast.success('Template Selected', `Template ${n} applied to your card`);
+          }}
+          onClose={() => setPreviewVisible(false)}
+        />
+      )}
 
       {/* Widget Configuration Modal */}
       <WidgetConfigModal
@@ -2209,7 +2702,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    marginTop: 130,
+    marginTop: 150,
     marginBottom: 20,
   },
   warningBox: {
@@ -2259,6 +2752,41 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
     marginBottom: 15,
+  },
+  cardNameSection: {
+    backgroundColor: '#FFF0F3',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 24,
+  },
+  cardNameLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  cardNameLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardNameInput: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: 14,
+    fontSize: 16,
+    color: COLORS.black,
+  },
+  cardNameHelper: {
+    marginTop: 8,
+    fontSize: 12,
+    color: COLORS.gray,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -2325,6 +2853,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 15,
   },
+  // Greyed out until an edit is made — signals there's nothing to save yet.
+  saveButtonContainerDisabled: {
+    backgroundColor: COLORS.gray,
+  },
   saveButton: {
     color: COLORS.white,
     fontSize: 16,
@@ -2352,6 +2884,42 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+  },
+  // Redirect banner shown at the top of the primary card when reached via a
+  // canonical-field redirect from another card.
+  primaryRedirectBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.primary + '12',
+    borderWidth: 1,
+    borderColor: COLORS.primary + '33',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  primaryRedirectIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  primaryRedirectTextWrap: {
+    flex: 1,
+  },
+  primaryRedirectTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 3,
+  },
+  primaryRedirectBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.textLight,
   },
   colorSection: {
     marginTop: 20,
@@ -2628,6 +3196,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   scrollContent: {
+    paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 20 : 20,
   },
   modalContainer: {
@@ -2726,6 +3295,122 @@ const styles = StyleSheet.create({
   disabledInput: {
     backgroundColor: '#E8E8E8',
     color: '#666',
+  },
+  namePolicyNote: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  redirectModalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    paddingTop: 28,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  redirectIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF0F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  redirectModalTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: COLORS.black,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  redirectModalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  redirectStepsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+    gap: 10,
+    marginBottom: 12,
+  },
+  redirectStepsText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.black,
+  },
+  redirectPrimaryBtn: {
+    alignSelf: 'stretch',
+    backgroundColor: COLORS.primary,
+    borderRadius: 25,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  redirectPrimaryBtnText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  redirectCancelBtn: {
+    alignSelf: 'stretch',
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  redirectCancelBtnText: {
+    color: '#888',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dropdownInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  templateTickBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  titleModalContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  titleModalHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.black,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  titleOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  titleOptionText: {
+    fontSize: 16,
+    color: COLORS.black,
   },
   zoomSliderContainer: {
     width: '100%',
@@ -2841,6 +3526,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
+  altLockedContainer: {
+    opacity: 0.45,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginLeft: 10,
+    gap: 4,
+  },
+  premiumBadgeText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   tooltipButton: {
     marginLeft: 8,
     padding: 4,
@@ -2865,6 +3568,37 @@ const styles = StyleSheet.create({
   },
   toggleThumbActive: {
     alignSelf: 'flex-end',
+  },
+  // Locked (free-user) variant of the Speaker & Engagement toggle.
+  toggleSwitchLocked: {
+    backgroundColor: '#E0E0E0',
+  },
+  toggleThumbLocked: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportContactsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
+  },
+  exportContactsButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   previewModalContainer: {
     flex: 1,
@@ -3015,167 +3749,5 @@ const styles = StyleSheet.create({
   },
 });
 
-const previewStyles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#FFF',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EFEFEF',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.black,
-  },
-  cardScrollView: {
-    flex: 1,
-  },
-  cardContainer: {
-    backgroundColor: COLORS.white,
-    borderRadius: 15,
-    padding: 16,
-    margin: 16,
-  },
-  qrContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  qrPlaceholder: {
-    width: 150,
-    height: 150,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F8F8',
-    borderRadius: 8,
-  },
-  qrText: {
-    marginTop: 10,
-    color: '#999',
-  },
-  logoContainer: {
-    width: '100%',
-    position: 'relative',
-    overflow: 'visible',
-    marginBottom: 80,
-    borderRadius: 12,
-    padding: 8,
-  },
-  logoFrame: {
-    width: '100%',
-    height: 200,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    borderRadius: 12,
-  },
-  logoPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#d3d3d3',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoPlaceholderText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    textShadowColor: 'rgba(255, 255, 255, 0.6)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
-  },
-  profileContainer: {
-    position: 'absolute',
-    bottom: -60,
-    left: '50%',
-    transform: [{ translateX: -60 }],
-    alignItems: 'center',
-  },
-  profileImageContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 5,
-    borderColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  profileImage: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-  },
-  name: {
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 5,
-    marginTop: 20,
-    color: COLORS.black,
-    marginLeft: 10,
-  },
-  position: {
-    fontSize: 18,
-    marginBottom: 5,
-    color: '#444',
-    marginLeft: 10,
-  },
-  company: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 20,
-    color: '#666',
-    marginLeft: 10,
-  },
-  contactSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    padding: 5,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  contactText: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#333',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#EFEFEF',
-  },
-  continueButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginRight: 8,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  continueText: {
-    fontWeight: '500',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginLeft: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveText: {
-    color: COLORS.white,
-    fontWeight: '500',
-  },
-});
+// previewStyles have been moved to CardPreviewModal component
 

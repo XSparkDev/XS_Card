@@ -20,6 +20,7 @@ const { db, admin, storage, bucket } = require('./firebase.js');
 const { sendMailWithStatus } = require('./public/Utils/emailService');
 const { handleSingleUpload } = require('./middleware/fileUpload');
 const publicContactController = require('./controllers/publicContactController');
+const { getScanStatus, recordScanAndGetStatus } = require('./services/scanLimitService');
 const app = express();
 const port = 8383;
 
@@ -336,6 +337,86 @@ app.post('/track-scan', async (req, res) => {
             success: false,
             message: 'Failed to track scan',
             error: error.message 
+        });
+    }
+});
+
+// Record a scan (the moment saveContact.html loads for a resolved card owner)
+// and return the freshly-updated rolling-hour status. The scan is logged BEFORE
+// the limit is computed, so the returned status already includes this scan.
+app.post('/record-scan/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+        return res.status(400).send({ success: false, message: 'User ID is required' });
+    }
+
+    try {
+        const status = await recordScanAndGetStatus(userId);
+        return res.status(200).send({ success: true, ...status });
+    } catch (error) {
+        if (error.status === 404) {
+            return res.status(404).send({ success: false, message: 'User not found' });
+        }
+        console.error('Error recording scan:', error);
+        return res.status(500).send({
+            success: false,
+            message: 'Failed to record scan',
+            error: error.message,
+        });
+    }
+});
+
+// Authoritative email-existence check against Firebase Auth (Admin SDK).
+// Used by the login screen to decide "wrong password" vs "no account" — the
+// client SDK's fetchSignInMethodsForEmail is unreliable under email-enumeration
+// protection (it always returns []), so the decision is made here instead.
+app.post('/check-email-exists', async (req, res) => {
+    const { email } = req.body || {};
+
+    if (!email || typeof email !== 'string' || !email.trim()) {
+        return res.status(400).send({ success: false, message: 'Email is required' });
+    }
+
+    try {
+        await admin.auth().getUserByEmail(email.trim().toLowerCase());
+        // No throw → the account exists in Firebase Auth.
+        return res.status(200).send({ success: true, exists: true });
+    } catch (error) {
+        if (error && error.code === 'auth/user-not-found') {
+            return res.status(200).send({ success: true, exists: false });
+        }
+        console.error('Error checking email existence:', error);
+        return res.status(500).send({
+            success: false,
+            message: 'Failed to check email',
+            error: error.message,
+        });
+    }
+});
+
+// Rolling-hour scan-limit status for a user. Public (used by saveContact.html
+// before showing the form) and polled by the card owner's app. Premium users
+// always return isLimitExceeded:false.
+app.get('/scan-status/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+        return res.status(400).send({ success: false, message: 'User ID is required' });
+    }
+
+    try {
+        const status = await getScanStatus(userId);
+        return res.status(200).send({ success: true, ...status });
+    } catch (error) {
+        if (error.status === 404) {
+            return res.status(404).send({ success: false, message: 'User not found' });
+        }
+        console.error('Error fetching scan status:', error);
+        return res.status(500).send({
+            success: false,
+            message: 'Failed to fetch scan status',
+            error: error.message,
         });
     }
 });

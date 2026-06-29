@@ -6,7 +6,7 @@ import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-naviga
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../types';
 import { ENDPOINTS, buildUrl, useToast } from '../../utils/api';
-import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../../config/firebaseConfig';
 
@@ -377,12 +377,11 @@ export default function CompleteProfile() {
       'Choose where you want to get your profile picture from. This will be displayed on your digital business card.',
       [
         {
-          text: 'Camera',
+          text: 'Choose File',
           onPress: async () => {
-            const imageUri = await pickImage(true);
+            const imageUri = await pickImageFromDocument();
             if (imageUri) {
               setProfileImage(imageUri);
-              // Clear OAuth prefill image if user picks their own
               setOauthPrefillImage(null);
             }
           },
@@ -391,6 +390,17 @@ export default function CompleteProfile() {
           text: 'Gallery',
           onPress: async () => {
             const imageUri = await pickImage(false);
+            if (imageUri) {
+              setProfileImage(imageUri);
+              // Clear OAuth prefill image if user picks their own
+              setOauthPrefillImage(null);
+            }
+          },
+        },
+        {
+          text: 'Camera',
+          onPress: async () => {
+            const imageUri = await pickImage(true);
             if (imageUri) {
               setProfileImage(imageUri);
               // Clear OAuth prefill image if user picks their own
@@ -447,9 +457,9 @@ export default function CompleteProfile() {
       'Choose where you want to get your company logo from. This will be displayed on your digital business card.',
       [
         {
-          text: 'Camera',
+          text: 'Choose File',
           onPress: async () => {
-            const imageUri = await pickImage(true);
+            const imageUri = await pickImageFromDocument();
             if (imageUri) setCompanyLogo(imageUri);
           },
         },
@@ -457,6 +467,13 @@ export default function CompleteProfile() {
           text: 'Gallery',
           onPress: async () => {
             const imageUri = await pickImage(false);
+            if (imageUri) setCompanyLogo(imageUri);
+          },
+        },
+        {
+          text: 'Camera',
+          onPress: async () => {
+            const imageUri = await pickImage(true);
             if (imageUri) setCompanyLogo(imageUri);
           },
         },

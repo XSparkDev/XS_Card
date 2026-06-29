@@ -9,6 +9,9 @@ import { AuthProvider } from './src/context/AuthContext';
 import { EventNotificationProvider } from './src/context/EventNotificationContext';
 import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
+import PremiumUpsellProvider from './src/components/PremiumUpsellProvider';
+import { TooltipProvider } from './src/context/TooltipContext';
+import { ScanLimitProvider } from './src/context/ScanLimitContext';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
 import { COLORS } from './src/constants/colors';
@@ -16,6 +19,12 @@ import { useSystemUI } from './src/hooks/useSystemUI';
 import { MeetingNotificationProvider } from './src/context/MeetingNotificationContext';
 import { checkForUpdate, VersionInfo } from './src/services/updateCheckService';
 import { UpdateModal } from './src/components/UpdateModal';
+import LocationPermissionModal from './src/components/LocationPermissionModal';
+import { useFonts } from 'expo-font';
+import { applyGlobalMontserrat, MONTSERRAT_FONTS } from './src/utils/globalFont';
+
+// Make Montserrat the app-wide default font (must run before any Text renders).
+applyGlobalMontserrat();
 
 // Suppress specific warnings
 LogBox.ignoreLogs([
@@ -152,14 +161,23 @@ function AppContent() {
         <ColorSchemeProvider>
           <MeetingNotificationProvider>
           <ToastProvider>
+            <TooltipProvider>
+            <ScanLimitProvider>
             <NavigationContainer ref={navigationRef}>
-              <ExpoStatusBar style="auto" translucent={true} />
-              <Stack.Navigator screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="Auth" component={AuthNavigator} />
-                <Stack.Screen name="MainApp" component={TabNavigator} />
-              </Stack.Navigator>
+              <PremiumUpsellProvider>
+                <ExpoStatusBar style="auto" translucent={true} />
+                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="Auth" component={AuthNavigator} />
+                  <Stack.Screen name="MainApp" component={TabNavigator} />
+                </Stack.Navigator>
+              </PremiumUpsellProvider>
             </NavigationContainer>
-            
+            </ScanLimitProvider>
+            </TooltipProvider>
+
+            {/* First-launch location permission rationale (optional feature) */}
+            <LocationPermissionModal />
+
             {/* Update Modal - shown when update is available */}
             {updateInfo && (
               <UpdateModal
@@ -178,6 +196,10 @@ function AppContent() {
 }
 
 export default function App() {
+  // Load Montserrat before rendering so the global default font is available.
+  const [fontsLoaded] = useFonts(MONTSERRAT_FONTS);
+  if (!fontsLoaded) return null;
+
   return (
     <AppErrorBoundary>
       <AppContent />

@@ -18,6 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, API_BASE_URL } from '../utils/api';
 import { useToast } from '../hooks/useToast';
+import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
 import Header from '../components/Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getImageUrl } from '../utils/imageUtils';
@@ -62,6 +63,7 @@ interface UserData {
 export default function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const toast = useToast();
+  const { triggerUpsell } = usePremiumUpsell();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
@@ -359,11 +361,16 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <Header title="Settings" />
-      
-      <ScrollView 
-        style={styles.content} 
+
+      {/* Curved, shadowed content shell — matches Cards/Contacts/Dashboard. Top
+          safe-area edge is excluded above so the shell docks flush under the
+          absolute header (the header handles the notch), exactly like Cards. */}
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
+      <ScrollView
+        style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         bounces={true}
@@ -497,13 +504,14 @@ export default function SettingsScreen() {
             () => navigation.navigate('EventPreferences')
           )}
 
-          {(userData?.plan === 'premium' || userData?.plan === 'enterprise') && (
-            renderSettingItem(
-              'calendar-today',
-              'Calendar Preferences',
-              'Configure your public booking calendar',
-              () => navigation.navigate('CalendarPreferences')
-            )
+          {renderSettingItem(
+            'calendar-today',
+            'Calendar Preferences',
+            'Configure your public booking calendar',
+            () => {
+              if (triggerUpsell({ featureName: 'Calendar Preferences', description: 'Calendar Preferences lets you configure your public booking calendar and manage your availability. Upgrade to Premium to unlock this feature.' })) return;
+              navigation.navigate('CalendarPreferences');
+            }
           )}
 
           {renderSettingItem(
@@ -570,6 +578,8 @@ export default function SettingsScreen() {
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+      </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -579,10 +589,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  // Curved, shadowed content shell (identical to Cards/Contacts) — lifts the
+  // content off the flat header with an upward groove shadow.
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 100,
+    paddingTop: 16, // Header clearance now handled by contentShell's marginTop
   },
   scrollContent: {
     paddingBottom: 20,

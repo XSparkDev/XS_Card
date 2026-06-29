@@ -5,6 +5,8 @@ import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
+import LogoPlaceholder from '../LogoPlaceholder';
+import QrPlaceholder from '../QrPlaceholder';
 
 type CardData = any;
 
@@ -20,10 +22,14 @@ interface Props {
   onPressSocial: (platform: string, value: string) => void;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
   onPressEdit?: () => void;
+  scanLimited?: boolean;
+  scanCountdown?: string;
+  qrTimedOut?: boolean;
+  onRetryQr?: () => void;
 }
 
 export default function CardTemplate2(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
   const theme = card.colorScheme || colorFallback;
 
   // Use exact same icon mapping as Template 1
@@ -77,21 +83,24 @@ export default function CardTemplate2(props: Props) {
             resizeMode="contain"
           />
         ) : (
-          <Text style={isTablet() ? { fontSize: scale(16) } : undefined}>Loading QR Code...</Text>
+          <View style={styles.qrPlaceholder}>
+            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} timedOut={qrTimedOut} onRetry={onRetryQr} />
+          </View>
         )}
       </View>
 
       {/* Logo and Profile on same line - logo takes most of line, profile on right */}
       <View style={styles.imagesRow}>
         <View style={styles.logoContainer}>
-          <Image
-            source={card.companyLogo && getImageUrl(card.companyLogo) ? 
-              { uri: getImageUrl(card.companyLogo) } : 
-              require('../../../assets/images/logoplaceholder.jpg')
-            }
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          {card.companyLogo && getImageUrl(card.companyLogo) ? (
+            <Image
+              source={{ uri: getImageUrl(card.companyLogo) || '' }}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          ) : (
+            <LogoPlaceholder style={styles.logo} />
+          )}
         </View>
         {card.profileImage && getImageUrl(card.profileImage) ? (
           <Image
@@ -211,6 +220,15 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     alignSelf: 'center',
+  },
+  qrPlaceholder: {
+    width: 150,
+    height: 150,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
   },
   imagesRow: {
     flexDirection: 'row',

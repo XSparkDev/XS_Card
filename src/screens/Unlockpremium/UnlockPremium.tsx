@@ -38,7 +38,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const [currency, setCurrency] = useState<'ZAR' | 'USD'>(DEFAULT_CURRENCY as 'ZAR' | 'USD');
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
   const [loadingSubscriptionData, setLoadingSubscriptionData] = useState(false);
-  const { logout } = useAuth(); // Use our centralized auth context
+  const { logout, updateUserPlan } = useAuth(); // Use our centralized auth context
   
   // RevenueCat state - iOS payment integration
   const [revenueCatPackages, setRevenueCatPackages] = useState<SubscriptionPackage[]>([]);
@@ -167,7 +167,9 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
         console.log('UnlockPremium: User plan from database:', userPlanFromDB);
         
         setUserPlan(userPlanFromDB);
-        
+        // Keep AuthContext in sync with the backend source of truth
+        updateUserPlan(userPlanFromDB);
+
         // Update local storage with current plan
         const userData = await AsyncStorage.getItem('userData');
         if (userData) {
@@ -238,7 +240,9 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
         
         // Update user plan locally
         setUserPlan('premium');
-        
+        // Push into AuthContext so premium access is unlocked app-wide without re-login
+        updateUserPlan('premium');
+
         // Update local storage
         const userData = await AsyncStorage.getItem('userData');
         if (userData) {

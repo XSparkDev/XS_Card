@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, Platform, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import AdminHeader from '../../components/AdminHeader';
+import EntryInfoModal from '../../components/EntryInfoModal';
+import FeatureTip from '../../components/FeatureTip';
+import { useTooltipContext } from '../../context/TooltipContext';
+import { useAuth } from '../../context/AuthContext';
 import { LineChart } from 'react-native-chart-kit';
 import { API_BASE_URL, ENDPOINTS, getUserId, authenticatedFetchWithRefresh } from '../../utils/api';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -120,6 +124,8 @@ export default function AdminDashboard() {
   const [userPlan, setUserPlan] = useState<string>('free');
   const [timeRange, setTimeRange] = useState<'3m' | '6m' | '1y'>('6m');
   const navigation = useNavigation<AdminDashboardNavigationProp>();
+  const { isFreeUser, isLoadingUserStatus } = useAuth();
+  const { notifyScroll } = useTooltipContext();
   const [showContactsModal, setShowContactsModal] = useState(false);
   const [showCardsModal, setShowCardsModal] = useState(false);
   const [contactsList, setContactsList] = useState<Contact[]>([]);
@@ -435,33 +441,15 @@ export default function AdminDashboard() {
     }, [timeRange])
   );
 
+  // Free-user guard, driven by the single canonical source of truth.
+  // Wait until the plan is definitively resolved (isLoadingUserStatus === false)
+  // before evaluating, so a premium user is never bounced during the fetch.
   useEffect(() => {
-    const checkUserPlan = async () => {
-      try {
-        const userData = await AsyncStorage.getItem('userData');
-        if (userData) {
-          const { plan } = JSON.parse(userData);
-          setUserPlan(plan);
-          
-          // Redirect if user is on free plan
-          if (plan === 'free') {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'MainApp', params: undefined }],
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error checking user plan:', error);
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'MainApp', params: undefined }],
-        });
-      }
-    };
-
-    checkUserPlan();
-  }, [navigation]);
+    if (isLoadingUserStatus) return;
+    if (isFreeUser) {
+      navigation.goBack();
+    }
+  }, [navigation, isFreeUser, isLoadingUserStatus]);
 
   // Refetch data when time range changes
   useEffect(() => {
@@ -515,99 +503,135 @@ export default function AdminDashboard() {
     <View style={styles.container}>
       <AdminHeader title="Dashboard" />
       
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       ) : (
-        <ScrollView 
+        <ScrollView
           style={styles.content}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={1}
         >
         <Text style={styles.sectionTitle}>Overview</Text>
         
-        {/* Overview Cards - Removed ellipses icon */}
+        {/* Overview Cards */}
         <View style={styles.overviewContainer}>
-          <TouchableOpacity 
-            style={[styles.overviewCard, { backgroundColor: COLORS.primary }]}
-            onPress={() => setShowCardsModal(true)}
-            activeOpacity={0.7}
+          <FeatureTip
+            tipKey="dashboard_total_cards"
+            content="Total no. of cards created"
+            position="bottom"
+            bubbleAlign="left"
+            inScrollView={true}
+            style={{ width: '48%' }}
           >
-            <Text style={styles.cardNumber}>{totalCards}</Text>
-            <Text style={styles.cardLabel}>Total Cards</Text>
-            <MaterialCommunityIcons name="dots-horizontal" size={24} color="white" style={styles.cardIcon} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.overviewCard, { backgroundColor: '#1B2559' }]}
-            onPress={() => setShowContactsModal(true)}
-            activeOpacity={0.7}
+            <TouchableOpacity
+              style={[styles.overviewCard, { width: '100%', backgroundColor: COLORS.primary }]}
+              onPress={() => setShowCardsModal(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cardNumber}>{totalCards}</Text>
+              <Text style={styles.cardLabel}>Total Cards</Text>
+              <MaterialCommunityIcons name="dots-horizontal" size={24} color="white" style={styles.cardIcon} />
+            </TouchableOpacity>
+          </FeatureTip>
+
+          <FeatureTip
+            tipKey="dashboard_total_contacts"
+            content="Total no. of contacts"
+            position="bottom"
+            bubbleAlign="right"
+            inScrollView={true}
+            style={{ width: '48%' }}
           >
-            <Text style={styles.cardNumber}>{totalContacts}</Text>
-            <Text style={styles.cardLabel}>Total Contacts</Text>
-            <MaterialCommunityIcons name="dots-horizontal" size={24} color="white" style={styles.cardIcon} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.overviewCard, { width: '100%', backgroundColor: '#1B2559' }]}
+              onPress={() => setShowContactsModal(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cardNumber}>{totalContacts}</Text>
+              <Text style={styles.cardLabel}>Total Contacts</Text>
+              <MaterialCommunityIcons name="dots-horizontal" size={24} color="white" style={styles.cardIcon} />
+            </TouchableOpacity>
+          </FeatureTip>
         </View>
 
         {/* Monthly Growth Section - Removed ellipses icon */}
         <View style={styles.growthSection}>
           <View style={styles.growthHeader}>
             <Text style={styles.sectionTitle}>Monthly Growth</Text>
-            <View style={styles.timeRangeSelector}>
-              <TouchableOpacity 
-                style={[styles.timeRangeButton, timeRange === '3m' && styles.activeTimeRange]} 
-                onPress={() => setTimeRange('3m')}
-              >
-                <Text style={[styles.timeRangeText, timeRange === '3m' && styles.activeTimeRangeText]}>3M</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.timeRangeButton, timeRange === '6m' && styles.activeTimeRange]} 
-                onPress={() => setTimeRange('6m')}
-              >
-                <Text style={[styles.timeRangeText, timeRange === '6m' && styles.activeTimeRangeText]}>6M</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.timeRangeButton, timeRange === '1y' && styles.activeTimeRange]} 
-                onPress={() => setTimeRange('1y')}
-              >
-                <Text style={[styles.timeRangeText, timeRange === '1y' && styles.activeTimeRangeText]}>1Y</Text>
-              </TouchableOpacity>
-            </View>
+            <FeatureTip
+              tipKey="dashboard_graph_filter"
+              content="Filter graph by time period"
+              position="bottom"
+              inScrollView={true}
+            >
+              <View style={styles.timeRangeSelector}>
+                <TouchableOpacity
+                  style={[styles.timeRangeButton, timeRange === '3m' && styles.activeTimeRange]}
+                  onPress={() => setTimeRange('3m')}
+                >
+                  <Text style={[styles.timeRangeText, timeRange === '3m' && styles.activeTimeRangeText]}>3M</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.timeRangeButton, timeRange === '6m' && styles.activeTimeRange]}
+                  onPress={() => setTimeRange('6m')}
+                >
+                  <Text style={[styles.timeRangeText, timeRange === '6m' && styles.activeTimeRangeText]}>6M</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.timeRangeButton, timeRange === '1y' && styles.activeTimeRange]}
+                  onPress={() => setTimeRange('1y')}
+                >
+                  <Text style={[styles.timeRangeText, timeRange === '1y' && styles.activeTimeRangeText]}>1Y</Text>
+                </TouchableOpacity>
+              </View>
+            </FeatureTip>
           </View>
-          
-          <LineChart
-            data={getFilteredChartData()}
-            width={Dimensions.get('window').width - 40}
-            height={220}
-            yAxisInterval={1} // Force 1 unit intervals
-            yAxisLabel=""
-            yAxisSuffix=""
-            chartConfig={{
-              backgroundColor: '#fff',
-              backgroundGradientFrom: '#fff',
-              backgroundGradientTo: '#fff',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(27, 37, 89, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-              style: {
-                borderRadius: 16
-              },
-              propsForDots: {
-                r: '6',
-                strokeWidth: '2',
-                stroke: '#fff'
-              },
-              useShadowColorFromDataset: true,
-              count: 5,
-              formatYLabel: (value) => Math.floor(Number(value)).toString() // Ensure integer labels
-            }}
-            fromZero={true}
-            segments={4}
-            bezier
-            style={styles.chart}
-          />
-          
+
+          <FeatureTip
+            tipKey="dashboard_chart"
+            content="Monthly scan and contact growth"
+            position="bottom"
+            inScrollView={true}
+          >
+            <LineChart
+              data={getFilteredChartData()}
+              width={Dimensions.get('window').width - 40}
+              height={220}
+              yAxisInterval={1}
+              yAxisLabel=""
+              yAxisSuffix=""
+              chartConfig={{
+                backgroundColor: '#fff',
+                backgroundGradientFrom: '#fff',
+                backgroundGradientTo: '#fff',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(27, 37, 89, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                style: {
+                  borderRadius: 16
+                },
+                propsForDots: {
+                  r: '6',
+                  strokeWidth: '2',
+                  stroke: '#fff'
+                },
+                useShadowColorFromDataset: true,
+                count: 5,
+                formatYLabel: (value) => Math.floor(Number(value)).toString()
+              }}
+              fromZero={true}
+              segments={4}
+              bezier
+              style={styles.chart}
+            />
+          </FeatureTip>
+
           <Text style={styles.axisLabel}>Number of Cards/Contacts</Text>
           
           <View style={styles.legendContainer}>
@@ -659,6 +683,8 @@ export default function AdminDashboard() {
         */}
         </ScrollView>
       )}
+      </View>
+      </View>
 
       <ContactsModal 
         visible={showContactsModal}
@@ -666,10 +692,27 @@ export default function AdminDashboard() {
         contacts={contactsList}
       />
 
-      <CardsModal 
+      <CardsModal
         visible={showCardsModal}
         onClose={() => setShowCardsModal(false)}
         cards={cardsList}
+      />
+
+      <EntryInfoModal
+        icon="view-dashboard"
+        heading="Your Dashboard"
+        freeTextBefore="Get a snapshot of your card's performance — your total cards, contacts and recent growth. To unlock full analytics and insights, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText="Welcome to your Dashboard. Here you can track your Total Cards and Total Contacts, see your Average Card Views, and follow Monthly Growth and Contact Growth to measure the reach of your digital business card."
+        featureIcons={[
+          { icon: 'eye', label: 'Card Views' },
+          { icon: 'account-group', label: 'Contacts' },
+          { icon: 'card-account-details', label: 'Cards' },
+          { icon: 'chart-line', label: 'Growth' },
+        ]}
+        howItWorksText="The Dashboard reads from your own cards and contacts. The Overview shows your Total Cards and Total Contacts; the charts plot Monthly Growth, Average Card Views and Contact Growth over the last several months. Tapping a card opens its underlying list. For speed, recent data is served from a local cache and refreshed from the backend in the background, so the numbers stay current without slowing the screen down."
+        dontShowAgainKey="dashboard_dont_show_again"
       />
     </View>
   );
@@ -680,16 +723,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#fff',
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    marginTop: 100,
   },
   scrollContent: {
-    paddingBottom: Platform.select({
-      ios: 10,
-      android: 10,
-    }),
+    paddingBottom: 120,
     flexGrow: 1,
   },
   sectionTitle: {

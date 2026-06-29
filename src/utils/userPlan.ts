@@ -30,6 +30,32 @@ export const isPremiumUser = async (): Promise<boolean> => {
   return plan === 'premium' || plan === 'enterprise';
 };
 
+/** The plan strings that grant premium access (case-insensitive). */
+const PREMIUM_PLANS = new Set(['premium', 'enterprise', 'admin']);
+
+/** True only if the given plan value explicitly grants premium access. */
+export const planIsPremium = (plan?: string | null): boolean =>
+  PREMIUM_PLANS.has(String(plan ?? '').trim().toLowerCase());
+
+/**
+ * THE single, canonical free-vs-premium gate used everywhere (upsell triggers,
+ * lock icons, feature gates). Takes the user object (or anything carrying a
+ * `plan` field).
+ *
+ * FAIL CLOSED: a user is premium ONLY when their plan is explicitly a premium
+ * tier (premium/enterprise/admin). Anything else — 'free', '', null, undefined,
+ * or an unrecognised value — is treated as FREE (restricted). This guarantees a
+ * free user can never accidentally be granted premium access while data is
+ * missing or still loading.
+ *
+ * IMPORTANT: because this fails closed, callers that gate visible UI must wait
+ * for `isLoadingUserStatus === false` (from AuthContext) before evaluating it,
+ * so a premium user is not briefly shown restricted UI during the initial
+ * plan fetch. See AuthContext.isLoadingUserStatus.
+ */
+export const isFreeUser = (user?: { plan?: string | null } | null): boolean =>
+  !planIsPremium(user?.plan);
+
 // Get plan limits
 export const getPlanLimits = (plan: UserPlan): PlanLimits => {
   switch (plan) {

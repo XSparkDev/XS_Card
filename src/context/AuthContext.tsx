@@ -14,7 +14,9 @@ import { ErrorHandler, ERROR_CODES, handleAuthError, handleStorageError, createA
 import { auth } from '../config/firebaseConfig';
 import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser, sendEmailVerification } from 'firebase/auth';
 // API utilities for data recovery
-import { buildUrl, ENDPOINTS, setGlobalAuthContextRef } from '../utils/api';
+import { buildUrl, ENDPOINTS, setGlobalAuthContextRef, authenticatedFetchWithRefresh } from '../utils/api';
+import { planIsPremium } from '../utils/userPlan';
+import { AppState } from 'react-native';
 
 // User interface
 export interface User {
@@ -37,6 +39,10 @@ interface AuthState {
   lastLoginTime: number | null;
   error: string | null;
   firebaseReady: boolean; // Track when Firebase auth state is ready
+  // True until the user's premium plan has been definitively resolved from the
+  // backend (the single source of truth). Gates must not evaluate premium
+  // status while this is true, to avoid showing the wrong UI during the fetch.
+  isLoadingUserStatus: boolean;
 }
 
 // Authentication context interface
@@ -48,6 +54,10 @@ interface AuthContextType extends AuthState {
   clearError: () => void;
   setLoading: (loading: boolean) => void;
   resendVerificationEmail: () => Promise<void>; // Resend email verification
+  updateUserPlan: (plan: string) => void; // Refresh in-memory user.plan from backend sync
+  // Derived, canonical premium gate (fail-closed). Prefer this over reading
+  // user.plan directly. Only meaningful once isLoadingUserStatus === false.
+  isFreeUser: boolean;
 }
 
 // Action types for the reducer
@@ -60,7 +70,9 @@ type AuthAction =
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESTORE_AUTH'; payload: AuthData }
   | { type: 'SET_FIREBASE_READY'; payload: boolean }
-  | { type: 'SET_EMAIL_VERIFIED'; payload: boolean };
+  | { type: 'SET_EMAIL_VERIFIED'; payload: boolean }
+  | { type: 'UPDATE_USER_PLAN'; payload: { plan: string } }
+  | { type: 'SET_USER_STATUS_LOADING'; payload: boolean };
 
 // Initial state
 const initialState: AuthState = {
@@ -73,11 +85,28 @@ const initialState: AuthState = {
   lastLoginTime: null,
   error: null,
   firebaseReady: false, // Firebase auth state not ready initially
+  isLoadingUserStatus: true, // Premium plan not yet resolved from backend
 };
 
 // Auth reducer
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
+    case 'SET_USER_STATUS_LOADING':
+      if (state.isLoadingUserStatus === action.payload) return state;
+      return { ...state, isLoadingUserStatus: action.payload };
+
+    case 'UPDATE_USER_PLAN':
+      // Keep the in-memory user.plan in sync with the backend plan that other
+      // parts of the app (Header sync, UnlockPremium) fetch. Guard against
+      // no-op dispatches so this can be safely called on every screen focus.
+      if (!state.user || state.user.plan === action.payload.plan) {
+        return state;
+      }
+      return {
+        ...state,
+        user: { ...state.user, plan: action.payload.plan },
+      };
+
     case 'SET_LOADING':
       return {
         ...state,
@@ -175,6 +204,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     setGlobalAuthContextRef({ dispatch });
   }, []);
+
+  // ── Single source of truth for premium status ──────────────────────────────
+  // Whenever a user becomes authenticated, definitively resolve their plan from
+  // the backend (GET /Users/{id}) — the canonical source — then flip
+  // isLoadingUserStatus to false. This is the ONLY place the plan is fetched for
+  // gating; screens read the result from this context. Also refreshes when the
+  // app returns to the foreground so upgrades/lapses reflect without a re-login.
+  const userId = state.user?.id || (state.user as any)?.uid || null;
+  useEffect(() => {
+    let active = true;
+
+    // Signed out → nothing to resolve; not loading.
+    if (!userId) {
+      dispatch({ type: 'SET_USER_STATUS_LOADING', payload: false });
+      return;
+    }
+
+    const resolvePlan = async (showLoading: boolean) => {
+      if (showLoading) dispatch({ type: 'SET_USER_STATUS_LOADING', payload: true });
+      try {
+        const res = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_USER}/${userId}`, {
+          method: 'GET',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const resolvedPlan = (data?.plan ?? 'free');
+          if (!active) return;
+          dispatch({ type: 'UPDATE_USER_PLAN', payload: { plan: resolvedPlan } });
+          // Persist so the next cold start restores the correct plan.
+          try {
+            const raw = await getStoredAuthData();
+            if (raw?.userData) {
+              await storeAuthData({ ...raw, userData: { ...raw.userData, plan: resolvedPlan } });
+            }
+          } catch { /* persistence is best-effort */ }
+        }
+      } catch {
+        /* network/auth error — keep whatever plan we have; fail closed downstream */
+      } finally {
+        if (active) dispatch({ type: 'SET_USER_STATUS_LOADING', payload: false });
+      }
+    };
+
+    // Initial definitive resolve (shows loading until done).
+    resolvePlan(true);
+
+    // Near-real-time refresh on app foreground (no loading flicker).
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') resolvePlan(false);
+    });
+
+    return () => {
+      active = false;
+      sub?.remove();
+    };
+  }, [userId]);
 
   // Firebase Auth State Listener - NEW INTEGRATION
   useEffect(() => {
@@ -582,6 +667,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'SET_LOADING', payload: loading });
   };
 
+  const updateUserPlan = (plan: string): void => {
+    dispatch({ type: 'UPDATE_USER_PLAN', payload: { plan } });
+  };
+
   // Context value
   const value: AuthContextType = {
     ...state,
@@ -592,6 +681,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearError,
     setLoading,
     resendVerificationEmail,
+    updateUserPlan,
+    // Canonical, fail-closed premium gate derived from the single source.
+    isFreeUser: !planIsPremium(state.user?.plan),
   };
 
   return (

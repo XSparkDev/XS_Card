@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, Animated, ScrollView, ImageStyle, Modal, Linking, Alert, TextInput, ViewStyle, ActivityIndicator, Platform, Dimensions, Share } from 'react-native';
+import { tabBarScrollY } from '../../utils/tabBarScroll';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
+import FeatureTip from '../../components/FeatureTip';
+import { useTooltipContext } from '../../context/TooltipContext';
 import { API_BASE_URL, ENDPOINTS, buildUrl, getUserId, authenticatedFetchWithRefresh, forceLogoutExpiredToken } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -15,12 +18,23 @@ import { isProfileIncompleteError } from '../../utils/profileErrorHandler';
 import ProfileCompletionModal from '../../components/ProfileCompletionModal';
 import { isTablet, getCardWidth, scale, getSpacing } from '../../utils/responsive';
 import { LinearGradient } from 'expo-linear-gradient';
+import LogoPlaceholder from '../../components/LogoPlaceholder';
+import QrPlaceholder from '../../components/QrPlaceholder';
+import { useScanLimit } from '../../context/ScanLimitContext';
 import CardTemplate2 from '../../components/cards/CardTemplate2';
 import CardTemplate3 from '../../components/cards/CardTemplate3';
 import CardTemplate4 from '../../components/cards/CardTemplate4';
 import CardTemplate5 from '../../components/cards/CardTemplate5';
 import { getAltNumber, migrateAltNumbersToBackend } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
+
+// Scan counter color coding: 1-2 scans green, 3-4 orange, 5 (limit) red.
+const SCAN_COUNTER_COLORS: Record<'green' | 'orange' | 'red', string> = {
+  green: '#2E7D32',
+  orange: '#FB8C00',
+  red: '#E53935',
+};
 
 // Update interfaces to match new data structure
 interface UserData {
@@ -39,6 +53,7 @@ interface UserData {
 }
 
 interface CardData {
+  cardName?: string;
   name: string;
   surname: string;
   email: string;
@@ -107,8 +122,11 @@ export default function CardsScreen() {
   const navigation = useNavigation<NavigationProp>();
   // Change QR code to map per card index for tablet multi-card support
   const [qrCodes, setQrCodes] = useState<Record<number, string>>({});
+  const [qrTimedOut, setQrTimedOut] = useState<Record<number, boolean>>({});
+  const qrTimeouts = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const [userData, setUserData] = useState<UserData | null>(null);
   const { colorScheme, updateColorScheme } = useColorScheme();
+  const { notifyScroll } = useTooltipContext();
   // Remove cardData state since it's now part of userData
   const borderRotation = useRef(new Animated.Value(0)).current;
   const [isShareModalVisible, setIsShareModalVisible] = useState(false);
@@ -134,8 +152,53 @@ export default function CardsScreen() {
   // Track card heights for tablet shadow positioning
   const [cardHeights, setCardHeights] = useState<Record<number, number>>({});
 
+  // ===== Scan rate limit (5 scans / rolling hour for free users) =====
+  // Counter, limit state and countdown all come from the app-wide ScanLimitContext
+  // (polled once at the app root) so they stay in sync with the persistent header banner.
+  const { isFreeUser, isLoadingUserStatus } = usePremiumUpsell();
+  const { scansThisHour, isLimitExceeded: scanLimited, countdownLabel: scanCountdown, counterColor } = useScanLimit();
+
   // Get responsive card width (mobile: full width, tablet: fixed width)
   const cardWidth = getCardWidth(420);
+
+  // When a free user is over the limit, never hand the real (scannable) QR to the
+  // card templates — they fall back to a non-scannable placeholder automatically.
+  const effectiveQrUri = (idx: number): string | undefined =>
+    isFreeUser && scanLimited ? undefined : qrCodes[idx];
+
+  // ===== Page-indicator scroll fade =====
+  // The current-card pill + page dots rest at a low opacity and animate to full
+  // while the user slides between cards, then settle back — a subtle "gain
+  // opacity on scroll" flow shared by the whole indicator.
+  const INDICATOR_REST_OPACITY = 0.45;
+  const indicatorOpacity = useRef(new Animated.Value(INDICATOR_REST_OPACITY)).current;
+  const indicatorFadeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const revealIndicator = useCallback(() => {
+    if (indicatorFadeTimeout.current) clearTimeout(indicatorFadeTimeout.current);
+    Animated.timing(indicatorOpacity, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [indicatorOpacity]);
+
+  const settleIndicator = useCallback(() => {
+    if (indicatorFadeTimeout.current) clearTimeout(indicatorFadeTimeout.current);
+    indicatorFadeTimeout.current = setTimeout(() => {
+      Animated.timing(indicatorOpacity, {
+        toValue: INDICATOR_REST_OPACITY,
+        duration: 450,
+        useNativeDriver: true,
+      }).start();
+    }, 700);
+  }, [indicatorOpacity]);
+
+  useEffect(() => {
+    return () => {
+      if (indicatorFadeTimeout.current) clearTimeout(indicatorFadeTimeout.current);
+    };
+  }, []);
 
   // Add this function to handle scroll events
   const handleScroll = (event: any) => {
@@ -144,6 +207,8 @@ export default function CardsScreen() {
     const pageWidth = isTablet() ? cardWidth : Dimensions.get('window').width;
     const page = Math.round(offsetX / pageWidth);
     setCurrentPage(page);
+    // Slide in progress → keep the indicator at full opacity.
+    revealIndicator();
   };
 
   // Function to load alt numbers for migration purposes (deprecated - alt numbers now come from backend)
@@ -397,6 +462,12 @@ export default function CardsScreen() {
     }
   }, [currentPage, userData]);
 
+  const handleQrRetry = async (cardIndex: number) => {
+    setQrTimedOut(prev => ({ ...prev, [cardIndex]: false }));
+    const userId = await getUserId();
+    if (userId) fetchQRCode(userId, cardIndex);
+  };
+
   const fetchQRCode = async (userId: string, cardIndex: number) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -456,6 +527,28 @@ export default function CardsScreen() {
     }
     // Tablet QR codes are pre-loaded, no need to update on scroll
   }, [currentPage]); // Re-run when currentPage changes
+
+  // Start a 10-second countdown for the visible card — if the QR still hasn't
+  // arrived by then, reveal the gradient refresh button.
+  useEffect(() => {
+    const idx = currentPage;
+    if (qrCodes[idx]) {
+      // QR already loaded — clear any pending timeout and reset timed-out flag
+      clearTimeout(qrTimeouts.current[idx]);
+      delete qrTimeouts.current[idx];
+      setQrTimedOut(prev => ({ ...prev, [idx]: false }));
+      return;
+    }
+    // Not yet loaded: reset timed-out flag and start fresh 10-second timer
+    setQrTimedOut(prev => ({ ...prev, [idx]: false }));
+    clearTimeout(qrTimeouts.current[idx]);
+    qrTimeouts.current[idx] = setTimeout(() => {
+      setQrTimedOut(prev => ({ ...prev, [idx]: true }));
+    }, 10000);
+    return () => {
+      clearTimeout(qrTimeouts.current[idx]);
+    };
+  }, [currentPage, qrCodes]);
 
   useEffect(() => {
     Animated.timing(borderRotation, {
@@ -909,22 +1002,47 @@ export default function CardsScreen() {
     }
   }, [userData, currentPage]);
 
+  // ===== Current-card indicator =====
+  // Shown for every user, no plan gating — the pill names the card in view and
+  // its position in the set. It renders whenever at least one card is loaded.
+  const totalCards = userData?.cards?.length ?? 0;
+  const currentCardData = userData?.cards?.[currentPage];
+  const currentCardLabel =
+    currentCardData?.cardName?.trim() ||
+    currentCardData?.company?.trim() ||
+    `Card ${currentPage + 1}`;
+  const showCurrentCardPill = totalCards >= 1;
+
   return (
     <View style={styles.container}>
-      <Header 
-        title="Cards" 
+      <Header
+        title="Cards"
         showAddButton={true}  // Add this prop
+        // Show the edit tip first, then the add tip — never both at once. Only
+        // applies on phone, where the edit (✏️) tip lives in the header; on tablet
+        // there is no header edit tip so the add tip shows normally.
+        deferAddTipUntil={!isTablet() ? 'home_edit_button' : undefined}
         rightIcon={
           !isTablet() ? (
-            <TouchableOpacity onPress={handleEditCard}>
-              <Text style={styles.headerIconContainer}>
-                <MaterialIcons name="edit" size={24} color={COLORS.white} />
-              </Text>
-            </TouchableOpacity>
+            <FeatureTip
+              tipKey="home_edit_button"
+              content="Update your card details, photo and info"
+              position="bottom"
+              bubbleAlign="right"
+              arrowAtAnchor
+            >
+              <TouchableOpacity onPress={handleEditCard}>
+                <Text style={styles.headerIconContainer}>
+                  <MaterialIcons name="edit" size={24} color={COLORS.black} />
+                </Text>
+              </TouchableOpacity>
+            </FeatureTip>
           ) : undefined
         }
       />
-      <ScrollView 
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
+      <ScrollView
         horizontal
         pagingEnabled={!isTablet()}
         showsHorizontalScrollIndicator={false}
@@ -937,6 +1055,9 @@ export default function CardsScreen() {
           }
         ]}
         onScroll={handleScroll}
+        onScrollBeginDrag={revealIndicator}
+        onScrollEndDrag={settleIndicator}
+        onMomentumScrollEnd={settleIndicator}
         scrollEventThrottle={16}
         snapToInterval={isTablet() ? cardWidth + 30 : undefined}
         snapToAlignment={isTablet() ? 'start' : undefined}
@@ -958,7 +1079,7 @@ export default function CardsScreen() {
                   styles.sideShadowLeft,
                   {
                     height: cardHeights[index] - 8, // Subtract margins to match card content height
-                    top: 100 + 4, // pageContainer paddingTop + card marginTop to align with card's top edge
+                    top: 4, // card marginTop to align with card's top edge
                   }
                 ]}>
                   <LinearGradient
@@ -974,7 +1095,7 @@ export default function CardsScreen() {
                   styles.sideShadowRight,
                   {
                     height: cardHeights[index] - 8, // Subtract margins to match card content height
-                    top: 100 + 4, // pageContainer paddingTop + card marginTop to align with card's top edge
+                    top: 4, // card marginTop to align with card's top edge
                   }
                 ]}>
                   <LinearGradient
@@ -988,7 +1109,15 @@ export default function CardsScreen() {
                 </View>
               </>
             )}
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={isTablet() ? { paddingVertical: 0 } : undefined}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                tabBarScrollY.setValue(e.nativeEvent.contentOffset.y);
+                notifyScroll(e.nativeEvent.contentOffset.y);
+              }}
+              contentContainerStyle={isTablet() ? { paddingVertical: 0, paddingBottom: 200 } : { paddingBottom: isFreeUser ? 210 : 170 }}
+            >
               {/* Render by template: 2 uses alternative layout; 3 uses outlined version; default keeps existing */}
               {card.template === 2 ? (
                 <View
@@ -1000,7 +1129,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate2
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1014,6 +1143,10 @@ export default function CardsScreen() {
                       showAltNumber: card.showAltNumber
                     } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
+                    scanLimited={isFreeUser && scanLimited}
+                    scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : card.template === 3 ? (
@@ -1026,7 +1159,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate3
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1040,6 +1173,10 @@ export default function CardsScreen() {
                       showAltNumber: card.showAltNumber
                     } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
+                    scanLimited={isFreeUser && scanLimited}
+                    scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : card.template === 4 ? (
@@ -1052,7 +1189,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate4
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1066,6 +1203,10 @@ export default function CardsScreen() {
                       showAltNumber: card.showAltNumber
                     } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
+                    scanLimited={isFreeUser && scanLimited}
+                    scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : card.template === 5 ? (
@@ -1078,7 +1219,7 @@ export default function CardsScreen() {
                 >
                   <CardTemplate5
                     card={card}
-                    qrUri={qrCodes[index]}
+                    qrUri={effectiveQrUri(index)}
                     colorFallback={colorScheme}
                     isWalletLoading={isWalletLoading}
                     onPressShare={() => setIsShareModalVisible(true)}
@@ -1092,6 +1233,10 @@ export default function CardsScreen() {
                       showAltNumber: card.showAltNumber
                     } : undefined}
                     onPressEdit={isTablet() ? () => handleEditCardAtIndex(index) : undefined}
+                    scanLimited={isFreeUser && scanLimited}
+                    scanCountdown={scanCountdown}
+                    qrTimedOut={!effectiveQrUri(index) && qrTimedOut[index]}
+                    onRetryQr={() => handleQrRetry(index)}
                   />
                 </View>
               ) : (
@@ -1142,17 +1287,24 @@ export default function CardsScreen() {
                 
                 {/* QR Code */}
                 <View style={getDynamicStyles(card.colorScheme || colorScheme).qrContainer}>
-                  {qrCodes[index] ? (
+                  {effectiveQrUri(index) ? (
                     <Image
                       style={[
                         styles.qrCode,
                         isTablet() && { width: scale(150), height: scale(150) }
                       ]}
-                      source={{ uri: qrCodes[index] }}
+                      source={{ uri: effectiveQrUri(index) }}
                       resizeMode="contain"
                     />
                   ) : (
-                    <Text style={isTablet() && { fontSize: scale(16) }}>Loading QR Code...</Text>
+                    <View style={[styles.qrCode, isTablet() && { width: scale(150), height: scale(150) }]}>
+                      <QrPlaceholder
+                        limited={isFreeUser && scanLimited}
+                        countdownLabel={scanCountdown}
+                        timedOut={qrTimedOut[index]}
+                        onRetry={() => handleQrRetry(index)}
+                      />
+                    </View>
                   )}
                 </View>
 
@@ -1191,9 +1343,7 @@ export default function CardsScreen() {
                       }}
                     />
                   ) : (
-                    <View style={styles.logoPlaceholder}>
-                      <Text style={styles.logoPlaceholderText}>LOGO</Text>
-                    </View>
+                    <LogoPlaceholder textSize={22} />
                   )}
                   </View>
                   <View style={[
@@ -1354,11 +1504,15 @@ export default function CardsScreen() {
                           size={isTablet() ? scale(30) : 30} 
                           color={card.colorScheme} 
                         />
-                        <Text style={[
-                          styles.contactText,
-                          isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
-                        ]}>
-                          {textValue || ''}
+                        <Text
+                          style={[
+                            styles.contactText,
+                            isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
+                          ]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {textValue.length > 20 ? textValue.substring(0, 20) + '…' : textValue}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1367,55 +1521,134 @@ export default function CardsScreen() {
                 })}
 
                 {/* Share and Wallet Buttons */}
-                <TouchableOpacity 
-                  onPress={() => setIsShareModalVisible(true)} 
-                  style={[getDynamicStyles(card.colorScheme || colorScheme).shareButton]}
+                <FeatureTip
+                  tipKey="home_qr_button"
+                  content="Share your card via QR code"
+                  position="top"
+                  bubbleAlign="left"
+                  inScrollView={true}
+                  remeasureKey={currentPage}
+                  suppressed={index !== currentPage}
                 >
-                  <MaterialIcons name="share" size={isTablet() ? scale(24) : 24} color={COLORS.white} />
-                  <Text style={[
-                    styles.shareButtonText,
-                    isTablet() && { fontSize: scale(16) }
-                  ]}>
-                    Share
-                  </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setIsShareModalVisible(true)}
+                    style={[getDynamicStyles(card.colorScheme || colorScheme).shareButton]}
+                  >
+                    <MaterialIcons name="share" size={isTablet() ? scale(24) : 24} color={COLORS.white} />
+                    <Text style={[
+                      styles.shareButtonText,
+                      isTablet() && { fontSize: scale(16) }
+                    ]}>
+                      Share
+                    </Text>
+                  </TouchableOpacity>
+                </FeatureTip>
                 
-                <TouchableOpacity 
-                  onPress={handleAddToWallet} 
-                  style={[getDynamicStyles(card.colorScheme || colorScheme).walletButton]}
-                  disabled={isWalletLoading}
-                >
-                  {isWalletLoading ? (
-                    <ActivityIndicator size="small" color={card.colorScheme || colorScheme} />
-                  ) : (
-                    <>
-                      <MaterialCommunityIcons 
-                        name="wallet" 
-                        size={isTablet() ? scale(24) : 24} 
-                        color={card.colorScheme || colorScheme} 
-                      />
-                      <Text style={[
-                        styles.walletButtonText,
-                        { color: card.colorScheme || colorScheme },
-                        isTablet() && { fontSize: scale(16) }
-                      ]}>
-                        Add to {Platform.OS === 'ios' ? 'Apple' : 'Google'} Wallet
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                {Platform.OS === 'ios' ? (
+                  <FeatureTip
+                    tipKey="cards_apple_wallet"
+                    content="Save your card to Apple Wallet"
+                    position="top"
+                    bubbleAlign="right"
+                    inScrollView={true}
+                    remeasureKey={currentPage}
+                    suppressed={index !== currentPage}
+                  >
+                    <TouchableOpacity
+                      onPress={handleAddToWallet}
+                      style={[getDynamicStyles(card.colorScheme || colorScheme).walletButton]}
+                      disabled={isWalletLoading}
+                    >
+                      {isWalletLoading ? (
+                        <ActivityIndicator size="small" color={card.colorScheme || colorScheme} />
+                      ) : (
+                        <>
+                          <MaterialCommunityIcons
+                            name="wallet"
+                            size={isTablet() ? scale(24) : 24}
+                            color={card.colorScheme || colorScheme}
+                          />
+                          <Text style={[
+                            styles.walletButtonText,
+                            { color: card.colorScheme || colorScheme },
+                            isTablet() && { fontSize: scale(16) }
+                          ]}>
+                            Add to Apple Wallet
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </FeatureTip>
+                ) : (
+                  <TouchableOpacity
+                    onPress={handleAddToWallet}
+                    style={[getDynamicStyles(card.colorScheme || colorScheme).walletButton]}
+                    disabled={isWalletLoading}
+                  >
+                    {isWalletLoading ? (
+                      <ActivityIndicator size="small" color={card.colorScheme || colorScheme} />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons
+                          name="wallet"
+                          size={isTablet() ? scale(24) : 24}
+                          color={card.colorScheme || colorScheme}
+                        />
+                        <Text style={[
+                          styles.walletButtonText,
+                          { color: card.colorScheme || colorScheme },
+                          isTablet() && { fontSize: scale(16) }
+                        ]}>
+                          Add to Google Wallet
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
               )}
             </ScrollView>
           </View>
         ))}
       </ScrollView>
+      </View>
+      </View>
 
-      {/* Page Indicator */}
-      <View style={[
+      {/* Floating bottom overlay — keeps the card indicator and the free-user scan
+          counter clear of (above) the floating tab-bar pill, which previously
+          covered the scan counter. */}
+      <View style={styles.bottomOverlay} pointerEvents="box-none">
+      {/* Page Indicator — rests dim, fades to full opacity while sliding cards. */}
+      <Animated.View style={[
         styles.pageIndicator,
-        isTablet() && styles.pageIndicatorTablet
+        isTablet() && styles.pageIndicatorTablet,
+        { opacity: indicatorOpacity }
       ]}>
+        {/* Premium-only: name the card currently in view + its position so users
+            with several cards always know which one they're looking at. */}
+        {showCurrentCardPill && (
+          <View style={styles.currentCardPill}>
+            <View style={[
+              styles.currentCardDot,
+              { backgroundColor: currentCardData?.colorScheme || colorScheme }
+            ]} />
+            <Text style={styles.currentCardName} numberOfLines={1}>
+              {currentCardLabel}
+            </Text>
+            {currentCardData?.isSpeakerEngagementCard && (
+              <MaterialCommunityIcons
+                name="microphone"
+                size={13}
+                color={currentCardData?.colorScheme || colorScheme}
+                style={styles.currentCardSpeakerIcon}
+              />
+            )}
+            <View style={styles.currentCardDivider} />
+            <Text style={styles.currentCardCount}>
+              {currentPage + 1} of {totalCards}
+            </Text>
+          </View>
+        )}
         <View style={[
           styles.dotContainer,
           isTablet() && styles.dotContainerTablet
@@ -1432,6 +1665,29 @@ export default function CardsScreen() {
             />
           ))}
         </View>
+      </Animated.View>
+
+      {/* ===== Scan counter (free users only) — color escalates 1-2 green, 3-4 orange, 5 red.
+            The "limit reached" state itself is now communicated by the persistent header
+            countdown banner (ScanLimitBanner) and the QR placeholder overlay, not a card here. ===== */}
+      {isFreeUser && !isLoadingUserStatus && (
+        <View style={styles.scanCounterWrap}>
+          <Text style={styles.scanCounterText}>
+            {scansThisHour} of 5 scans used this hour
+          </Text>
+          <View style={styles.scanProgressTrack}>
+            <View
+              style={[
+                styles.scanProgressFill,
+                {
+                  width: `${Math.min(100, (scansThisHour / 5) * 100)}%`,
+                  backgroundColor: SCAN_COUNTER_COLORS[counterColor],
+                },
+              ]}
+            />
+          </View>
+        </View>
+      )}
       </View>
 
       <Modal
@@ -1674,6 +1930,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    // Shadow points UP onto the flat header, creating the groove/curve effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   scrollView: {
     flex: 1,
   },
@@ -1682,7 +1958,6 @@ const styles = StyleSheet.create({
   },
   pageContainer: {
     width: Dimensions.get('window').width,
-    paddingTop: 100, // Adjust based on your header height
     // Tablet: position relative to contain absolute shadow gradients
     // Mobile: no change
   },
@@ -1780,6 +2055,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 16,
     color: '#333',
+    flex: 1,
   },
   socialLinksContainer: {
     marginVertical: 5,
@@ -1901,7 +2177,9 @@ optionButtonText: {
 qrCode: {
   width: 150,
   height: 150,
-  alignSelf: 'center', // Add this to center the QR code image
+  alignSelf: 'center',
+  borderRadius: 12,
+  overflow: 'hidden',
 },
   qrContainer: {
     width: 170,
@@ -1933,17 +2211,94 @@ qrCode: {
   phone: {
     fontSize: 16,
   },
-  pageIndicator: {
+  // Absolute floating container that holds the card indicator + scan counter,
+  // anchored just above the floating tab-bar pill (pill spans bottom 28→92).
+  // Sits above the contentShell (zIndex 2 / elevation 20) so it's never painted
+  // over — on Android the shell's higher elevation would otherwise hide it.
+  bottomOverlay: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 104,
     left: 0,
     right: 0,
+    alignItems: 'center',
+    zIndex: 21,
+    elevation: 21,
+  },
+  pageIndicator: {
     alignItems: 'center',
   },
   dotContainer: {
     flexDirection: 'row',
-    gap: 1,
-    marginLeft:320
+    gap: 6,
+    alignSelf: 'center',
+  },
+  // Premium current-card pill (sits just above the page dots)
+  currentCardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    maxWidth: Dimensions.get('window').width - 64,
+    backgroundColor: COLORS.white,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border + '80',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  currentCardDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  currentCardName: {
+    fontSize: 13,
+    fontFamily: 'Montserrat-Bold',
+    color: COLORS.black,
+    flexShrink: 1,
+  },
+  currentCardSpeakerIcon: {
+    marginLeft: 5,
+  },
+  currentCardDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 8,
+  },
+  currentCardCount: {
+    fontSize: 12,
+    fontFamily: 'Montserrat-Regular',
+    color: COLORS.gray,
+  },
+  // Scan rate-limit UI
+  scanCounterWrap: {
+    alignSelf: 'stretch',
+    marginHorizontal: 24,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  scanCounterText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginBottom: 6,
+  },
+  scanProgressTrack: {
+    width: '70%',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.gray + '30',
+    overflow: 'hidden',
+  },
+  scanProgressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   dot: {
     width: 5,

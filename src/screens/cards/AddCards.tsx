@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, Image, Keyboard, ActivityIndicator } from 'react-native';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import ColorPicker from 'react-native-wheel-color-picker';
 import { COLORS, CARD_COLORS } from '../../constants/colors';
@@ -8,18 +8,25 @@ import Header from '../../components/Header';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../types';
-import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE_URL } from '../../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE_URL, useToast } from '../../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { pickImage, requestPermissions, checkPermissions } from '../../utils/imageUtils';
+import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import CardPreviewModal from '../../components/cards/CardPreviewModal';
+import TemplatePreviewOverlay from '../../components/cards/TemplatePreviewOverlay';
+import LogoPlaceholder from '../../components/LogoPlaceholder';
+import { useAuth } from '../../context/AuthContext';
 
 type AddCardsNavigationProp = StackNavigationProp<RootStackParamList>;
 
 export default function AddCards() {
   const navigation = useNavigation<AddCardsNavigationProp>();
+  const { user } = useAuth();
+  const toast = useToast();
   const [error, setError] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [formData, setFormData] = useState({
+    cardName: '',
     firstName: '',
     lastName: '',
     occupation: '',
@@ -49,6 +56,12 @@ export default function AddCards() {
   const [altNumber, setAltNumber] = useState('');
   const [altCountryCode, setAltCountryCode] = useState('+27');
   const [showAltNumber, setShowAltNumber] = useState(false);
+  const [altNumberError, setAltNumberError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Template preview state
+  const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
   // Social media platforms data
   const socials = [
@@ -62,7 +75,7 @@ export default function AddCards() {
   ];
 
   // Keyboard event listeners
-  React.useEffect(() => {
+  useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
       setIsKeyboardVisible(true);
     });
@@ -76,6 +89,73 @@ export default function AddCards() {
     };
   }, []);
 
+  // Pre-populate form with authenticated user's data (same source as EditCard uses via useAuth).
+  // Only fills fields that are still empty so any manual edits are never overwritten.
+  // Prefill the (read-only) first/last name from the user's PRIMARY card, which
+  // authoritatively stores name + surname. (useAuth().user doesn't reliably carry
+  // a separate surname.) Email falls back to the auth user.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const userId = await getUserId();
+        if (!userId) return;
+        const response = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const cards = Array.isArray(data?.cards)
+          ? data.cards
+          : (Array.isArray(data) ? data : []);
+        const primary = cards[0];
+        if (primary && !cancelled) {
+          setFormData(prev => ({
+            ...prev,
+            firstName: primary.name || prev.firstName,
+            lastName: primary.surname || prev.lastName,
+            email: prev.email || primary.email || user?.email || '',
+          }));
+        }
+      } catch (e) {
+        console.log('[AddCards] Failed to prefill name from primary card:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Build a card-shaped object from the current form state for the preview modal.
+  // Mirrors the same helper used in EditCard so both screens pass identical data
+  // to CardPreviewModal.
+  const buildCardObject = () => {
+    const socialFields: Record<string, string> = {};
+    selectedSocials.forEach(socialId => {
+      const val = formData[socialId as keyof typeof formData];
+      if (val) socialFields[socialId] = val as string;
+    });
+    return {
+      cardName: formData.cardName,
+      name: formData.firstName,
+      surname: formData.lastName,
+      occupation: formData.occupation,
+      company: formData.company,
+      email: formData.email,
+      phone: `${formData.countryCode}${formData.phoneNumber}`,
+      socials: socialFields,
+      colorScheme: selectedColor,
+      profileImage: profileImage ?? null,
+      companyLogo: companyLogo ?? null,
+      logoZoomLevel: 1.0,
+      template,
+    };
+  };
+
+  // Select a template and immediately open the live draggable preview.
+  const handleTemplateSelect = (templateNumber: number) => {
+    setTemplate(templateNumber);
+    setPreviewVisible(true);
+  };
+
   const handleCancel = () => {
     navigation.goBack();
   };
@@ -85,74 +165,91 @@ export default function AddCards() {
       setError('Please fill in all required fields');
       return false;
     }
+
+    // If the alt-number toggle is ON, the alt number field becomes required —
+    // mirrors the identical validation guard in EditCardScreen.
+    const trimmedAlt = String(altNumber || '').trim();
+    if (showAltNumber && !trimmedAlt) {
+      setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
+      setError('Please fix the highlighted fields');
+      return false;
+    }
+
     setError('');
+    setAltNumberError('');
     return true;
   };
 
   const handleProfileImagePick = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Profile Picture',
         'Choose where you want to get your profile picture from.',
         [
-          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+          { text: 'Choose File', onPress: () => pickImageFromSource('file') },
           { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+          { text: 'Camera', onPress: () => pickImageFromSource('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Profile Picture',
           'Choose where you want to get your profile picture from.',
           [
-            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
             { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+            { text: 'Camera', onPress: () => pickImageFromSource('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
-      Alert.alert(
-        'Permission Required', 
-        'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-              text: 'Grant Permission', 
+        // Show permission request modal for iOS only.
+        // "Choose File" is available here too — it doesn't need camera/gallery permissions.
+        Alert.alert(
+          'Permission Required',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose File', onPress: () => pickImageFromSource('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
-              Alert.alert(
+                  Alert.alert(
                     'Select Profile Picture',
                     'Choose where you want to get your profile picture from.',
                     [
-                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
+                      { text: 'Choose File', onPress: () => pickImageFromSource('file') },
                       { text: 'Gallery', onPress: () => pickImageFromSource('gallery') },
+                      { text: 'Camera', onPress: () => pickImageFromSource('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
     }
   };
 
-  const pickImageFromSource = async (source: 'camera' | 'gallery') => {
+  const pickImageFromSource = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Image Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Image Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -160,24 +257,24 @@ export default function AddCards() {
         // iOS: Check permissions first, then pick
         console.log('[Image Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
                   Alert.alert('Open Settings', 'Please go to Settings > XS Card > Camera');
               }}
-        ]
-      );
-      return;
-    }
+            ]
+          );
+          return;
+        }
 
         if (source === 'gallery' && !galleryGranted) {
-    Alert.alert(
-            'Photo Library Permission Required', 
+          Alert.alert(
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
@@ -192,7 +289,7 @@ export default function AddCards() {
         console.log('[Image Picker] iOS: Permissions checked, launching picker...');
         imageUri = await pickImage(source === 'camera');
       }
-      
+
       if (imageUri) {
         console.log('[Image Picker] Image selected successfully');
         setProfileImage(imageUri);
@@ -201,7 +298,7 @@ export default function AddCards() {
       }
     } catch (error) {
       console.error('[Image Picker] Error during image selection:', error);
-      
+
       if (error instanceof Error) {
         if (error.message.includes('Permission')) {
           Alert.alert('Permission Error', 'Unable to access camera or photo library. Please check your device settings.');
@@ -216,68 +313,72 @@ export default function AddCards() {
 
   const handleLogoUpload = async () => {
     if (Platform.OS === 'android') {
-      // Android: NO custom permission modals, just direct picker
       Alert.alert(
         'Select Company Logo',
         'Choose where you want to get your company logo from.',
         [
-          { text: 'Camera', onPress: () => pickLogo('camera') },
+          { text: 'Choose File', onPress: () => pickLogo('file') },
           { text: 'Gallery', onPress: () => pickLogo('gallery') },
+          { text: 'Camera', onPress: () => pickLogo('camera') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
     } else {
       // iOS: Keep the existing custom permission flow (Apple requires it)
       const currentPermissions = await checkPermissions();
-      
+
       if (currentPermissions.cameraGranted && currentPermissions.galleryGranted) {
         Alert.alert(
           'Select Company Logo',
           'Choose where you want to get your company logo from.',
           [
-            { text: 'Camera', onPress: () => pickLogo('camera') },
+            { text: 'Choose File', onPress: () => pickLogo('file') },
             { text: 'Gallery', onPress: () => pickLogo('gallery') },
+            { text: 'Camera', onPress: () => pickLogo('camera') },
             { text: 'Cancel', style: 'cancel' },
           ]
         );
       } else {
-        // Show permission request modal for iOS only
-      Alert.alert(
-        'Permission Required', 
-        'XSCard needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-              text: 'Grant Permission', 
+        Alert.alert(
+          'Permission Required',
+          'XS Card needs camera and photo library access to let you add profile pictures and company logos to your digital business card. This helps create a professional appearance.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose File', onPress: () => pickLogo('file') },
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const permissions = await requestPermissions();
                 if (permissions.cameraGranted && permissions.galleryGranted) {
-                  // Show picker after permissions granted
-              Alert.alert(
+                  Alert.alert(
                     'Select Company Logo',
                     'Choose where you want to get your company logo from.',
                     [
-                      { text: 'Camera', onPress: () => pickLogo('camera') },
+                      { text: 'Choose File', onPress: () => pickLogo('file') },
                       { text: 'Gallery', onPress: () => pickLogo('gallery') },
+                      { text: 'Camera', onPress: () => pickLogo('camera') },
                       { text: 'Cancel', style: 'cancel' },
                     ]
                   );
                 }
-              }
-            }
+              },
+            },
           ]
         );
       }
     }
   };
 
-  const pickLogo = async (source: 'camera' | 'gallery') => {
+  const pickLogo = async (source: 'camera' | 'gallery' | 'file') => {
     try {
       console.log(`[Logo Picker] Starting ${source} selection...`);
-      
+
       let imageUri: string | null = null;
-      
-      if (Platform.OS === 'android') {
+
+      if (source === 'file') {
+        // Open native file explorer — no camera/gallery permission required
+        imageUri = await pickImageFromDocument();
+      } else if (Platform.OS === 'android') {
         // Android: Direct pick, let system handle permissions
         console.log('[Logo Picker] Android: Direct pick with system permission handling');
         imageUri = await pickImage(source === 'camera');
@@ -285,29 +386,29 @@ export default function AddCards() {
         // iOS: Check permissions first, then pick
         console.log('[Logo Picker] iOS: Permission check then pick');
         const { cameraGranted, galleryGranted } = await requestPermissions();
-        
+
         if (source === 'camera' && !cameraGranted) {
           Alert.alert(
-            'Camera Permission Required', 
+            'Camera Permission Required',
             'Please enable camera access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Camera');
+                  Alert.alert('Open Settings', 'Please go to Settings > XS Card > Camera');
               }}
-        ]
-      );
-      return;
-    }
+            ]
+          );
+          return;
+        }
 
         if (source === 'gallery' && !galleryGranted) {
-    Alert.alert(
-            'Photo Library Permission Required', 
+          Alert.alert(
+            'Photo Library Permission Required',
             'Please enable photo library access in your device settings to use this feature.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => {
-                  Alert.alert('Open Settings', 'Please go to Settings > XSCard > Photos');
+                  Alert.alert('Open Settings', 'Please go to Settings > XS Card > Photos');
               }}
             ]
           );
@@ -317,7 +418,7 @@ export default function AddCards() {
         console.log('[Logo Picker] iOS: Permissions checked, launching picker...');
         imageUri = await pickImage(source === 'camera');
       }
-      
+
       if (imageUri) {
         console.log('[Logo Picker] Logo selected successfully');
         setCompanyLogo(imageUri);
@@ -326,7 +427,7 @@ export default function AddCards() {
       }
     } catch (error) {
       console.error('[Logo Picker] Error during logo selection:', error);
-      
+
       if (error instanceof Error) {
         if (error.message.includes('Permission')) {
           Alert.alert('Permission Error', 'Unable to access camera or photo library. Please check your device settings.');
@@ -334,7 +435,7 @@ export default function AddCards() {
           Alert.alert('Error', `Logo selection failed: ${error.message}`);
         }
       } else {
-        Alert.alert('Error', 'There was a problem with the image picker. Please try again.');
+        Alert.alert('Error', 'There was a problem with the logo picker. Please try again.');
       }
     }
   };
@@ -380,6 +481,7 @@ export default function AddCards() {
       if (!validateForm()) {
         return;
       }
+      setIsSaving(true);
 
       const userId = await getUserId();
 
@@ -391,6 +493,7 @@ export default function AddCards() {
       const form = new FormData();
       
       // Use formData state to append values
+      form.append('cardName', (formData.cardName || '').trim());
       form.append('company', formData.company);
       form.append('email', formData.email);
       form.append('phone', `${formData.countryCode}${formData.phoneNumber}`);
@@ -459,6 +562,8 @@ export default function AddCards() {
     } catch (error) {
       console.error('Error creating card:', error);
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to create card');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -469,10 +574,17 @@ export default function AddCards() {
       {/* Cancel and Save buttons */}
       <View style={styles.actionButtons}>
         <TouchableOpacity onPress={handleCancel}>
-          <Text style={styles.cancelButton}>Cancel</Text>
+          <View style={styles.previewButton}>
+            <MaterialIcons name="arrow-back" size={16} color="#666" />
+            <Text style={styles.previewButtonText}>Cancel</Text>
+          </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleAdd}>
-          <Text style={styles.saveButton}>Save</Text>
+        <TouchableOpacity onPress={handleAdd} style={styles.saveButtonContainer} disabled={isSaving}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -495,8 +607,24 @@ export default function AddCards() {
           <View style={styles.warningBox}>
             <MaterialIcons name="info" size={20} color={COLORS.black} />
             <Text style={styles.warningText}>
-              New Card, new you! Create a card that will help you connect with your network. 
+              New Card, new you! Create a card that will help you connect with your network.
             </Text>
+          </View>
+
+          {/* Card Name Section — distinct identifier for this card (not shown on the card face) */}
+          <View style={styles.cardNameSection}>
+            <View style={styles.cardNameLabelRow}>
+              <MaterialIcons name="badge" size={18} color={COLORS.primary} />
+              <Text style={styles.cardNameLabel}>Card name</Text>
+            </View>
+            <TextInput
+              style={styles.cardNameInput}
+              placeholder="Give this card a name to identify it"
+              placeholderTextColor="#999"
+              value={formData.cardName}
+              onChangeText={(text) => setFormData({ ...formData, cardName: text })}
+            />
+            <Text style={styles.cardNameHelper}>Give this card a name to identify it</Text>
           </View>
 
           {/* Images & Layout Section */}
@@ -514,7 +642,7 @@ export default function AddCards() {
                   <Image source={{ uri: profileImage }} style={styles.imagePreview} />
                 ) : (
                   <View style={styles.imagePlaceholder}>
-                    <MaterialIcons name="person" size={40} color={COLORS.primary} />
+                    <MaterialCommunityIcons name="account-circle" size={48} color={COLORS.primary} />
                     <Text style={styles.imagePlaceholderText}>Profile Picture</Text>
                   </View>
                 )}
@@ -527,83 +655,31 @@ export default function AddCards() {
                 {companyLogo ? (
                   <Image source={{ uri: companyLogo }} style={styles.imagePreview} />
                 ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <MaterialIcons name="business" size={40} color={COLORS.primary} />
-                    <Text style={styles.imagePlaceholderText}>Company Logo</Text>
-                  </View>
+                  <LogoPlaceholder textSize={16} />
                 )}
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Template Selection */}
+          {/* Template Selection — tapping a template selects it and opens the live preview */}
           <Text style={styles.sectionTitle}>Template</Text>
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <TouchableOpacity
-              onPress={() => setTemplate(1)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 1 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 1 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 1</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(2)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 2 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 2 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 2</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(3)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 3 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 3 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 3</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(4)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 4 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 4 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 4</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setTemplate(5)}
-              style={{
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 2,
-                borderColor: template === 5 ? COLORS.secondary : '#ddd',
-                backgroundColor: template === 5 ? '#F6F7FF' : '#FFF'
-              }}
-            >
-              <Text style={{ color: COLORS.black }}>Template 5</Text>
-            </TouchableOpacity>
+            {([1, 2, 3, 4, 5] as const).map((n) => (
+              <TouchableOpacity
+                key={n}
+                onPress={() => handleTemplateSelect(n)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 20,
+                  borderWidth: 2,
+                  borderColor: template === n ? COLORS.secondary : '#ddd',
+                  backgroundColor: template === n ? '#F6F7FF' : '#FFF',
+                }}
+              >
+                <Text style={{ color: COLORS.black }}>Template {n}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           {/* Personal Details Section */}
@@ -611,21 +687,27 @@ export default function AddCards() {
           <View style={styles.form}>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             
-              <TextInput 
-                style={styles.input}
+              <TextInput
+                style={[styles.input, styles.disabledInput]}
               placeholder="First name"
                 placeholderTextColor="#999"
                 value={formData.firstName}
                 onChangeText={(text) => setFormData({...formData, firstName: text})}
+                editable={false}
               />
 
-              <TextInput 
-                style={styles.input}
+              <TextInput
+                style={[styles.input, styles.disabledInput]}
               placeholder="Last name"
                 placeholderTextColor="#999"
                 value={formData.lastName}
                 onChangeText={(text) => setFormData({...formData, lastName: text})}
+                editable={false}
               />
+
+              <Text style={styles.namePolicyNote}>
+                Your name is set from your profile. To change it, edit your primary card.
+              </Text>
 
               <TextInput 
                 style={styles.input}
@@ -661,17 +743,18 @@ export default function AddCards() {
               
             <PhoneNumberInput
                 value={altNumber}
-                onChangeText={(text) => setAltNumber(text)}
+                onChangeText={(text) => { setAltNumber(text); if (altNumberError) setAltNumberError(''); }}
               onCountryCodeChange={(code) => setAltCountryCode(code)}
               placeholder="Alt number"
+              error={altNumberError}
               />
-              
+
             {/* Toggle to show/hide alt number on card */}
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Show alt number on card</Text>
               <TouchableOpacity
                 style={[styles.toggleSwitch, showAltNumber && styles.toggleSwitchActive]}
-                onPress={() => setShowAltNumber(!showAltNumber)}
+                onPress={() => { if (showAltNumber) setAltNumberError(''); setShowAltNumber(!showAltNumber); }}
               >
                 <View style={[styles.toggleThumb, showAltNumber && styles.toggleThumbActive]} />
               </TouchableOpacity>
@@ -686,6 +769,20 @@ export default function AddCards() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Draggable template preview overlay — shows when the user taps a template */}
+      {previewVisible && (
+        <TemplatePreviewOverlay
+          template={template}
+          card={buildCardObject()}
+          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          onSelectTemplate={(n) => {
+            setTemplate(n);
+            toast.success('Template Selected', `Template ${n} applied to your card`);
+          }}
+          onClose={() => setPreviewVisible(false)}
+        />
+      )}
     </View>
   );
 }
@@ -774,6 +871,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 15,
   },
+  cardNameSection: {
+    backgroundColor: '#FFF0F3',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 20,
+  },
+  cardNameLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  cardNameLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardNameInput: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: 14,
+    fontSize: 16,
+    color: COLORS.black,
+  },
+  cardNameHelper: {
+    marginTop: 8,
+    fontSize: 12,
+    color: COLORS.gray,
+  },
   toggleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -812,19 +944,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     position: 'absolute',
-    top: 100,
+    top: 96,
     left: 0,
     right: 0,
     zIndex: 1,
-    paddingVertical: 0,
+    paddingVertical: 10,
+    backgroundColor: COLORS.white,
   },
-  cancelButton: {
-    color: '#666',
-    fontSize: 16,
+  previewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
   },
-  saveButton: {
+  previewButtonText: {
     color: '#666',
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  saveButtonContainer: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  saveButtonText: {
+    color: COLORS.white,
     fontSize: 16,
+    fontWeight: '600',
   },
   buttonContainer: {
     padding: 16,
@@ -846,6 +995,17 @@ const styles = StyleSheet.create({
     color: COLORS.error,
     marginBottom: 10,
     fontSize: 14,
+  },
+  disabledInput: {
+    backgroundColor: '#E8E8E8',
+    color: '#666',
+  },
+  namePolicyNote: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 16,
   },
   imagePreview: {
     width: '100%',

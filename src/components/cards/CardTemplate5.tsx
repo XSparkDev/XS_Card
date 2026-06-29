@@ -5,6 +5,8 @@ import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
+import LogoPlaceholder from '../LogoPlaceholder';
+import QrPlaceholder from '../QrPlaceholder';
 
 type CardData = any;
 
@@ -20,6 +22,10 @@ interface Props {
   onPressSocial: (platform: string, value: string) => void;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
   onPressEdit?: () => void;
+  scanLimited?: boolean;
+  scanCountdown?: string;
+  qrTimedOut?: boolean;
+  onRetryQr?: () => void;
 }
 
 // Social icons mapping - EXACT same as Template 1
@@ -34,7 +40,7 @@ const socialIcons: { [key: string]: keyof typeof MaterialCommunityIcons.glyphMap
 };
 
 export default function CardTemplate5(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
   const theme = card.colorScheme || colorFallback;
 
   // EXACT same getDynamicStyles as Template 1
@@ -105,7 +111,9 @@ export default function CardTemplate5(props: Props) {
             resizeMode="contain"
           />
         ) : (
-          <Text style={isTablet() ? { fontSize: scale(16) } : undefined}>Loading QR Code...</Text>
+          <View style={styles.qrPlaceholder}>
+            <QrPlaceholder limited={scanLimited} countdownLabel={scanCountdown} timedOut={qrTimedOut} onRetry={onRetryQr} />
+          </View>
         )}
       </View>
 
@@ -113,14 +121,15 @@ export default function CardTemplate5(props: Props) {
       <View style={styles.logoProfileSection}>
         {/* Logo on left */}
         <View style={styles.logoContainer}>
-          <Image
-            source={card.companyLogo && getImageUrl(card.companyLogo) ? 
-              { uri: getImageUrl(card.companyLogo) } : 
-              require('../../../assets/images/logoplaceholder.jpg')
-            }
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          {card.companyLogo && getImageUrl(card.companyLogo) ? (
+            <Image
+              source={{ uri: getImageUrl(card.companyLogo) || '' }}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          ) : (
+            <LogoPlaceholder style={styles.logo} />
+          )}
         </View>
 
         {/* Profile on right */}
@@ -332,6 +341,14 @@ const styles = StyleSheet.create({
   qrCode: {
     width: 200,
     height: 200,
+  },
+  qrPlaceholder: {
+    width: 200,
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
   },
   // Logo & Profile Section - Side by side, no overlap
   logoProfileSection: {

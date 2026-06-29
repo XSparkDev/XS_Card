@@ -678,13 +678,15 @@ export default function CalendarPreferencesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+          <Ionicons name="arrow-back" size={24} color={COLORS.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Calendar Preferences</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView 
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
+      <ScrollView
         ref={scrollViewRef}
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 100 }}
@@ -1313,6 +1315,8 @@ export default function CalendarPreferencesScreen() {
           </>
         )}
       </ScrollView>
+      </View>
+      </View>
 
       {/* Floating Save Button */}
       <TouchableOpacity
@@ -1544,13 +1548,14 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
   },
   header: {
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 15,
     paddingTop: 50,
     paddingBottom: 15,
+    zIndex: 1,
   },
   backButton: {
     padding: 5,
@@ -1558,7 +1563,25 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.white,
+    color: COLORS.black,
+  },
+  contentShell: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
   },
   content: {
     flex: 1,
@@ -1990,8 +2013,16 @@ const styles = StyleSheet.create({
     padding: 15,
   },
   calendar: {
-    borderRadius: 10,
+    borderRadius: 16,
     marginBottom: 20,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   selectedRangeInfo: {
     backgroundColor: COLORS.lightGray,

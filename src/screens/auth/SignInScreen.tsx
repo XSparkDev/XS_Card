@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ErrorPopup import removed - no popups on signin page
 import { setKeepLoggedInPreference, storeAuthData, updateLastLoginTime, clearAuthData, getStoredAuthData } from '../../utils/authStorage';
 // Error handler imports removed - no popups on signin page
-import { signInWithEmailAndPassword, signOut, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../config/firebaseConfig';
 import EmailVerificationModal from '../../components/EmailVerificationModal';
 // NEW: OAuth imports (POOP)
@@ -533,11 +533,54 @@ export default function SignInScreen() {
       if (error.code) {
         console.error('SignIn: Authentication error:', error.code, error.message);
 
+        // Wrong-password / no-account ambiguity:
+        // Modern Firebase returns `auth/invalid-credential` for BOTH a wrong
+        // password AND a non-existent email (under email-enumeration protection).
+        // The client SDK's fetchSignInMethodsForEmail is unreliable in that mode
+        // (always returns []), which previously caused a wrong password to be
+        // mis-read as "no account" and bounce the user to Sign Up. Instead we ask
+        // the backend (Admin SDK) authoritatively whether the email exists.
         if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+          let emailExists = true; // safe default: never bounce to Sign Up on uncertainty
           try {
-            const signInMethods = await fetchSignInMethodsForEmail(auth, trimmedEmail);
+            const checkResponse = await fetch(buildUrl('/check-email-exists'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: trimmedEmail }),
+            });
+            if (checkResponse.ok) {
+              const checkData = await checkResponse.json();
+              emailExists = checkData?.exists !== false;
+            }
+          } catch (checkError) {
+            console.warn('SignIn: Email-existence check failed, staying in login:', checkError);
+          }
 
-            if (!signInMethods || signInMethods.length === 0) {
+          if (!emailExists) {
+            // Email genuinely does not exist → switch to Sign Up, pre-fill the
+            // email, and flag it as an automatic switch so the indicator shows.
+            navigation.navigate('SignUp', { prefillEmail: trimmedEmail, autoSwitched: true });
+            return;
+          }
+
+          // Email exists → this was a wrong password. Never switch to Sign Up.
+          setAuthFieldErrors({ email: false, password: true });
+          setErrors(prev => ({ ...prev, email: '', password: 'Incorrect password. Please try again.' }));
+          toast.error('Incorrect Password', 'Incorrect password. Please try again.');
+          setFailedAttempts(prev => {
+            const next = prev + 1;
+            if (next >= 3) {
+              setShowRetryModal(true);
+            }
+            return next;
+          });
+        } else {
+          // Every other Firebase error is handled in place — none switch mode.
+          switch (error.code) {
+            case 'auth/wrong-password':
+              setAuthFieldErrors({ email: false, password: true });
+              setErrors(prev => ({ ...prev, email: '', password: 'Incorrect password. Please try again.' }));
+              toast.error('Incorrect Password', 'Incorrect password. Please try again.');
               setFailedAttempts(prev => {
                 const next = prev + 1;
                 if (next >= 3) {
@@ -545,66 +588,28 @@ export default function SignInScreen() {
                 }
                 return next;
               });
-              const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
-              setAuthFieldErrors({ email: true, password: true });
-              setErrors(prev => ({ ...prev, email: '', password: '' }));
-              toast.error('Sign In Failed', neutralMessage);
-              return;
-            }
-          } catch (methodCheckError) {
-            console.warn('SignIn: Failed to check sign-in methods:', methodCheckError);
+              break;
+            case 'auth/invalid-email':
+              setErrors(prev => ({ ...prev, email: 'Please enter a valid email address.' }));
+              toast.error('Invalid Email', 'Please enter a valid email address.');
+              break;
+            case 'auth/user-disabled':
+              setErrors(prev => ({ ...prev, email: 'This account has been disabled.' }));
+              toast.error('Account Disabled', 'This account has been disabled.');
+              break;
+            case 'auth/too-many-requests':
+              setErrors(prev => ({ ...prev, password: 'Too many attempts. Please try again later.' }));
+              toast.error('Too Many Attempts', 'Too many attempts. Please try again later.');
+              break;
+            case 'auth/network-request-failed':
+              setErrors(prev => ({ ...prev, email: 'Network error' }));
+              toast.error('Network Error', 'Please check your internet connection and try again');
+              break;
+            default:
+              console.error('SignIn: Unknown authentication error:', error);
+              setErrors(prev => ({ ...prev, password: 'Something went wrong. Please try again.' }));
+              toast.error('Sign In Failed', 'Something went wrong. Please try again.');
           }
-        }
-        
-        // Set field-specific errors and show toast notifications
-        switch (error.code) {
-          case 'auth/wrong-password': {
-            const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
-            setAuthFieldErrors({ email: true, password: true });
-            setErrors(prev => ({ ...prev, email: '', password: '' }));
-            toast.error('Sign In Failed', neutralMessage);
-            setFailedAttempts(prev => {
-              const next = prev + 1;
-              if (next >= 3) {
-                setShowRetryModal(true);
-              }
-              return next;
-            });
-            break;
-          }
-          case 'auth/invalid-credential': {
-            const neutralMessage = 'We couldn\'t sign you in. Please check your email or password and try again.';
-            setAuthFieldErrors({ email: true, password: true });
-            setErrors(prev => ({ ...prev, email: '', password: '' }));
-            toast.error('Sign In Failed', neutralMessage);
-            setFailedAttempts(prev => {
-              const next = prev + 1;
-              if (next >= 3) {
-                setShowRetryModal(true);
-              }
-              return next;
-            });
-            break;
-          }
-          case 'auth/invalid-email':
-            setErrors(prev => ({ ...prev, email: 'Invalid email format' }));
-            toast.error('Invalid Email', 'Please enter a valid email address');
-            break;
-          case 'auth/user-disabled':
-            setErrors(prev => ({ ...prev, email: 'Account disabled' }));
-            toast.error('Account Disabled', 'This account has been disabled. Please contact support');
-            break;
-          case 'auth/too-many-requests':
-            setErrors(prev => ({ ...prev, password: 'Too many attempts. Try later' }));
-            toast.error('Too Many Attempts', 'Please wait a few minutes before trying again');
-            break;
-          case 'auth/network-request-failed':
-            setErrors(prev => ({ ...prev, email: 'Network error' }));
-            toast.error('Network Error', 'Please check your internet connection and try again');
-            break;
-          default:
-            console.error('SignIn: Unknown authentication error:', error);
-            toast.error('Sign In Failed', 'An unexpected error occurred. Please try again');
         }
       } else if (error instanceof TypeError && error.message.includes('fetch')) {
         // Handle network errors with toast
@@ -739,6 +744,13 @@ export default function SignInScreen() {
         </Text>
       </TouchableOpacity>
 
+      <View style={styles.signUpContainer}>
+        <Text style={styles.signUpText}>Don't have an account? </Text>
+        <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+          <Text style={styles.signUpLink}>Sign Up</Text>
+        </TouchableOpacity>
+      </View>
+
   <View style={styles.legalContainer}>
     <Text style={styles.legalText}>
       By signing in, you agree to our{' '}
@@ -826,13 +838,6 @@ export default function SignInScreen() {
           </TouchableOpacity>
           <Text style={styles.oauthIconLabel}>Microsoft</Text>
         </View>
-      </View>
-
-      <View style={styles.signUpContainer}>
-        <Text style={styles.signUpText}>Don't have an account? </Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-          <Text style={styles.signUpLink}>Sign Up</Text>
-        </TouchableOpacity>
       </View>
         </ScrollView>
       </TouchableWithoutFeedback>

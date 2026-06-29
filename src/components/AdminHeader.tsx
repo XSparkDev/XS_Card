@@ -2,14 +2,10 @@ import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
-import { useNavigation, CommonActions } from '@react-navigation/native';
-import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { AdminTabParamList } from '../types';
-import { performServerLogout } from '../utils/api';
-import { useAuth } from '../context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 import { useMeetingNotifications } from '../context/MeetingNotificationContext';
-
-type AdminHeaderNavigationProp = BottomTabNavigationProp<AdminTabParamList>;
+import SideMenu from './SideMenu';
+import ScanLimitBanner from './ScanLimitBanner';
 
 type AdminHeaderProps = {
   title: string;
@@ -18,37 +14,10 @@ type AdminHeaderProps = {
 export default function AdminHeader({ title }: AdminHeaderProps) {
   const navigation = useNavigation<any>();
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const [isNotificationsVisible, setIsNotificationsVisible] = useState(false);
-  const { logout } = useAuth(); // Use our centralized auth context
   const { startingSoon, recentBookings } = useMeetingNotifications();
   const notificationCount = startingSoon.length + recentBookings.length;
-
-  const resetToSignIn = () => {
-    let currentNav: any = navigation;
-
-    while (currentNav?.getParent && currentNav.getParent()) {
-      currentNav = currentNav.getParent();
-    }
-
-    if (currentNav?.dispatch) {
-      currentNav.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'Auth',
-              state: {
-                index: 0,
-                routes: [{ name: 'SignIn' }],
-              },
-            },
-          ],
-        })
-      );
-    } else {
-      navigation.navigate('SignIn');
-    }
-  };
 
   const handleNavigate = (screen: string) => {
     setIsMenuVisible(false);
@@ -68,56 +37,14 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      console.log('AdminHeader: Starting logout process...');
-      setIsMenuVisible(false); // Close menu immediately
-      
-      // Perform server logout first (non-blocking)
-      try {
-        await performServerLogout();
-      } catch (serverError) {
-        console.log('AdminHeader: Server logout failed, continuing with local logout:', serverError);
-        // Continue with local logout even if server logout fails
-      }
-      
-      // Use our centralized logout from AuthContext
-      await logout();
-      
-      console.log('AdminHeader: Logout completed, navigating to SignIn');
-      
-      resetToSignIn();
-      
-    } catch (error) {
-      console.error('AdminHeader: Error during logout:', error);
-      
-      // If everything fails, still try to navigate to sign in
-      Alert.alert(
-        'Logout Error', 
-        'There was an issue logging out. You will be redirected to the sign-in screen.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'SignIn' as keyof AdminTabParamList }],
-              });
-            }
-          }
-        ]
-      );
-    }
-  };
-
   return (
     <>
-      <View style={styles.header}>
-        <TouchableOpacity 
+      <View style={styles.header} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+        <TouchableOpacity
           style={styles.icon}
           onPress={() => setIsMenuVisible(true)}
         >
-          <MaterialIcons name="menu" size={24} color={COLORS.white} />
+          <MaterialIcons name="menu" size={24} color={COLORS.black} />
         </TouchableOpacity>
 
         <View style={styles.titleContainer}>
@@ -125,12 +52,12 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
         </View>
 
         <View style={styles.iconContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.icon, styles.notificationIcon]}
             onPress={() => setIsNotificationsVisible(true)}
             disabled={notificationCount === 0 && startingSoon.length === 0 && recentBookings.length === 0}
           >
-            <MaterialIcons name="notifications" size={24} color={COLORS.white} />
+            <MaterialIcons name="notifications" size={24} color={COLORS.black} />
             {notificationCount > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>
@@ -142,78 +69,11 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
         </View>
       </View>
 
-      <Modal
-        visible={isMenuVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsMenuVisible(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsMenuVisible(false)}
-        >
-          <View style={styles.menuContainer}>
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Cards')}
-            >
-              <MaterialIcons name="credit-card" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Cards</Text>
-            </TouchableOpacity>
+      {/* Docks flush below this header's bottom edge while a free user is rate-limited */}
+      <ScanLimitBanner top={headerHeight} />
 
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Analytics')}
-            >
-              <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Calendar')}
-            >
-              <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Events')}
-            >
-              <MaterialIcons name="event" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Events</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('ContactScreen')}
-            >
-              <MaterialIcons name="contacts" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Contacts</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Settings')}
-            >
-              <MaterialIcons name="settings" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Settings</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => {
-                handleLogout();
-              }}
-            >
-              <MaterialIcons name="logout" size={24} color={COLORS.error} />
-              <Text style={[styles.menuText, { color: COLORS.error }]}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Shared app-wide side menu */}
+      <SideMenu visible={isMenuVisible} onClose={() => setIsMenuVisible(false)} />
 
       <Modal
         visible={isNotificationsVisible}
@@ -316,7 +176,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     zIndex: 1,
   },
   titleContainer: {
@@ -328,7 +188,8 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.white,
+    fontFamily: 'Montserrat_700Bold',
+    color: COLORS.black,
   },
   icon: {
     width: 24,

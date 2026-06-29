@@ -1,26 +1,33 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  Image, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput, 
-  Alert, 
-  Modal, 
-  Linking, 
-  RefreshControl, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Alert,
+  Modal,
+  Linking,
+  RefreshControl,
   ActivityIndicator,
   SafeAreaView,
   Share,
-  Dimensions 
+  Dimensions,
+  Pressable,
+  InteractionManager,
+  TouchableWithoutFeedback,
+  Platform,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system';
+import RNShare from 'react-native-share';
 
 // Local imports
 import { COLORS } from '../../constants/colors';
@@ -38,10 +45,28 @@ import { formatTimestamp } from '../../utils/dateFormatter';
 import { AuthManager } from '../../utils/authManager';
 import GradientAvatar from '../../components/GradientAvatar';
 import { getPlanLimits, UserPlan } from '../../utils/userPlan';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
+import FeatureTip from '../../components/FeatureTip';
+import ContactDetailPanel from '../../components/ContactDetailPanel';
+import AddContactPanel from '../../components/AddContactPanel';
+import { tabBarScrollY } from '../../utils/tabBarScroll';
 
 // Constants
 const FREE_PLAN_CONTACT_LIMIT = 20;
 const DEFAULT_COUNTRY_CODE = '+27'; // South Africa
+// Blank manual-add form. Phone is pre-seeded with the default dialling code so the
+// user only types the local part; a lone code is stripped back to empty on submit.
+const EMPTY_ADD_CONTACT_FORM = {
+  name: '',
+  surname: '',
+  email: '',
+  company: '',
+  phone: DEFAULT_COUNTRY_CODE + ' ',
+  howWeMet: '',
+};
+// Which field carries the bold/primary emphasis on each contact card.
+type ContactEmphasisField = 'name' | 'company';
+const CONTACT_EMPHASIS_STORAGE_KEY = 'contacts_emphasis_field';
 
 // Type definitions
 interface Timestamp {
@@ -70,6 +95,20 @@ interface Contact {
     original?: string;
   };
   linkedAt?: string;
+  // Scanner geolocation captured at scan time (optional).
+  location?: ContactLocation | null;
+  locationCapturedAt?: string | null;
+}
+
+interface ContactLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  formattedAddress?: string;
+  city?: string;
+  area?: string;
+  country?: string;
+  capturedAt?: string;
 }
 
 interface ContactData {
@@ -91,6 +130,7 @@ interface UserCardFilterOption {
 }
 
 interface UserCardRecord {
+  cardName?: string;
   company?: string;
   isSpeakerEngagementCard?: boolean;
 }
@@ -102,23 +142,28 @@ const isSpeakerCardEnabled = (value: unknown): boolean => {
 const buildCardFilterOptions = (cards: UserCardRecord[]): UserCardFilterOption[] => {
   const companyUsage = new Map<string, number>();
 
+  // Identify each card by its user-defined card name, falling back to the
+  // company name, then to a generic "Card N" label when neither is set.
+  const resolveCardIdentifier = (card: UserCardRecord, index: number) =>
+    (card.cardName || '').trim() || (card.company || '').trim() || `Card ${index + 1}`;
+
   cards.forEach((card, index) => {
-    const companyName = (card.company || '').trim() || `Card ${index + 1}`;
-    companyUsage.set(companyName, (companyUsage.get(companyName) || 0) + 1);
+    const identifier = resolveCardIdentifier(card, index);
+    companyUsage.set(identifier, (companyUsage.get(identifier) || 0) + 1);
   });
 
   const duplicateTracker = new Map<string, number>();
 
   return cards.map((card, index) => {
-    const companyName = (card.company || '').trim() || `Card ${index + 1}`;
-    const occurrence = (duplicateTracker.get(companyName) || 0) + 1;
-    duplicateTracker.set(companyName, occurrence);
-    const needsSuffix = (companyUsage.get(companyName) || 0) > 1;
+    const identifier = resolveCardIdentifier(card, index);
+    const occurrence = (duplicateTracker.get(identifier) || 0) + 1;
+    duplicateTracker.set(identifier, occurrence);
+    const needsSuffix = (companyUsage.get(identifier) || 0) > 1;
 
     return {
       cardIndex: index,
-      company: companyName,
-      label: needsSuffix ? `${companyName} (Card ${index + 1})` : companyName,
+      company: identifier,
+      label: needsSuffix ? `${identifier} (Card ${index + 1})` : identifier,
       isSpeakerEngagementCard: isSpeakerCardEnabled(card.isSpeakerEngagementCard),
     };
   });
@@ -332,6 +377,46 @@ const formatPhoneWithCountryCode = (phone: string): string => {
   return DEFAULT_COUNTRY_CODE + cleanedPhone;
 };
 
+// ============= GEOLOCATION HELPERS =============
+
+// True only when the contact has a usable location with real coordinates.
+const hasContactLocation = (location?: ContactLocation | null): location is ContactLocation =>
+  !!location &&
+  typeof location.latitude === 'number' &&
+  typeof location.longitude === 'number';
+
+// Human-readable label for a contact's location. Never shows raw coordinates.
+// Returns '' when no address parts are available (caller shows "Location available").
+const getContactLocationLabel = (location: ContactLocation): string => {
+  const area = (location.area || '').trim();
+  const city = (location.city || '').trim();
+  const country = (location.country || '').trim();
+  const formatted = (location.formattedAddress || '').trim();
+
+  if (area && city) return `${area}, ${city}`;
+  if (city && country) return `${city}, ${country}`;
+  if (city) return city;
+  if (country) return country;
+  if (formatted) {
+    const firstLine = formatted.split(',')[0].trim();
+    return firstLine.length > 40 ? `${firstLine.slice(0, 40)}…` : firstLine;
+  }
+  return '';
+};
+
+// Open the contact's coordinates in the native maps app, falling back to web.
+const openContactLocationInMaps = (location: ContactLocation) => {
+  const { latitude, longitude } = location;
+  const url = Platform.select({
+    ios: `maps:?q=${latitude},${longitude}`,
+    android: `geo:${latitude},${longitude}?q=${latitude},${longitude}`,
+  });
+  const webFallback = `https://www.google.com/maps?q=${latitude},${longitude}`;
+  Linking.openURL(url || webFallback).catch(() => {
+    Linking.openURL(webFallback).catch(() => {});
+  });
+};
+
 // Main Component
 export default function ContactsScreen() {
   // Navigation
@@ -340,6 +425,7 @@ export default function ContactsScreen() {
   
   // Core state
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const { triggerUpsell, isFreeUser: isFreeUserFromPlan, isLoadingUserStatus } = usePremiumUpsell();
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -347,22 +433,54 @@ export default function ContactsScreen() {
   const [cardFilterOptions, setCardFilterOptions] = useState<UserCardFilterOption[]>([]);
   const [selectedCardFilter, setSelectedCardFilter] = useState<number | 'all'>('all');
   const [isCardFilterDropdownVisible, setIsCardFilterDropdownVisible] = useState(false);
-  
+  const [isDownloadingSpeakerCsv, setIsDownloadingSpeakerCsv] = useState(false);
+  // Which field (name or company) is shown bold/primary on each contact card.
+  const [emphasisField, setEmphasisField] = useState<ContactEmphasisField>('name');
+
   // Plan and limits
   const [remainingContacts, setRemainingContacts] = useState<number | 'unlimited'>(FREE_PLAN_CONTACT_LIMIT);
   
   // Modal states
   const [isShareModalVisible, setIsShareModalVisible] = useState(false);
   const [isContactOptionsVisible, setIsContactOptionsVisible] = useState(false);
+  const [isCopyFieldSheetVisible, setIsCopyFieldSheetVisible] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
   
+  // Contact detail panel (replaces the options popup on tap)
+  const [contactPanelVisible, setContactPanelVisible] = useState(false);
+  const [contactPanelDockedTop, setContactPanelDockedTop] = useState(0);
+  const [contactPanelContact, setContactPanelContact] = useState<Contact | null>(null);
+  // Refs that let us scroll a tapped contact up into the visible "priority" zone
+  // above the docked panel (so the panel stops right at the contact's bottom and
+  // the space above stays scrollable for picking another contact).
+  const contactsScrollRef = useRef<ScrollView>(null);
+  const contactsScrollY = useRef(0);
+  const listWrapperRef = useRef<View>(null);
+  const cardLayouts = useRef<Map<string, { y: number; height: number }>>(new Map());
+
   // Selected items
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedContactForOptions, setSelectedContactForOptions] = useState<Contact | null>(null);
+  const [selectedContactForCopy, setSelectedContactForCopy] = useState<Contact | null>(null);
   const [pendingShareContact, setPendingShareContact] = useState<Contact | null>(null);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [pressedCopyRowId, setPressedCopyRowId] = useState<string | null>(null);
+  const [showUpsellModal, setShowUpsellModal] = useState(false);
+  const [showUpsellInfoModal, setShowUpsellInfoModal] = useState(false);
+  const [upsellDontShow, setUpsellDontShow] = useState(false);
+
+  // Manual "Add contact" — mirrors the saveContact.html exchange form so a contact
+  // added by hand is saved exactly like one captured from a scan (same /AddContact
+  // endpoint, same payload, same owner-notification email).
+  const [isAddContactVisible, setIsAddContactVisible] = useState(false);
+  const [isAddingContact, setIsAddingContact] = useState(false);
+  const [addContactForm, setAddContactForm] = useState(EMPTY_ADD_CONTACT_FORM);
+
+  // Upsell modal refs
+  const upsellFocusedRef = useRef(false);
+  const upsellEvaluatedRef = useRef(false);
 
   // Toast
   const toast = useToast();
@@ -386,7 +504,23 @@ export default function ContactsScreen() {
     setSelectedContactKeys(new Set());
   }, []);
 
+  // Load the saved emphasis preference once on mount.
+  useEffect(() => {
+    AsyncStorage.getItem(CONTACT_EMPHASIS_STORAGE_KEY).then((saved) => {
+      if (saved === 'name' || saved === 'company') {
+        setEmphasisField(saved);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const updateEmphasisField = useCallback((field: ContactEmphasisField) => {
+    setEmphasisField(field);
+    AsyncStorage.setItem(CONTACT_EMPHASIS_STORAGE_KEY, field).catch(() => {});
+  }, []);
+
   const hasAdvancedFeatures = getPlanLimits(userPlan).hasAdvancedFeatures;
+  const isFreeUser = userPlan === 'free';
+  const firstSpeakerCardIndex = cardFilterOptions.find(c => c.isSpeakerEngagementCard)?.cardIndex ?? -1;
   const selectedCardFilterOption = cardFilterOptions.find(
     (card) => card.cardIndex === selectedCardFilter
   );
@@ -427,6 +561,124 @@ export default function ContactsScreen() {
     setIsSelectionMode(true);
     setSelectedContactKeys(new Set([key]));
   }, [getContactKey, isSelectionMode]);
+
+  const openCopyFieldSheet = useCallback((contact: Contact) => {
+    setSelectedContactForCopy(contact);
+    setIsCopyFieldSheetVisible(true);
+  }, []);
+
+  const closeCopyFieldSheet = useCallback(() => {
+    setIsCopyFieldSheetVisible(false);
+    setSelectedContactForCopy(null);
+  }, []);
+
+  const showCopyToast = useCallback(
+    (type: 'success' | 'error', title: string, message: string) => {
+      InteractionManager.runAfterInteractions(() => {
+        if (type === 'success') {
+          toast.success(title, message);
+        } else {
+          toast.error(title, message);
+        }
+      });
+    },
+    [toast],
+  );
+
+  const copyContactField = useCallback(
+    async (
+      contact: Contact,
+      field:
+        | 'phone'
+        | 'nameShort'
+        | 'email'
+        | 'metAt'
+        | 'dateMet'
+        | 'fullName',
+    ) => {
+      const trimmedFirst = String(contact.name || '').trim();
+      const trimmedLast = String(contact.surname || '').trim();
+      const fullName = [trimmedFirst, trimmedLast].filter(Boolean).join(' ').trim();
+
+      let value = '';
+      let label = '';
+
+      switch (field) {
+        case 'phone':
+          value = formatPhoneWithCountryCode(contact.phone || '');
+          label = 'Phone number';
+          break;
+        case 'nameShort':
+          value = trimmedFirst;
+          label = 'Name';
+          break;
+        case 'email':
+          value = String(contact.email || '').trim();
+          label = 'Email';
+          break;
+        case 'metAt':
+          value = String(contact.howWeMet || '').trim();
+          label = 'Met at';
+          break;
+        case 'dateMet':
+          value = formatTimestamp(contact.createdAt);
+          label = 'Date met';
+          break;
+        case 'fullName':
+          value = fullName;
+          label = 'Full name';
+          break;
+        default:
+          value = '';
+          label = 'Value';
+          break;
+      }
+
+      // Dismiss the sheet immediately so it never lingers during clipboard I/O.
+      closeCopyFieldSheet();
+
+      if (!value) {
+        showCopyToast('error', 'Copy Failed', `${label} is not available to copy.`);
+        return;
+      }
+
+      try {
+        await Clipboard.setStringAsync(value);
+        showCopyToast('success', 'Copied', `${label} copied to clipboard`);
+      } catch (error) {
+        console.error('Error copying to clipboard:', error);
+        showCopyToast(
+          'error',
+          'Copy Failed',
+          'Unable to copy to clipboard. Please try again.',
+        );
+      }
+    },
+    [closeCopyFieldSheet, showCopyToast],
+  );
+
+  const copyToClipboard = useCallback(
+    async (label: string, value: string) => {
+      const safeValue = String(value || '').trim();
+      if (!safeValue) {
+        showCopyToast('error', 'Copy Failed', `${label} is not available to copy.`);
+        return;
+      }
+
+      try {
+        await Clipboard.setStringAsync(safeValue);
+        showCopyToast('success', 'Copied', `${label} copied to clipboard`);
+      } catch (error) {
+        console.error('Error copying to clipboard:', error);
+        showCopyToast(
+          'error',
+          'Copy Failed',
+          'Unable to copy to clipboard. Please try again.',
+        );
+      }
+    },
+    [showCopyToast],
+  );
 
   // Debug share modal state changes
   useEffect(() => {
@@ -581,6 +833,96 @@ export default function ContactsScreen() {
     }
   }, []);
 
+  // Open the manual add-contact form. Free users at their limit get the upgrade
+  // prompt instead — same gate the backend enforces, surfaced up front.
+  const openAddContact = useCallback(() => {
+    if (isFreeUser && remainingContacts !== 'unlimited' && remainingContacts <= 0) {
+      setShowLimitModal(true);
+      return;
+    }
+    setAddContactForm(EMPTY_ADD_CONTACT_FORM);
+    setIsAddContactVisible(true);
+  }, [isFreeUser, remainingContacts]);
+
+  const closeAddContact = useCallback(() => {
+    setIsAddContactVisible(false);
+  }, []);
+
+  const updateAddContactField = useCallback(
+    (field: keyof typeof EMPTY_ADD_CONTACT_FORM, value: string) => {
+      setAddContactForm((prev) => ({ ...prev, [field]: value }));
+    },
+    []
+  );
+
+  // Save a hand-entered contact through the SAME public /AddContact endpoint the
+  // saveContact.html scan page uses, with an identical payload shape — so manual
+  // contacts behave exactly like scanned ones (owner email, free-plan limit, etc.).
+  const handleAddContactSubmit = useCallback(async () => {
+    const name = addContactForm.name.trim();
+    const surname = addContactForm.surname.trim();
+    const email = addContactForm.email.trim();
+    const company = addContactForm.company.trim();
+    // Drop a lone country-code prefix so an untouched phone field saves as empty.
+    const phoneRaw = addContactForm.phone.trim();
+    const phone = phoneRaw === DEFAULT_COUNTRY_CODE ? '' : phoneRaw;
+    const howWeMet = addContactForm.howWeMet.trim();
+
+    // Match saveContact.html's required fields (name, surname, email, how we met).
+    if (!name || !surname || !email || !howWeMet) {
+      toast.error('Missing details', 'Please fill in first name, last name, email and how you met.');
+      return;
+    }
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailValid) {
+      toast.error('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
+
+    setIsAddingContact(true);
+    try {
+      const userId = await getUserId();
+      if (!userId) {
+        throw new Error('No user ID found');
+      }
+
+      // Same payload structure saveContact.html sends to /AddContact.
+      const payload = {
+        userId,
+        cardIndex: 0,
+        contactInfo: { name, surname, phone, email, company, howWeMet },
+      };
+
+      const response = await authenticatedFetchWithRefresh(ENDPOINTS.ADD_CONTACT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 403) {
+        // Free-plan contact limit hit on the server — show the upgrade path.
+        setIsAddContactVisible(false);
+        setShowLimitModal(true);
+        return;
+      }
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || `Failed to add contact (${response.status})`);
+      }
+
+      setIsAddContactVisible(false);
+      setAddContactForm(EMPTY_ADD_CONTACT_FORM);
+      toast.success('Contact added', `${name} ${surname} was saved to your contacts.`);
+      await loadContacts();
+    } catch (error) {
+      console.error('Error adding contact manually:', error);
+      toast.error('Could not add contact', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsAddingContact(false);
+    }
+  }, [addContactForm, toast, loadContacts]);
+
   // Delete contact
   const handleDeleteContact = useCallback(async (contact: Contact) => {
     const contactKey = getContactKey(contact);
@@ -726,16 +1068,46 @@ export default function ContactsScreen() {
 
 
   // Contact press handler
-  const handleContactPress = useCallback((contact: Contact) => {
+  const handleContactPress = useCallback((contact: Contact, contactKey: string, touchY: number = 0) => {
     if (isSelectionMode) {
       toggleContactSelection(contact);
       return;
     }
-    console.log('📱 Contact pressed:', `${contact.name} ${contact.surname}`);
-    console.log('📱 Setting contact options modal visible');
-    setSelectedContactForOptions(contact);
-    setIsContactOptionsVisible(true);
-    console.log('📱 Contact options modal should now be visible');
+    const windowH = Dimensions.get('window').height;
+    // The panel should never dock lower than this — keeps the tapped contact and
+    // a scrollable strip above it visible while the panel covers the lower half.
+    const MAX_DOCK = windowH * 0.5;
+
+    // Show immediately at a first estimate (touch point + ~half card height) so the
+    // panel never flashes from the top while we refine the position below.
+    const initialDock = Math.max(180, Math.min(touchY + 55, MAX_DOCK));
+    setContactPanelContact(contact);
+    setContactPanelDockedTop(initialDock);
+    setContactPanelVisible(true);
+
+    // After the layout settles: the filter / select rows have collapsed and the
+    // expanded bottom padding is in place, so the list has moved up and grown.
+    // Now scroll the tapped contact up until its bottom sits at the dock line, then
+    // dock the panel exactly there. Works for the last contact too.
+    setTimeout(() => {
+      const wrapper = listWrapperRef.current;
+      const layout = cardLayouts.current.get(contactKey);
+      if (!wrapper || !layout) return;
+      wrapper.measureInWindow((_x, listTopY) => {
+        const cardBottomInContent = layout.y + layout.height;
+        const cardBottomOnScreen = listTopY + cardBottomInContent - contactsScrollY.current;
+        // Where we want the contact's bottom (and therefore the panel's top) to land.
+        const targetDock = Math.max(180, Math.min(cardBottomOnScreen, MAX_DOCK));
+        const delta = cardBottomOnScreen - targetDock; // > 0 when we must scroll up
+        if (delta > 1) {
+          contactsScrollRef.current?.scrollTo({
+            y: Math.max(0, contactsScrollY.current + delta),
+            animated: true,
+          });
+        }
+        setContactPanelDockedTop(targetDock);
+      });
+    }, 60);
   }, [isSelectionMode, toggleContactSelection]);
 
   // Refresh handler
@@ -798,6 +1170,97 @@ export default function ContactsScreen() {
       toast.error('Export Failed', 'Failed to export contact. Please try again.');
     }
   }, []);
+
+  // True if a scan time falls inside the CURRENT speaker session only — the
+  // most recently opened window for the card, never an earlier one. Mirrors
+  // EditCard.tsx's inCurrentSpeakerWindow so both surfaces agree on what counts.
+  const isContactInCurrentSpeakerWindow = (createdAt: unknown, windows: any[]): boolean => {
+    if (!Array.isArray(windows) || windows.length === 0) return false;
+    const t = new Date(createdAt as string).getTime();
+    if (isNaN(t)) return false;
+    const current = windows[windows.length - 1];
+    const start = new Date(current?.start).getTime();
+    if (isNaN(start)) return false;
+    const end = current?.end ? new Date(current.end).getTime() : Date.now();
+    return t >= start && t <= end;
+  };
+
+  const csvEscape = (value: unknown): string => {
+    const s = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  // Export everyone who scanned the currently-selected Speaker & Engagement
+  // Card during its current session only (never a prior toggle-on/off cycle).
+  const handleDownloadSpeakerCsv = useCallback(async () => {
+    if (typeof selectedCardFilter !== 'number' || !selectedCardFilterOption?.isSpeakerEngagementCard) {
+      return;
+    }
+    if (triggerUpsell({
+      featureName: 'Speaker & Engagement Card',
+      description: 'Exporting your speaker & engagement contacts is a premium feature. Upgrade to Premium to download them.',
+    })) return;
+
+    if (isDownloadingSpeakerCsv) return;
+    setIsDownloadingSpeakerCsv(true);
+    try {
+      const userId = await getUserId();
+      if (!userId) throw new Error('Not signed in');
+
+      const cardsRes = await authenticatedFetchWithRefresh(`${ENDPOINTS.GET_CARD}/${userId}`);
+      if (!cardsRes.ok) throw new Error('Failed to load card');
+
+      const cardsData = await cardsRes.json();
+      const cardsArray = Array.isArray(cardsData?.cards)
+        ? cardsData.cards
+        : (Array.isArray(cardsData) ? cardsData : []);
+      const speakerWindows = cardsArray?.[selectedCardFilter]?.speakerWindows || [];
+
+      const speakerContacts = contacts.filter(
+        (c) =>
+          Number(c?.sourceCardIndex) === Number(selectedCardFilter) &&
+          isContactInCurrentSpeakerWindow((c as any)?.createdAtMs ?? c?.createdAt, speakerWindows)
+      );
+
+      if (speakerContacts.length === 0) {
+        Alert.alert(
+          'No Contacts Yet',
+          'No one scanned this card while it was set as your speaker & engagement card.'
+        );
+        return;
+      }
+
+      const headers = ['Name', 'Surname', 'Phone', 'Email', 'Company', 'How We Met', 'Date Saved'];
+      const lines = speakerContacts.map((c) => [
+        c?.name,
+        c?.surname,
+        c?.phone,
+        c?.email,
+        c?.company,
+        c?.howWeMet,
+        formatTimestamp(c?.createdAt),
+      ].map(csvEscape).join(','));
+      const csv = [headers.join(','), ...lines].join('\n');
+
+      const fileName = `speaker-contacts-${Date.now()}.csv`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+      await RNShare.open({
+        url: fileUri,
+        type: 'text/csv',
+        filename: fileName,
+        failOnCancel: false,
+      });
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      if (msg.includes('User did not share') || msg.includes('cancel')) return;
+      console.error('Export speaker contacts failed:', error);
+      toast.error('Export Failed', 'Could not export contacts. Please try again.');
+    } finally {
+      setIsDownloadingSpeakerCsv(false);
+    }
+  }, [contacts, selectedCardFilter, selectedCardFilterOption, isDownloadingSpeakerCsv, triggerUpsell, toast]);
 
   // ============= SHARE OPTIONS =============
   
@@ -1098,13 +1561,104 @@ export default function ContactsScreen() {
     }, [loadContacts, closeAllSwipeables])
   );
 
+  // ============= UPSELL MODAL =============
+
+  const checkAndShowUpsell = useCallback(async () => {
+    if (upsellEvaluatedRef.current) return;
+
+    // 1. Loading gate
+    if (isLoadingUserStatus) {
+      console.log('[ContactsUpsell] Skipping - user status still loading');
+      return;
+    }
+
+    // 2. User type gate — isFreeUser === false means premium; null/undefined defaults to showing
+    if (isFreeUserFromPlan === false) {
+      console.log('[ContactsUpsell] Skipping - user is premium');
+      upsellEvaluatedRef.current = true;
+      return;
+    }
+
+    upsellEvaluatedRef.current = true;
+
+    try {
+      // 3. Don't show again gate
+      const dontShow = await AsyncStorage.getItem('contacts_upsell_dont_show_again');
+      if (dontShow === 'true') {
+        console.log('[ContactsUpsell] Skipping - dont show again is set');
+        return;
+      }
+
+      // 4. All checks passed — show modal
+      console.log('[ContactsUpsell] All checks passed - showing modal');
+      setUpsellDontShow(false); // always unchecked on open
+      setShowUpsellModal(true);
+    } catch {
+      console.log('[ContactsUpsell] AsyncStorage read failed - defaulting to show');
+      setUpsellDontShow(false);
+      setShowUpsellModal(true);
+    }
+  }, [isFreeUserFromPlan, isLoadingUserStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      upsellFocusedRef.current = true;
+      upsellEvaluatedRef.current = false;
+      checkAndShowUpsell();
+      return () => { upsellFocusedRef.current = false; };
+    }, [checkAndShowUpsell])
+  );
+
+  useEffect(() => {
+    if (!isLoadingUserStatus && upsellFocusedRef.current && !upsellEvaluatedRef.current) {
+      checkAndShowUpsell();
+    }
+  }, [isLoadingUserStatus, checkAndShowUpsell]);
+
+  const dismissUpsellModal = useCallback(() => {
+    if (upsellDontShow) {
+      AsyncStorage.setItem('contacts_upsell_dont_show_again', 'true').catch(() => {});
+    }
+    setShowUpsellModal(false);
+  }, [upsellDontShow]);
+
+  const handleUpsellUnlockPremium = useCallback(() => {
+    if (upsellDontShow) {
+      AsyncStorage.setItem('contacts_upsell_dont_show_again', 'true').catch(() => {});
+    }
+    setShowUpsellModal(false);
+    navigation.navigate('UnlockPremium');
+  }, [navigation, upsellDontShow]);
+
   // ============= RENDER =============
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.container}>
-        <Header title="Contacts" />
-        
+        <Header
+          title="Contacts"
+          rightIcon={
+            <FeatureTip
+              tipKey="contacts_manual_add"
+              content="Add a contact by hand — saved just like a scanned card"
+              position="bottom"
+              bubbleAlign="right"
+              arrowAtAnchor
+            >
+              <TouchableOpacity
+                onPress={openAddContact}
+                accessibilityRole="button"
+                accessibilityLabel="Add a contact manually"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="person-add-alt-1" size={24} color={COLORS.black} />
+              </TouchableOpacity>
+            </FeatureTip>
+          }
+        />
+
+        <View style={styles.contentShell}>
+        <View style={styles.contentShellInner}>
         {/* Contact Count Container - Only show for free users */}
         {remainingContacts !== 'unlimited' && (
           <View style={styles.contactCountContainer}>
@@ -1171,30 +1725,92 @@ export default function ContactsScreen() {
             />
           </View>
 
-          {hasAdvancedFeatures && cardFilterOptions.length > 0 && (
-            <View style={styles.filterSection}>
-              <Text style={styles.filterSectionLabel}>Filter</Text>
+          {/* Emphasis toggle — choose whether name or company is the bold/primary line.
+              Hidden while the detail panel is open so the tapped contact gets the room. */}
+          {!contactPanelVisible && (
+          <View style={styles.emphasisToggleRow}>
+            <Text style={styles.emphasisToggleLabel}>Show by</Text>
+            <View style={styles.emphasisToggleGroup}>
               <TouchableOpacity
-                style={styles.filterDropdownTrigger}
-                onPress={() =>
-                  setIsCardFilterDropdownVisible((prev) => !prev)
-                }
+                style={[styles.emphasisOption, emphasisField === 'name' && styles.emphasisOptionActive]}
+                onPress={() => updateEmphasisField('name')}
                 activeOpacity={0.8}
               >
-                <View style={styles.filterTriggerContent}>
-                  {selectedCardFilterOption?.isSpeakerEngagementCard && (
-                    <View style={styles.speakerIndicatorDot} />
-                  )}
-                  <Text style={styles.filterDropdownTriggerText}>
-                    {selectedCardFilterLabel}
-                  </Text>
-                </View>
-                <MaterialIcons
-                  name={isCardFilterDropdownVisible ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
-                  size={24}
-                  color={COLORS.gray}
-                />
+                <Text style={[styles.emphasisOptionText, emphasisField === 'name' && styles.emphasisOptionTextActive]}>
+                  Name
+                </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.emphasisOption, emphasisField === 'company' && styles.emphasisOptionActive]}
+                onPress={() => updateEmphasisField('company')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.emphasisOptionText, emphasisField === 'company' && styles.emphasisOptionTextActive]}>
+                  Company
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          )}
+
+          {!contactPanelVisible && cardFilterOptions.length > 0 && (
+            <View style={styles.filterSection}>
+              <Text style={styles.filterSectionLabel}>Filter</Text>
+              <FeatureTip
+                tipKey="contacts_filter_bar"
+                content="Filter your contacts by which card they scanned"
+                position="top"
+              >
+                <TouchableOpacity
+                  style={styles.filterDropdownTrigger}
+                  onPress={() => {
+                    if (triggerUpsell({ featureName: 'Contact Filter', description: 'Filter contacts by card lets you instantly find contacts from a specific card. Upgrade to Premium to use this feature.' })) return;
+                    setIsCardFilterDropdownVisible((prev) => !prev);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.filterTriggerContent}>
+                    {selectedCardFilterOption?.isSpeakerEngagementCard && (
+                      !isFreeUser ? (
+                        <FeatureTip
+                          tipKey="contacts_speaker_icon"
+                          content="A speaker engagement card is currently selected"
+                          position="bottom"
+                        >
+                          <View style={styles.speakerIndicatorDot} />
+                        </FeatureTip>
+                      ) : (
+                        <View style={styles.speakerIndicatorDot} />
+                      )
+                    )}
+                    <Text style={styles.filterDropdownTriggerText}>
+                      {selectedCardFilterLabel}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name={isCardFilterDropdownVisible ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={24}
+                    color={COLORS.gray}
+                  />
+                </TouchableOpacity>
+              </FeatureTip>
+
+              {/* Only visible while a Speaker & Engagement Card is the active filter */}
+              {selectedCardFilterOption?.isSpeakerEngagementCard && (
+                <TouchableOpacity
+                  style={styles.downloadSpeakerCsvButton}
+                  onPress={handleDownloadSpeakerCsv}
+                  disabled={isDownloadingSpeakerCsv}
+                  activeOpacity={0.8}
+                >
+                  {isDownloadingSpeakerCsv ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <MaterialIcons name="file-download" size={18} color={COLORS.primary} />
+                  )}
+                  <Text style={styles.downloadSpeakerCsvText}>Download CSV</Text>
+                </TouchableOpacity>
+              )}
 
               {isCardFilterDropdownVisible && (
                 <View style={styles.filterDropdownMenu}>
@@ -1233,10 +1849,23 @@ export default function ContactsScreen() {
                             {card.label}
                           </Text>
                           {card.isSpeakerEngagementCard && (
-                            <View style={styles.speakerBadge}>
-                              <View style={styles.speakerBadgeDot} />
-                              <Text style={styles.speakerBadgeText}>Speaker</Text>
-                            </View>
+                            !isFreeUser && card.cardIndex === firstSpeakerCardIndex ? (
+                              <FeatureTip
+                                tipKey="contacts_engagement_indicator"
+                                content="Speaker engagement cards track contacts from events"
+                                position="right"
+                              >
+                                <View style={styles.speakerBadge}>
+                                  <View style={styles.speakerBadgeDot} />
+                                  <Text style={styles.speakerBadgeText}>Speaker</Text>
+                                </View>
+                              </FeatureTip>
+                            ) : (
+                              <View style={styles.speakerBadge}>
+                                <View style={styles.speakerBadgeDot} />
+                                <Text style={styles.speakerBadgeText}>Speaker</Text>
+                              </View>
+                            )
                           )}
                         </View>
                         {isSelected && (
@@ -1250,7 +1879,7 @@ export default function ContactsScreen() {
             </View>
           )}
 
-          {contacts.length > 0 && (
+          {!contactPanelVisible && contacts.length > 0 && (
             <View style={styles.selectionToggleRow}>
               <TouchableOpacity
                 onPress={toggleSelectionMode}
@@ -1300,36 +1929,55 @@ export default function ContactsScreen() {
                     : 'When you share your card and they share their details back, they will appear here'}
               </Text>
               {!searchQuery && selectedCardFilter === 'all' && (
-                <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
-                  <MaterialIcons name="share" size={24} color={COLORS.white} />
-                  <Text style={styles.shareCardButtonText}>Share my card</Text>
-                </TouchableOpacity>
+                <>
+                  <FeatureTip
+                    tipKey="contacts_add_button"
+                    content="Contacts appear here after scanning your card"
+                    position="bottom"
+                  >
+                    <TouchableOpacity style={dynamicStyles.shareCardButton} onPress={() => handleShare()}>
+                      <MaterialIcons name="share" size={24} color={COLORS.white} />
+                      <Text style={styles.shareCardButtonText}>Share my card</Text>
+                    </TouchableOpacity>
+                  </FeatureTip>
+                  <TouchableOpacity style={styles.emptyAddManuallyButton} onPress={openAddContact}>
+                    <MaterialIcons name="person-add-alt-1" size={20} color={colorScheme} />
+                    <Text style={[styles.emptyAddManuallyText, { color: colorScheme }]}>Add a contact manually</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           ) : (
             /* Contact List */
-            <ScrollView 
+            <View ref={listWrapperRef} style={styles.contactsListWrapper}>
+            <ScrollView
+              ref={contactsScrollRef}
               style={styles.contactsList}
+              contentContainerStyle={{
+                // While the panel is open, pad the bottom so even the last contact
+                // can scroll up into the priority zone above the docked panel.
+                // Otherwise keep enough room to clear the floating tab-bar pill.
+                paddingBottom: contactPanelVisible ? Dimensions.get('window').height * 0.6 : 110,
+              }}
               refreshControl={
-                <RefreshControl 
+                <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
                   colors={[colorScheme]}
                   tintColor={colorScheme}
                 />
               }
-              onScroll={() => {
-                // Trigger visibility checks on scroll
-                setTimeout(() => {
-                  // This will trigger visibility checks for all LazyContactImage components
-                }, 100);
+              onScroll={(e) => {
+                const y = e.nativeEvent.contentOffset.y;
+                tabBarScrollY.setValue(y);
+                contactsScrollY.current = y;
               }}
-              scrollEventThrottle={200}
+              scrollEventThrottle={16}
             >
-              {filteredContacts.map((contact) => {
+              {filteredContacts.map((contact, index) => {
                 const contactKey = getContactKey(contact);
                 const isSelected = selectedContactKeys.has(contactKey);
-                return (
+                const card = (
                   <Swipeable
                     key={contactKey}
                     ref={(el) => swipeableRefs.current.set(contactKey, el)}
@@ -1341,10 +1989,10 @@ export default function ContactsScreen() {
                       RenderLeftActions(progress, dragX, contact)
                     }
                   >
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.contactCard, isSelected && styles.contactCardSelected]}
-                      onPress={() => handleContactPress(contact)}
-                      onLongPress={() => handleLongPressSelect(contact)}
+                      onPress={(e) => handleContactPress(contact, contactKey, e.nativeEvent.pageY)}
+                      onLongPress={() => openCopyFieldSheet(contact)}
                       activeOpacity={0.7}
                       delayLongPress={250}
                     >
@@ -1364,37 +2012,71 @@ export default function ContactsScreen() {
                           style={styles.contactImage}
                         />
                         <View style={styles.contactInfo}>
-                          <Text style={styles.contactName}>
-                            {contact.name} {contact.surname}
-                          </Text>
+                          {/* List view shows only name, company, phone and timestamp — the rest
+                              (email, met-at, location) is one tap away in the detail modal.
+                              The emphasis toggle controls both bold weight AND vertical order:
+                              the selected field is always bold and appears first/top. */}
+                          {emphasisField === 'company' && contact.company ? (
+                            <>
+                              <Text style={styles.contactPrimaryText} numberOfLines={1}>
+                                {contact.company}
+                              </Text>
+                              <Text style={styles.contactSecondaryText} numberOfLines={1}>
+                                {contact.name} {contact.surname}
+                              </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text style={styles.contactPrimaryText} numberOfLines={1}>
+                                {contact.name} {contact.surname}
+                              </Text>
+                              {!!contact.company && (
+                                <Text style={styles.contactSecondaryText} numberOfLines={1}>
+                                  {contact.company}
+                                </Text>
+                              )}
+                            </>
+                          )}
                           <View style={styles.contactSubInfo}>
                             <Text style={styles.contactPhone}>
                               {formatPhoneWithCountryCode(contact.phone)}
-                            </Text>
-                            {contact.email && (
-                              <Text style={styles.contactEmail}>
-                                {contact.email}
-                              </Text>
-                            )}
-                            {contact.company && (
-                              <Text style={styles.contactCompany}>
-                                {contact.company}
-                              </Text>
-                            )}
-                            <Text style={styles.contactHowWeMet}>
-                              Met at: {contact.howWeMet}
                             </Text>
                             <Text style={styles.contactDate}>
                               {formatTimestamp(contact.createdAt)}
                             </Text>
                           </View>
                         </View>
+                        <View style={styles.contactImageSpacer} />
                       </View>
                     </TouchableOpacity>
                   </Swipeable>
                 );
+                // Anchor the contacts tip to the first item only.
+                const item = index === 0 ? (
+                  <FeatureTip
+                    tipKey="contacts_list_item"
+                    content="Tap contact to view more, export to device etc"
+                    position="bottom"
+                  >
+                    {card}
+                  </FeatureTip>
+                ) : card;
+                // Wrap in a measured View so we know each card's offset within the
+                // list and can scroll the tapped one up to the dock line.
+                return (
+                  <View
+                    key={contactKey}
+                    onLayout={(e) => {
+                      const { y, height } = e.nativeEvent.layout;
+                      cardLayouts.current.set(contactKey, { y, height });
+                    }}
+                  >
+                    {item}
+                  </View>
+                );
               })}
             </ScrollView>
+            </View>
           )}
         </View>
 
@@ -1445,6 +2127,88 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
+        {/* Copy Field Action Sheet (Long-Press) */}
+        <Modal
+          visible={isCopyFieldSheetVisible}
+          transparent={true}
+          animationType="none"
+          onRequestClose={closeCopyFieldSheet}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={closeCopyFieldSheet}
+          >
+            <TouchableOpacity
+              style={styles.modalContent}
+              activeOpacity={1}
+              onPress={() => null}
+            >
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={closeCopyFieldSheet}
+              >
+                <MaterialIcons name="close" size={24} color={COLORS.black} />
+              </TouchableOpacity>
+
+              <Text style={styles.modalTitle}>Copy to clipboard</Text>
+
+              {selectedContactForCopy && (
+                <View style={styles.copySheetList}>
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'phone')}
+                  >
+                    <Text style={styles.copySheetRowText}>Phone Number</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'nameShort')}
+                  >
+                    <Text style={styles.copySheetRowText}>Name (short/display name)</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'email')}
+                  >
+                    <Text style={styles.copySheetRowText}>Email</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'metAt')}
+                  >
+                    <Text style={styles.copySheetRowText}>Met At (location/place)</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'dateMet')}
+                  >
+                    <Text style={styles.copySheetRowText}>Date Met</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.copySheetRow}
+                    onPress={() => copyContactField(selectedContactForCopy, 'fullName')}
+                  >
+                    <Text style={styles.copySheetRowText}>Full Name</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.copySheetRow, styles.copySheetCancelRow]}
+                    onPress={closeCopyFieldSheet}
+                  >
+                    <Text style={[styles.copySheetRowText, styles.copySheetCancelText]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
         {/* Contact Options Modal */}
         <Modal
           visible={isContactOptionsVisible}
@@ -1477,9 +2241,24 @@ export default function ContactsScreen() {
                         style={styles.modalContactImage}
                       />
                     </View>
-                    <Text style={styles.modalContactName}>
-                      {selectedContactForOptions.name} {selectedContactForOptions.surname}
-                    </Text>
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('heading_full_name')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        const fullName = `${selectedContactForOptions.name || ''} ${selectedContactForOptions.surname || ''}`.trim();
+                        copyToClipboard('Full name', fullName);
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        pressedCopyRowId === 'heading_full_name' && styles.copyRowActive,
+                        styles.copyHeadingPressable,
+                      ]}
+                    >
+                      <Text style={styles.modalContactName}>
+                        {selectedContactForOptions.name} {selectedContactForOptions.surname}
+                      </Text>
+                    </Pressable>
                       {selectedContactForOptions.isXsCardUser && (
                         <View style={styles.xsCardUserBadge}>
                           <MaterialIcons name="verified" size={16} color={COLORS.primary} />
@@ -1490,30 +2269,205 @@ export default function ContactsScreen() {
 
                   {/* Contact Information Section */}
                   <View style={styles.contactInfoSection}>
-                    <View style={styles.contactInfoRow}>
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_name_short')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Name', String(selectedContactForOptions.name || '').trim());
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_name_short' && styles.copyRowActive,
+                      ]}
+                    >
+                      <MaterialIcons name="person" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
+                      <Text style={styles.contactInfoText}>{String(selectedContactForOptions.name || '').trim()}</Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_phone')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onPress={() => {
+                        const display = formatPhoneWithCountryCode(selectedContactForOptions.phone || '');
+                        const dialNumber = String(selectedContactForOptions.phone || '').replace(/[^0-9+]/g, '');
+                        if (!dialNumber) return;
+                        Alert.alert(
+                          'Call contact',
+                          `Call ${display}?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Call',
+                              onPress: () => {
+                                Linking.openURL(`tel:${dialNumber}`).catch(() =>
+                                  Alert.alert('Unable to call', 'No phone app is available to place this call.')
+                                );
+                              },
+                            },
+                          ],
+                        );
+                      }}
+                      onLongPress={() => {
+                        copyToClipboard('Phone number', formatPhoneWithCountryCode(selectedContactForOptions.phone || ''));
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_phone' && styles.copyRowActive,
+                      ]}
+                    >
                       <MaterialIcons name="phone" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>{formatPhoneWithCountryCode(selectedContactForOptions.phone)}</Text>
-                    </View>
+                    </Pressable>
                     
                     {selectedContactForOptions.email && (
-                      <View style={styles.contactInfoRow}>
+                      <Pressable
+                        onPressIn={() => setPressedCopyRowId('row_email')}
+                        onPressOut={() => setPressedCopyRowId(null)}
+                        onPress={() => {
+                          const emailAddress = String(selectedContactForOptions.email || '').trim();
+                          if (!emailAddress) return;
+                          Alert.alert(
+                            'Email contact',
+                            `Send an email to ${emailAddress}?`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Email',
+                                onPress: () => {
+                                  Linking.openURL(`mailto:${emailAddress}`).catch(() =>
+                                    Alert.alert('Unable to email', 'No email app is available on this device.')
+                                  );
+                                },
+                              },
+                            ],
+                          );
+                        }}
+                        onLongPress={() => {
+                          copyToClipboard('Email', String(selectedContactForOptions.email || '').trim());
+                          setTimeout(() => setPressedCopyRowId(null), 150);
+                        }}
+                        delayLongPress={200}
+                        style={[
+                          styles.contactInfoRow,
+                          pressedCopyRowId === 'row_email' && styles.copyRowActive,
+                        ]}
+                      >
                         <MaterialIcons name="email" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                         <Text style={styles.contactInfoText}>{selectedContactForOptions.email}</Text>
-                      </View>
+                      </Pressable>
                     )}
                     
                     {selectedContactForOptions.company && (
-                      <View style={styles.contactInfoRow}>
+                      <Pressable
+                        onPressIn={() => setPressedCopyRowId('row_company')}
+                        onPressOut={() => setPressedCopyRowId(null)}
+                        onLongPress={() => {
+                          copyToClipboard('Company', String(selectedContactForOptions.company || '').trim());
+                          setTimeout(() => setPressedCopyRowId(null), 150);
+                        }}
+                        delayLongPress={200}
+                        style={[
+                          styles.contactInfoRow,
+                          pressedCopyRowId === 'row_company' && styles.copyRowActive,
+                        ]}
+                      >
                         <MaterialIcons name="business" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                         <Text style={styles.contactInfoText}>{selectedContactForOptions.company}</Text>
-                      </View>
+                      </Pressable>
                     )}
                     
-                    <View style={styles.contactInfoRow}>
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_met_at')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Met at', String(selectedContactForOptions.howWeMet || '').trim());
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_met_at' && styles.copyRowActive,
+                      ]}
+                    >
                       <MaterialIcons name="place" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
                       <Text style={styles.contactInfoText}>Met at: {selectedContactForOptions.howWeMet}</Text>
-                    </View>
-                    
+                    </Pressable>
+
+                    <Pressable
+                      onPressIn={() => setPressedCopyRowId('row_date_met')}
+                      onPressOut={() => setPressedCopyRowId(null)}
+                      onLongPress={() => {
+                        copyToClipboard('Date met', formatTimestamp(selectedContactForOptions.createdAt));
+                        setTimeout(() => setPressedCopyRowId(null), 150);
+                      }}
+                      delayLongPress={200}
+                      style={[
+                        styles.contactInfoRow,
+                        pressedCopyRowId === 'row_date_met' && styles.copyRowActive,
+                      ]}
+                    >
+                      <MaterialIcons name="event" size={20} color="#1B2B5B" style={styles.contactInfoIcon} />
+                      <Text style={styles.contactInfoText}>{formatTimestamp(selectedContactForOptions.createdAt)}</Text>
+                    </Pressable>
+
+                    {hasContactLocation(selectedContactForOptions.location) && (
+                      <View>
+                        <View style={styles.contactInfoRow}>
+                          <MaterialCommunityIcons name="map-marker" size={20} color={COLORS.primary} style={styles.contactInfoIcon} />
+                          <Text style={styles.contactInfoText}>
+                            {getContactLocationLabel(selectedContactForOptions.location) ||
+                              selectedContactForOptions.location.formattedAddress ||
+                              'Location available'}
+                          </Text>
+                        </View>
+
+                        {!!selectedContactForOptions.location.formattedAddress &&
+                          getContactLocationLabel(selectedContactForOptions.location) !==
+                            selectedContactForOptions.location.formattedAddress && (
+                            <Text style={styles.contactLocationDetailText}>
+                              {selectedContactForOptions.location.formattedAddress}
+                            </Text>
+                          )}
+
+                        {(() => {
+                          const capturedAt =
+                            selectedContactForOptions.location.capturedAt ||
+                            selectedContactForOptions.locationCapturedAt;
+                          if (!capturedAt) return null;
+                          const d = new Date(capturedAt);
+                          if (isNaN(d.getTime())) return null;
+                          const formatted = d.toLocaleDateString('en-GB', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          });
+                          return (
+                            <Text style={styles.contactLocationDetailText}>
+                              Met on {formatted}
+                            </Text>
+                          );
+                        })()}
+
+                        <TouchableOpacity
+                          style={styles.viewOnMapsButton}
+                          onPress={() => openContactLocationInMaps(selectedContactForOptions.location!)}
+                          activeOpacity={0.85}
+                        >
+                          <MaterialCommunityIcons name="google-maps" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                          <Text style={styles.viewOnMapsButtonText}>View on Google Maps</Text>
+                        </TouchableOpacity>
+
+                        <Text style={styles.locationDisclaimer}>
+                          Location captured when contact scanned your card
+                        </Text>
+                      </View>
+                    )}
+
                   </View>
 
                   <View style={styles.contactActionButtons}>
@@ -1576,6 +2530,9 @@ export default function ContactsScreen() {
           </View>
         </Modal>
 
+        {/* Manual add-contact uses a top-docked draggable panel (AddContactPanel),
+            rendered below alongside the contact detail panel. */}
+
         {/* Limit Modal */}
         <Modal
           visible={showLimitModal}
@@ -1632,7 +2589,157 @@ export default function ContactsScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Contacts Upsell Modal */}
+        <Modal
+          visible={showUpsellModal}
+          transparent
+          animationType="fade"
+          onRequestClose={dismissUpsellModal}
+          statusBarTranslucent
+        >
+          <TouchableWithoutFeedback onPress={dismissUpsellModal}>
+            <View style={styles.upsellOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={styles.upsellCard}>
+                  <TouchableOpacity
+                    style={styles.upsellCloseButton}
+                    onPress={dismissUpsellModal}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                  </TouchableOpacity>
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    style={{ width: '100%' }}
+                    contentContainerStyle={styles.upsellScrollContent}
+                  >
+                    <MaterialCommunityIcons
+                      name="account-network"
+                      size={72}
+                      color={COLORS.primary}
+                      style={styles.upsellHeroIcon}
+                    />
+                    <Text style={styles.upsellHeadline}>Your Network is Your Net Worth</Text>
+                    <Text style={styles.upsellBody}>
+                      85% of opportunities in business come through people you know, not job boards, not cold emails. The professionals who grow fastest aren't the most talented, they're the most connected.
+                    </Text>
+                    <Text style={[styles.upsellBody, { marginTop: 10 }]}>
+                      The average person needs over 200 meaningful connections to fully unlock the opportunities around them. Right now, you're building something real. Don't let your network hit a ceiling.
+                    </Text>
+                    <Text style={[styles.upsellBody, { marginTop: 12 }]}>
+                      Ready to go further?{' '}
+                      <Text style={styles.upsellLink} onPress={handleUpsellUnlockPremium}>
+                        Unlock Premium
+                      </Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.upsellPrimaryButton}
+                      onPress={handleUpsellUnlockPremium}
+                      activeOpacity={0.85}
+                    >
+                      <MaterialIcons name="star" size={18} color={COLORS.white} style={styles.upsellBtnIcon} />
+                      <Text style={styles.upsellPrimaryButtonText}>Unlock Premium</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.upsellSecondaryButton}
+                      onPress={dismissUpsellModal}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.upsellSecondaryButtonText}>Maybe Later</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.upsellDontShowRow}
+                      onPress={() => setUpsellDontShow((v) => !v)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: upsellDontShow }}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <View style={[styles.upsellCheckbox, upsellDontShow && styles.upsellCheckboxChecked]}>
+                        {upsellDontShow && (
+                          <MaterialIcons name="check" size={14} color={COLORS.white} />
+                        )}
+                      </View>
+                      <Text style={styles.upsellDontShowLabel}>Don't show again</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                  <TouchableOpacity
+                    style={styles.upsellInfoButton}
+                    onPress={() => setShowUpsellInfoModal(true)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="info-outline" size={14} color={COLORS.gray} style={{ marginRight: 4 }} />
+                    <Text style={styles.upsellInfoText}>What does premium unlock?</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+
+        {/* Upsell nested info modal */}
+        <Modal
+          visible={showUpsellInfoModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowUpsellInfoModal(false)}
+          statusBarTranslucent
+        >
+          <TouchableWithoutFeedback onPress={() => setShowUpsellInfoModal(false)}>
+            <View style={styles.upsellOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={[styles.upsellCard, { paddingBottom: 30 }]}>
+                  <TouchableOpacity
+                    style={styles.upsellCloseButton}
+                    onPress={() => setShowUpsellInfoModal(false)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="close" size={22} color={COLORS.gray} />
+                  </TouchableOpacity>
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    style={{ width: '100%' }}
+                    contentContainerStyle={styles.upsellScrollContent}
+                  >
+                    <Text style={styles.upsellHeadline}>Premium Contacts</Text>
+                    <Text style={styles.upsellBody}>
+                      With premium, your contacts are unlimited. See who engaged with your card, when they scanned it, and how often. Filter by engagement level, get notified when a contact views your card again, and use the calendar to turn connections into appointments — all from one place.
+                    </Text>
+                  </ScrollView>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </View>
+      </View>
+      </View>
+
+      {/* Draggable contact detail panel — replaces the options popup */}
+      {contactPanelVisible && contactPanelContact && (
+        <ContactDetailPanel
+          contact={contactPanelContact}
+          visible={contactPanelVisible}
+          dockedTop={contactPanelDockedTop}
+          onClose={() => setContactPanelVisible(false)}
+        />
+      )}
+
+      {/* Top-docked draggable add-contact sheet — same mechanics as the contact
+          detail panel, but opens all the way at the top. */}
+      <AddContactPanel
+        visible={isAddContactVisible}
+        form={addContactForm}
+        onChange={updateAddContactField}
+        submitting={isAddingContact}
+        onSubmit={handleAddContactSubmit}
+        onClose={closeAddContact}
+        accentColor={colorScheme}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -1643,12 +2750,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   contactCountContainer: {
     padding: 12,
     backgroundColor: '#ffffff',
     borderRadius: 10,
     marginHorizontal: 15,
-    marginTop: 120,
+    marginTop: 8,
     marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1700,10 +2826,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   premiumContactsContainer: {
-    paddingTop: 120,
+    paddingTop: 8,
   },
   selectionModeActiveContainer: {
-    paddingBottom: 90,
+    paddingBottom: 120,
   },
   searchContainer: {
     padding: 15,
@@ -1712,7 +2838,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     margin: 15,
     marginTop: 10,
-    borderRadius: 8,
+    borderRadius: 25,
   },
   searchIcon: {
     marginRight: 10,
@@ -1721,6 +2847,46 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: COLORS.black,
+  },
+  emphasisToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 15,
+    marginBottom: 10,
+    gap: 10,
+  },
+  emphasisToggleLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  emphasisToggleGroup: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.gray + '15',
+    borderRadius: 20,
+    padding: 3,
+  },
+  emphasisOption: {
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+  },
+  emphasisOptionActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  emphasisOptionText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.gray,
+  },
+  emphasisOptionTextActive: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   filterSection: {
     marginHorizontal: 15,
@@ -1740,7 +2906,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.gray + '35',
-    borderRadius: 10,
+    borderRadius: 25,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -1755,11 +2921,28 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     fontWeight: '500',
   },
+  downloadSpeakerCsvButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
+  },
+  downloadSpeakerCsvText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
   filterDropdownMenu: {
     marginTop: 8,
     borderWidth: 1,
     borderColor: COLORS.gray + '25',
-    borderRadius: 12,
+    borderRadius: 18,
     backgroundColor: COLORS.white,
     overflow: 'hidden',
   },
@@ -1882,28 +3065,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  emptyAddManuallyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  emptyAddManuallyText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  contactsListWrapper: {
+    flex: 1,
+  },
   contactsList: {
     flex: 1,
   },
   contactCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 15,
+    padding: 16,
     backgroundColor: COLORS.white,
-    borderRadius: 12,
-    margin: 5,
+    borderRadius: 18,
+    marginHorizontal: 10,
+    marginVertical: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 0,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: COLORS.gray + '20',
+    borderColor: COLORS.gray + '15',
   },
   contactCardSelected: {
     borderColor: COLORS.primary,
   },
   contactLeft: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1923,10 +3124,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   contactImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 15,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 16,
+  },
+  contactImageSpacer: {
+    width: 72, // matches contactImage (56) + marginRight (16)
   },
   xsCardBadge: {
     position: 'absolute',
@@ -1950,39 +3154,99 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
   contactInfo: {
+    flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  contactName: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  // Primary line carries the emphasis (bold, larger) — either the person's
+  // name or their company, depending on the "Show by" toggle. Centered to
+  // match the reference layout.
+  contactPrimaryText: {
+    fontSize: 20,
+    fontWeight: '700',
     color: COLORS.black,
+    textAlign: 'center',
+  },
+  // Secondary line is always the smaller, regular-weight counterpart.
+  contactSecondaryText: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: COLORS.gray,
+    textAlign: 'center',
   },
   contactSubInfo: {
-    marginTop: 4,
-    gap: 2,
+    marginTop: 6,
+    gap: 4,
+    alignItems: 'center',
   },
   contactPhone: {
-    fontSize: 14,
-    color: COLORS.black,
-    marginBottom: 4,
+    fontSize: 15,
+    color: COLORS.gray,
+    textAlign: 'center',
   },
   contactEmail: {
     fontSize: 14,
     color: COLORS.black,
     marginBottom: 4,
-  },
-  contactCompany: {
-    fontSize: 14,
-    color: COLORS.gray,
+    textAlign: 'center',
   },
   contactHowWeMet: {
     fontSize: 13,
     color: COLORS.gray,
     marginBottom: 2,
+    textAlign: 'center',
   },
   contactDate: {
     fontSize: 12,
+    color: COLORS.gray + '99',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  // Geolocation — list row
+  contactLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  contactLocationIcon: {
+    marginRight: 4,
+  },
+  contactLocationText: {
+    flex: 1,
+    fontSize: 12,
     color: COLORS.gray,
+  },
+  // Geolocation — detail modal
+  contactLocationDetailText: {
+    fontSize: 13,
+    color: COLORS.gray,
+    marginLeft: 32,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  viewOnMapsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 10,
+    marginLeft: 32,
+    alignSelf: 'flex-start',
+  },
+  viewOnMapsButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  locationDisclaimer: {
+    fontSize: 10,
+    color: COLORS.gray,
+    marginLeft: 32,
+    marginTop: 8,
     fontStyle: 'italic',
   },
   deleteAction: {
@@ -2201,5 +3465,166 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: COLORS.white,
     fontWeight: 'bold',
+  },
+  copyRowActive: {
+    backgroundColor: 'rgba(27, 43, 91, 0.08)',
+    borderRadius: 12,
+  },
+  copyHeadingPressable: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  copySheetList: {
+    marginTop: 8,
+    width: '100%',
+    gap: 10,
+  },
+  copySheetRow: {
+    backgroundColor: '#F7F7F7',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    width: '100%',
+  },
+  copySheetRowText: {
+    color: COLORS.black,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  copySheetCancelRow: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#E6E6E6',
+  },
+  copySheetCancelText: {
+    textAlign: 'center',
+  },
+  upsellOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+    elevation: 20,
+  },
+  upsellCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    paddingBottom: 44,
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '100%',
+    maxHeight: '85%' as any,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  upsellScrollContent: {
+    paddingHorizontal: 30,
+    paddingTop: 30,
+    paddingBottom: 8,
+    alignItems: 'center' as const,
+  },
+  upsellCloseButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  upsellHeroIcon: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  upsellHeadline: {
+    fontSize: 22,
+    fontWeight: 'bold' as const,
+    color: COLORS.secondary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  upsellBody: {
+    fontSize: 14,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  upsellLink: {
+    color: COLORS.primary,
+    fontWeight: '700' as const,
+  },
+  upsellPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    width: '100%',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  upsellBtnIcon: {
+    marginRight: 8,
+  },
+  upsellPrimaryButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  upsellSecondaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  upsellSecondaryButtonText: {
+    color: COLORS.gray,
+    fontSize: 15,
+    fontWeight: '500' as const,
+  },
+  upsellInfoButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  upsellInfoText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500' as const,
+  },
+  upsellDontShowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 18,
+    paddingBottom: 16,
+  },
+  upsellCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.gray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  upsellCheckboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  upsellDontShowLabel: {
+    fontSize: 12,
+    color: COLORS.gray,
   },
 });

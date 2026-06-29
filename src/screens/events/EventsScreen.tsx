@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../../constants/colors';
 import Header from '../../components/Header';
 import { useColorScheme } from '../../context/ColorSchemeContext';
+import { usePremiumUpsell } from '../../hooks/usePremiumUpsell';
 import { useEventNotifications } from '../../context/EventNotificationContext';
 import { authenticatedFetchWithRefresh, ENDPOINTS, API_BASE_URL } from '../../utils/api';
 import { useToast } from '../../hooks/useToast';
@@ -37,6 +38,8 @@ import { enhanceEventsWithOrganizerInfo } from '../../services/eventService';
 import EventCard from './components/EventCard';
 import EventFiltersComponent from './components/EventFilters';
 import EventNotificationToast from '../../components/EventNotificationToast';
+import EntryInfoModal from '../../components/EntryInfoModal';
+import FeatureTip from '../../components/FeatureTip';
 
 // Navigation types
 type RootStackParamList = {
@@ -56,6 +59,8 @@ export default function EventsScreen() {
   const { colorScheme } = useColorScheme();
   const { connected, connectToSocket, notifications } = useEventNotifications();
   const toast = useToast();
+  const { isFreeUser, isLoadingUserStatus } = usePremiumUpsell();
+  console.log('[Events] Screen rendering, isFreeUser:', isFreeUser, 'isLoadingUserStatus:', isLoadingUserStatus);
 
   // State management
   const [events, setEvents] = useState<Event[]>([]);
@@ -80,18 +85,33 @@ export default function EventsScreen() {
   const [recentEventsHeight] = useState(new Animated.Value(1)); // Start expanded
   const [recentEventsRotation] = useState(new Animated.Value(0)); // For chevron rotation
 
+  // Sequencing gate: the upsell (Modal 2) only evaluates AFTER the explainer
+  // (Modal 1) has resolved this focus. Reset to false on every focus so the
+  // order (explainer → upsell) is enforced on each visit.
+  const [explainerResolved, setExplainerResolved] = useState(false);
+  useFocusEffect(
+    React.useCallback(() => {
+      setExplainerResolved(false);
+    }, []),
+  );
+
   // Load events when screen focuses
   useFocusEffect(
     React.useCallback(() => {
       loadEvents(true);
       loadRecentEvents();
-      
-      // Auto-connect to real-time updates if not connected
-      if (!connected) {
-        console.log('[EventsScreen] Auto-connecting to real-time updates...');
-        connectToSocket();
-      }
-    }, [filters, connected])
+
+      // Attempt a real-time connection once per focus. We deliberately do NOT
+      // gate this on `connected`, nor list it in the deps: socketService.connect()
+      // is already guarded against duplicate/in-flight connections, and keeping
+      // `connected` in the deps meant every socket connect/disconnect flap re-ran
+      // this whole effect — wiping + re-fetching the entire list (which flips it
+      // back to the full-screen loading spinner) and reconnecting on a loop. That
+      // storm is what froze scrolling. Connect here is fire-and-forget.
+      console.log('[EventsScreen] Auto-connecting to real-time updates...');
+      connectToSocket();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters])
   );
 
   // Listen for real-time event notifications
@@ -471,16 +491,21 @@ export default function EventsScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.recentHeaderContent}>
+            <View style={styles.recentHeaderIconCircle}>
+              <MaterialIcons name="history" size={20} color={COLORS.primary} />
+            </View>
             <Text style={styles.recentTitle}>Recently Viewed</Text>
             <Text style={styles.recentCount}>({recentEvents.length})</Text>
           </View>
-          <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
-            <MaterialIcons 
-              name="expand-more" 
-              size={24} 
-              color={COLORS.gray} 
-            />
-          </Animated.View>
+          <View style={styles.recentChevronCircle}>
+            <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+              <MaterialIcons
+                name="expand-more"
+                size={22}
+                color={COLORS.primary}
+              />
+            </Animated.View>
+          </View>
         </TouchableOpacity>
 
         {/* Collapsible Content */}
@@ -588,10 +613,14 @@ export default function EventsScreen() {
         }
       />
 
+      {/* Curved, shadowed content shell — matches Cards/Contacts/Dashboard so the
+          content lifts off the header with the same groove. */}
+      <View style={styles.contentShell}>
+      <View style={styles.contentShellInner}>
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <MaterialIcons name="search" size={20} color={COLORS.gray} />
+          <MaterialIcons name="search" size={24} color={COLORS.gray} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search events..."
@@ -613,29 +642,52 @@ export default function EventsScreen() {
 
         {/* Quick Action Buttons */}
         <View style={styles.quickActions}>
-          <TouchableOpacity 
-            style={styles.quickActionButton}
-            onPress={() => navigation.navigate('MyEvents')}
+          <FeatureTip
+            tipKey="events_list"
+            content="Your created and attended events appear here"
+            position="bottom"
+            bubbleAlign="left"
           >
-            <MaterialIcons name="event-note" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>My Events</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('MyEvents')}
+              activeOpacity={0.85}
+            >
+              <View style={styles.quickActionIconCircle}>
+                <MaterialIcons name="event-note" size={22} color={COLORS.primary} />
+              </View>
+              <Text style={styles.quickActionText}>My Events</Text>
+            </TouchableOpacity>
+          </FeatureTip>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => navigation.navigate('EventPreferences')}
+            activeOpacity={0.85}
           >
-            <MaterialIcons name="tune" size={20} color={COLORS.primary} />
+            <View style={styles.quickActionIconCircle}>
+              <MaterialIcons name="tune" size={22} color={COLORS.primary} />
+            </View>
             <Text style={styles.quickActionText}>Personalize</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.quickActionButton}
-            onPress={() => navigation.navigate('CreateEvent')}
+          <FeatureTip
+            tipKey="events_create"
+            content="Create an event and invite your contacts"
+            position="bottom"
+            bubbleAlign="right"
           >
-            <MaterialIcons name="add" size={20} color={COLORS.primary} />
-            <Text style={styles.quickActionText}>New Event</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('CreateEvent')}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.quickActionIconCircle, styles.quickActionIconCirclePrimary]}>
+                <MaterialIcons name="add" size={22} color={COLORS.white} />
+              </View>
+              <Text style={styles.quickActionText}>New Event</Text>
+            </TouchableOpacity>
+          </FeatureTip>
         </View>
       </View>
 
@@ -669,6 +721,7 @@ export default function EventsScreen() {
         </View>
       ) : (
         <FlatList
+          style={styles.eventsList}
           data={events}
           renderItem={renderEventItem}
           keyExtractor={(item) => item.id}
@@ -686,14 +739,46 @@ export default function EventsScreen() {
               tintColor={COLORS.primary}
             />
           }
+          ListHeaderComponent={renderRecentEvents}
           ListEmptyComponent={renderEmptyState}
           onEndReached={loadMoreEvents}
           onEndReachedThreshold={0.3}
           ListFooterComponent={renderFooter}
         />
       )}
+      </View>
+      </View>
 
-      {renderRecentEvents()}
+      {/* Modal 1 — Events Explainer (all users; "Don't show again", no count) */}
+      <EntryInfoModal
+        name="explainer"
+        dontShowAgainKey="events_explainer_dont_show_again"
+        icon="calendar-star"
+        heading="How Events Works"
+        freeTextBefore="This is a freemium feature. You have access to the majority of the functionality — browse public events, register/RSVP, and manage your own from My Events. To create paid events, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText="You have full access. Create events, invite your contacts, set ticket prices, and manage RSVPs all from one place."
+        howItWorksText="Events shows a live, real-time feed of public events (the dot in the header turns green when you're connected). Filter the feed, open an event to register or RSVP, and revisit anything under Recently Viewed. Tap + to create a New Event, invite contacts, and manage attendees and registrations from My Events, while Personalize controls your event preferences. Free accounts can use all of this for free events; creating paid (ticketed) events — which run through secure checkout and organiser registration — requires Premium."
+        onResolved={() => setExplainerResolved(true)}
+      />
+
+      {/* Modal 2 — Freemium Upsell (free users only; max 3, after Modal 1) */}
+      <EntryInfoModal
+        name="upsell"
+        sequenced
+        storageKey="events_upsell_seen_count"
+        requireFreeUser
+        showUpsellButtons
+        enabled={explainerResolved}
+        icon="ticket-confirmation"
+        heading="Freemium Feature"
+        freeTextBefore="This is a premium feature, however, you have access to majority of the functionality. To create paid events, "
+        freeLinkText="unlock premium"
+        freeTextAfter="."
+        premiumText=""
+        howItWorksText="Paid (ticketed) events let you charge for attendance. Attendees check out securely, and you register as an organiser to receive payouts and manage tickets. Everything else in Events — browsing, free events, RSVPs and My Events — stays available on the free plan."
+      />
     </View>
   );
 }
@@ -703,25 +788,50 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
+  // Curved, shadowed content shell (identical to Cards/Contacts) — lifts the
+  // content off the flat header with an upward groove shadow.
+  contentShell: {
+    flex: 1,
+    marginTop: 100,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  contentShellInner: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   searchContainer: {
     paddingHorizontal: 16,
-    paddingTop: 120, // Account for header height
+    paddingTop: 16, // Header clearance now handled by contentShell's marginTop
     paddingBottom: 16,
   },
+  // Rounded pill matching the Contacts page search input.
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.background,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 10,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: COLORS.black,
     paddingVertical: 4,
+  },
+  eventsList: {
+    flex: 1,
   },
   listContainer: {
     paddingHorizontal: 16,
@@ -823,46 +933,90 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'nowrap',
     justifyContent: 'space-between',
-    marginTop: 12,
-    paddingHorizontal: 8,
-    gap: 8,
+    marginTop: 16,
+    paddingHorizontal: 4,
+    gap: 10,
   },
+  // White, softly-shadowed cards (same shadow language as the contacts list) with
+  // a tinted icon circle and a black label — strengthens the UI and drops the
+  // pink-outline/pink-text look for a cleaner, more defined feel.
   quickActionButton: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: COLORS.background,
-    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.primary,
-    minWidth: 100,
-    flex: 1,
-    maxWidth: '32%',
-    gap: 4,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 8,
+  },
+  quickActionIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Primary action (New Event) — filled accent circle so it reads as the main CTA.
+  quickActionIconCirclePrimary: {
+    backgroundColor: COLORS.primary,
   },
   quickActionText: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '500',
+    fontSize: 13,
+    color: COLORS.black,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   recentSection: {
     padding: 16,
   },
+  // White, softly-shadowed card with the same circular-icon language as the rest
+  // of the Events page.
   recentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     marginHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: COLORS.background,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   recentHeaderContent: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  recentHeaderIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentChevronCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   recentTitle: {
     fontSize: 18,
@@ -884,17 +1038,16 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     width: 140,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.white,
     borderRadius: 12,
     padding: 8,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.gray + '15',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
   },
   recentImage: {

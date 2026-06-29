@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Alert, Platform, StatusBar } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Platform, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from '../context/ColorSchemeContext';
-import { API_BASE_URL, performServerLogout, authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
+import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
+import { useTooltipContext } from '../context/TooltipContext';
+import FeatureTip from './FeatureTip';
+import SideMenu from './SideMenu';
+import ScanLimitBanner from './ScanLimitBanner';
 
 // Update this type to match your actual navigation type
 type RootStackParamList = {
@@ -31,14 +36,27 @@ interface HeaderProps {
   title: string;
   rightIcon?: React.ReactNode;
   showAddButton?: boolean;
+  /**
+   * When set, the Add-card feature tip is held back until the tip with this key
+   * has been dismissed. Lets a screen sequence the two header tips so they never
+   * appear (and collide) at the same time.
+   */
+  deferAddTipUntil?: string;
 }
 
-export default function Header({ title, rightIcon, showAddButton = false }: HeaderProps) {
+export default function Header({ title, rightIcon, showAddButton = false, deferAddTipUntil }: HeaderProps) {
   const [userPlan, setUserPlan] = useState<string>('free');
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const { colorScheme } = useColorScheme();
-  const { logout } = useAuth(); // Use our centralized auth context
+  const { updateUserPlan } = useAuth(); // Use our centralized auth context
+  const { triggerUpsell } = usePremiumUpsell();
+  const { dismissedTips } = useTooltipContext();
+  // Hold the Add-card tip back until the deferred-until tip (e.g. the Edit-card
+  // tip on the Cards screen) has been dismissed, so the two header tooltips show
+  // one at a time instead of overlapping.
+  const deferAddTip = !!deferAddTipUntil && !dismissedTips[deferAddTipUntil];
 
   // 🔥 FIX: Enhanced plan checking with backend synchronization
   const syncUserPlan = async () => {
@@ -48,6 +66,8 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
       if (userData) {
         const { plan } = JSON.parse(userData);
         setUserPlan(plan);
+        // Converge AuthContext from cache immediately (no-op if unchanged)
+        if (plan) updateUserPlan(plan);
         console.log('Header: Loaded cached plan:', plan);
       }
 
@@ -76,6 +96,9 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
             
             // Update UI immediately
             setUserPlan(actualPlan);
+            // Push the fresh backend plan into AuthContext so every premium
+            // gate (upsell, lock icons) reads the correct value (no-op if same)
+            updateUserPlan(actualPlan);
             
             // Update cached data if it's different
             if (userData) {
@@ -118,6 +141,7 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
   );
 
   const handleAddPress = () => {
+    if (triggerUpsell({ featureName: 'Add Card', description: 'Add Card lets you create multiple digital business cards. Upgrade to Premium to unlock this feature.' })) return;
     navigation.navigate('AddCards');
   };
 
@@ -125,83 +149,15 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
     navigation.navigate('EditCard');
   };
 
-  const handleLogout = async () => {
-    try {
-      console.log('Header: Starting logout process...');
-      setIsMenuVisible(false); // Close menu immediately
-      
-      // Perform server logout first (non-blocking)
-      try {
-        await performServerLogout();
-      } catch (serverError) {
-        console.log('Header: Server logout failed, continuing with local logout:', serverError);
-        // Continue with local logout even if server logout fails
-      }
-      
-      // Use our centralized logout from AuthContext
-      await logout();
-      
-      console.log('Header: Logout completed, navigating to SignIn');
-      
-      // Navigate to Auth
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Auth' }],
-      });
-      
-    } catch (error) {
-      console.error('Header: Error during logout:', error);
-      
-      // If everything fails, still try to navigate to sign in
-      Alert.alert(
-        'Logout Error', 
-        'There was an issue logging out. You will be redirected to the sign-in screen.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Auth' }],
-              });
-            }
-          }
-        ]
-      );
-    }
-  };
-
-  const handleNavigate = async (screenName: keyof RootStackParamList, screen?: string) => {
-    setIsMenuVisible(false);
-    try {
-      // For AdminDashboard, navigate with optional screen parameter
-      if (screenName === 'AdminDashboard') {
-        if (screen) {
-          navigation.navigate('AdminDashboard', { screen: screen as 'Analytics' | 'Calendar' });
-        } else {
-          navigation.navigate('AdminDashboard');
-        }
-      } else if (screenName === 'Cards' || screenName === 'Contacts') {
-        // For tab screens, navigate to MainTabs with the specific screen
-        (navigation as any).navigate('MainTabs', { screen: screenName });
-      } else {
-        navigation.navigate(screenName);
-      }
-    } catch (error) {
-      console.error('Navigation error:', error);
-      Alert.alert('Error', 'Failed to navigate. Please try again.');
-    }
-  };
-
   return (
     <>
-      <View style={styles.header}>
-        <TouchableOpacity 
+      <View style={styles.header} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+        <TouchableOpacity
           style={styles.icon}
           onPress={() => setIsMenuVisible(true)}
         >
           <Text style={styles.iconContainer}>
-            <MaterialIcons name="menu" size={24} color={COLORS.white} />
+            <MaterialIcons name="menu" size={24} color={COLORS.black} />
           </Text>
         </TouchableOpacity>
 
@@ -210,93 +166,30 @@ export default function Header({ title, rightIcon, showAddButton = false }: Head
         </View>
 
         <View style={styles.rightIconContainer}>
-          {showAddButton && userPlan !== 'free' && userPlan !== 'enterprise' && (
-            <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
-              <Text style={styles.iconContainer}>
-                <MaterialIcons name="add" size={24} color={COLORS.white} />
-              </Text>
-            </TouchableOpacity>
+          {showAddButton && userPlan !== 'enterprise' && (
+            <FeatureTip
+              tipKey="home_add_button"
+              content="Tap to add a new card"
+              position="bottom"
+              arrowAtAnchor
+              suppressed={deferAddTip}
+            >
+              <TouchableOpacity style={styles.icon} onPress={handleAddPress}>
+                <Text style={styles.iconContainer}>
+                  <MaterialIcons name="add" size={24} color={COLORS.black} />
+                </Text>
+              </TouchableOpacity>
+            </FeatureTip>
           )}
           {rightIcon}
         </View>
       </View>
 
-      <Modal
-        visible={isMenuVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsMenuVisible(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsMenuVisible(false)}
-        >
-          <View style={styles.menuContainer}>
-            {userPlan !== 'free' && (
-              <TouchableOpacity 
-                style={styles.menuItem}
-                onPress={() => handleNavigate('AdminDashboard')}
-              >
-                <MaterialIcons name="dashboard" size={24} color={COLORS.secondary} />
-                <Text style={[styles.menuText, { color: COLORS.secondary }]}>Dashboard</Text>
-              </TouchableOpacity>
-            )}
+      {/* Docks flush below this header's bottom edge while a free user is rate-limited */}
+      <ScanLimitBanner top={headerHeight} />
 
-            {userPlan !== 'free' && (
-              <TouchableOpacity 
-                style={styles.menuItem}
-                onPress={() => handleNavigate('AdminDashboard', 'Calendar')}
-              >
-                <MaterialIcons name="calendar-today" size={24} color={COLORS.secondary} />
-                <Text style={[styles.menuText, { color: COLORS.secondary }]}>Calendar</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Cards')}
-            >
-              <MaterialIcons name="credit-card" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Cards</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Events')}
-            >
-              <MaterialIcons name="event" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Events</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Contacts')}
-            >
-              <MaterialIcons name="people" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Contacts</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleNavigate('Settings')}
-            >
-              <MaterialIcons name="settings" size={24} color={COLORS.secondary} />
-              <Text style={[styles.menuText, { color: COLORS.secondary }]}>Settings</Text>
-            </TouchableOpacity>
-
-
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={handleLogout}
-            >
-              <MaterialIcons name="logout" size={24} color={COLORS.error} />
-              <Text style={[styles.menuText, { color: COLORS.error }]}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Shared app-wide side menu */}
+      <SideMenu visible={isMenuVisible} onClose={() => setIsMenuVisible(false)} />
     </>
   );
 }
@@ -312,10 +205,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     zIndex: 1,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   titleContainer: {
     paddingTop: 52,
@@ -326,7 +217,8 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.white,
+    fontFamily: 'Montserrat_700Bold',
+    color: COLORS.black,
   },
   icon: {
     width: 24,
@@ -339,37 +231,5 @@ const styles = StyleSheet.create({
   rightIconContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  menuContainer: {
-    position: 'absolute',
-    top: 100,
-    left: 20,
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 8,
-    minWidth: 200,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 12,
-  },
-  menuText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.secondary,
   },
 });

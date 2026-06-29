@@ -919,6 +919,134 @@
             margin-bottom: 24px;
         }
 
+        /* Scan-limit-reached placeholder page */
+        .limit-exceeded-container {
+            max-width: 420px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 20px;
+            padding: 40px 30px;
+            text-align: center;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        }
+
+        .limit-exceeded-container .qr-placeholder {
+            position: relative;
+            width: 220px;
+            height: 220px;
+            margin: 0 auto 28px auto;
+            border-radius: 16px;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+
+        .limit-exceeded-container .qr-blur-bg {
+            position: absolute;
+            inset: 0;
+            background-image:
+                repeating-linear-gradient(0deg, #d0d0d0 0, #d0d0d0 12px, transparent 12px, transparent 24px),
+                repeating-linear-gradient(90deg, #d0d0d0 0, #d0d0d0 12px, transparent 12px, transparent 24px);
+            opacity: 0.35;
+            filter: blur(2px);
+        }
+
+        .limit-exceeded-container .lock-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 64px;
+            background: rgba(255, 255, 255, 0.7);
+        }
+
+        .limit-exceeded-container h2 {
+            color: var(--secondary);
+            font-size: 24px;
+            margin: 0 0 12px 0;
+        }
+
+        .limit-exceeded-container p {
+            color: #555;
+            font-size: 15px;
+            margin: 0 0 6px 0;
+            line-height: 1.5;
+        }
+
+        .limit-exceeded-container .sub-text {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .limit-exceeded-container .reset-timer {
+            display: inline-block;
+            background: #f3f6ff;
+            border: 1px solid #e0e7ff;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--secondary);
+        }
+
+        .limit-exceeded-container .reset-timer #reset-countdown {
+            color: var(--primary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Optional geolocation capture banner */
+        .location-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #f3f6ff;
+            border: 1px solid #e0e7ff;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #4a5568;
+            transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
+
+        .location-banner.captured {
+            background: #ecfdf3;
+            border-color: #bbf7d0;
+            color: #15803d;
+        }
+
+        .location-banner.hidden {
+            display: none;
+        }
+
+        .location-banner-text {
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .location-banner-btn {
+            flex-shrink: 0;
+            background: var(--primary, #1B2B5B);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .location-banner-btn:hover {
+            opacity: 0.9;
+        }
+
+        .location-banner-btn.hidden {
+            display: none;
+        }
+
         #exchangeForm .form-row {
             display: flex;
             gap: 15px;
@@ -1193,7 +1321,21 @@
 <body>
     <!-- Modal overlay for background darkening -->
     <div class="modal-overlay" id="modalOverlay"></div>
-    
+
+    <!-- Scan-limit-reached placeholder (hidden until the rolling-hour limit is hit) -->
+    <div class="limit-exceeded-container" id="limitExceededContainer" style="display: none;">
+        <div class="qr-placeholder">
+            <div class="qr-blur-bg"></div>
+            <div class="lock-overlay">🔒</div>
+        </div>
+        <h2>Scan Limit Reached</h2>
+        <p>This card has received its maximum scans for this hour.</p>
+        <p class="sub-text">Please try again later — limits reset every hour.</p>
+        <div class="reset-timer">
+            Resets in: <span id="reset-countdown">--:--</span>
+        </div>
+    </div>
+
     <div class="container">
         <div class="logo-container">
             <div style="background-color: #f5f5f5; height: 16rem; width: 100%;"></div>
@@ -1233,6 +1375,14 @@
                     <h3>Share your Contact</h3>
                     <p>Please share your contacts with me</p>
                 </div>
+
+                <!-- Optional geolocation capture banner. Non-blocking: the form
+                     always submits whether or not location is granted. -->
+                <div class="location-banner" id="locationBanner">
+                    <span class="location-banner-text" id="locationBannerText">📍 Share your location so the card owner knows where you met</span>
+                    <button type="button" class="location-banner-btn" id="locationAllowBtn" onclick="requestScannerLocation()">Allow</button>
+                </div>
+
                   <div class="form-row">
                     <div class="form-group">
                         <div class="floating-label">
@@ -1789,7 +1939,100 @@ END:VCARD`;
         const userId = urlParams.get('userId');
         const cardIndex = parseInt(urlParams.get('cardIndex')) || 0;
         let userData = null;
-        
+
+        // ============= GEOLOCATION CAPTURE (optional, never blocks submit) =============
+        // Holds the scanner's resolved location. Stays null if permission is denied,
+        // unsupported, or the geocoding call fails — the form still submits fine.
+        let locationData = null;
+
+        // Google Maps Geocoding API key. The project has no Maps key configured, so
+        // this is a clearly-labelled placeholder. Replace it with a real key that has
+        // the "Geocoding API" enabled in the Google Cloud Console for reverse geocoding
+        // to resolve a human-readable address. Without a valid key, coordinates are
+        // still captured and stored (address fields are simply left empty).
+        const GOOGLE_MAPS_API_KEY = 'REPLACE_WITH_GOOGLE_MAPS_API_KEY';
+
+        // Kick off the browser permission prompt for the scanner's location.
+        function requestScannerLocation() {
+            if (!navigator.geolocation) {
+                console.log('[Geolocation] Not supported by this browser');
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                onLocationSuccess,
+                onLocationError,
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+
+        // Coordinates obtained → reverse geocode to a readable address (best effort).
+        async function onLocationSuccess(position) {
+            try {
+                const { latitude, longitude, accuracy } = position.coords;
+
+                // Always keep the raw coordinates even if geocoding fails.
+                locationData = {
+                    latitude,
+                    longitude,
+                    accuracy,
+                    formattedAddress: '',
+                    city: '',
+                    area: '',
+                    country: '',
+                    capturedAt: new Date().toISOString(),
+                };
+
+                if (GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== 'REPLACE_WITH_GOOGLE_MAPS_API_KEY') {
+                    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    if (data.status === 'OK' && data.results.length > 0) {
+                        const formatted = data.results[0].formatted_address;
+                        const components = data.results[0].address_components || [];
+
+                        const city = components.find(c => c.types.includes('locality'))?.long_name || '';
+                        const country = components.find(c => c.types.includes('country'))?.long_name || '';
+                        const area = components.find(c => c.types.includes('sublocality') || c.types.includes('neighborhood'))?.long_name || '';
+
+                        locationData.formattedAddress = formatted || '';
+                        locationData.city = city;
+                        locationData.area = area;
+                        locationData.country = country;
+                    } else {
+                        console.log('[Geolocation] Geocoding returned no usable result:', data.status);
+                    }
+                } else {
+                    console.log('[Geolocation] No Maps API key configured — storing coordinates only');
+                }
+
+                const label = locationData.city || locationData.country
+                    ? [locationData.city, locationData.country].filter(Boolean).join(', ')
+                    : 'your location';
+                showLocationConfirmed(label);
+            } catch (error) {
+                console.error('[Geolocation] Reverse geocoding failed (coordinates kept):', error);
+                // Coordinates already stored above; just confirm generically.
+                showLocationConfirmed('your location');
+            }
+        }
+
+        // Permission denied or position unavailable — proceed silently.
+        function onLocationError(error) {
+            console.log('[Geolocation] Permission denied or unavailable:', error && error.message);
+            locationData = null;
+        }
+
+        // Update the banner to a green "captured" confirmation.
+        function showLocationConfirmed(label) {
+            const banner = document.getElementById('locationBanner');
+            const text = document.getElementById('locationBannerText');
+            const btn = document.getElementById('locationAllowBtn');
+            if (text) text.textContent = `📍 Location captured: ${label}`;
+            if (btn) btn.classList.add('hidden');
+            if (banner) banner.classList.add('captured');
+        }
+
         // Debug logging for URL params
         console.log('URL params extracted:', { userId, cardIndex });
         console.log('Full URL:', window.location.href);
@@ -2176,7 +2419,10 @@ END:VCARD`;
                     phone: scannerPhone, // Now includes country code
                     email: scannerEmail, // Include email exactly as in your working example
                     company: scannerCompany, // Add company field
-                    howWeMet: howWeMet
+                    howWeMet: howWeMet,
+                    // Optional scanner geolocation (null when not granted/available)
+                    location: locationData || null,
+                    locationCapturedAt: locationData?.capturedAt || null
                 }
             };
 
@@ -2208,12 +2454,84 @@ END:VCARD`;
             }
         }
 
-        // Load user data when page loads
-        if (userId) {
-            loadUserData();
-        } else {
-            document.getElementById('userData').innerHTML = '<p>No contact information provided</p>';
+        // ============= SCAN RATE LIMIT (5 scans / rolling hour for free users) =============
+        let resetCountdownInterval = null;
+
+        // Render the limit-reached placeholder and start a live countdown to the
+        // moment the oldest scan in the window ages out (server-provided resetTime).
+        function showLimitExceededPage(resetTimeIso) {
+            const container = document.querySelector('.container');
+            const limitPage = document.getElementById('limitExceededContainer');
+            if (container) container.style.display = 'none';
+            if (limitPage) limitPage.style.display = 'block';
+
+            const countdownEl = document.getElementById('reset-countdown');
+            const resetTime = resetTimeIso ? new Date(resetTimeIso) : null;
+
+            const updateCountdown = () => {
+                if (!resetTime || isNaN(resetTime.getTime())) {
+                    if (countdownEl) countdownEl.textContent = '--:--';
+                    return;
+                }
+                const diff = resetTime.getTime() - Date.now();
+                if (diff <= 0) {
+                    if (countdownEl) countdownEl.textContent = 'now';
+                    if (resetCountdownInterval) clearInterval(resetCountdownInterval);
+                    // A slot has freed up — reload so the form can be shown.
+                    window.location.reload();
+                    return;
+                }
+                const minutes = Math.floor(diff / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                if (countdownEl) {
+                    countdownEl.textContent =
+                        `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                }
+            };
+
+            if (resetCountdownInterval) clearInterval(resetCountdownInterval);
+            resetCountdownInterval = setInterval(updateCountdown, 1000);
+            updateCountdown();
         }
+
+        // Record THIS page load as a scan and get back the freshly-updated
+        // rolling-hour status (the count already includes this scan). On any
+        // failure, default to showing the form (never block due to a write/read error).
+        async function recordScanAndCheckLimit(cardOwnerId) {
+            try {
+                const response = await fetch(`/record-scan/${cardOwnerId}`, { method: 'POST' });
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (error) {
+                console.log('[ScanLimit] Scan record/status failed, showing form:', error);
+                return null;
+            }
+        }
+
+        // Page init. Order of operations:
+        //   1. Resolve the card owner from the URL (the `userId` global).
+        //   2. Immediately record this scan — independent of the form.
+        //   3. Using the fresh count, decide form vs. limit-exceeded page.
+        //   4. If under the limit, render the form normally.
+        async function initSaveContactPage() {
+            if (!userId) {
+                // No card owner resolved → do NOT record a scan.
+                document.getElementById('userData').innerHTML = '<p>No contact information provided</p>';
+                return;
+            }
+
+            const status = await recordScanAndCheckLimit(userId);
+
+            if (status && status.success && status.isLimitExceeded) {
+                console.log('[ScanLimit] Limit reached for', userId, '- showing placeholder');
+                showLimitExceededPage(status.resetTime);
+                return;
+            }
+
+            loadUserData();
+        }
+
+        initSaveContactPage();
 
         // Add debug information on page load
         window.addEventListener('load', function() {
@@ -2223,6 +2541,11 @@ END:VCARD`;
             console.log('Card Index:', cardIndex);
             console.log('Scan Tracked:', scanTracked);
             console.log('====================================');
+
+            // Immediately request the scanner's location on load. If the user
+            // dismisses or denies the automatic prompt, the banner's "Allow"
+            // button lets them trigger it again. Location is always optional.
+            requestScannerLocation();
         });
 
         // Helper function to manually test scan tracking (for development)

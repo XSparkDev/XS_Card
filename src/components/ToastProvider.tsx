@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
+  Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
@@ -135,6 +136,7 @@ function ToastNotification({ toast, onDismiss }: ToastNotificationProps) {
 
 export default function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const hasToasts = toasts.length > 0;
 
   useEffect(() => {
     const unsubscribe = toastService.subscribe((toast) => {
@@ -153,28 +155,45 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
       {children}
       
       {/* Toast notifications */}
-      {toasts.map((toast, index) => (
-        <View 
-          key={toast.id} 
-          style={[styles.toastWrapper, { top: Platform.OS === 'ios' ? 60 + (index * 70) : 40 + (index * 70) }]}
+      {hasToasts && (
+        <Modal
+          transparent
+          visible
+          animationType="none"
+          presentationStyle="overFullScreen"
+          statusBarTranslucent
+          onRequestClose={() => null}
         >
-          <ToastNotification
-            toast={toast}
-            onDismiss={removeToast}
-          />
-        </View>
-      ))}
+          <View style={styles.modalOverlay} pointerEvents="box-none">
+            {toasts.map((toast, index) => (
+              <View
+                key={toast.id}
+                style={[
+                  styles.toastWrapper,
+                  { top: Platform.OS === 'ios' ? 60 + (index * 70) : 40 + (index * 70) },
+                ]}
+                pointerEvents="box-none"
+              >
+                <ToastNotification toast={toast} onDismiss={removeToast} />
+              </View>
+            ))}
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+  },
   toastWrapper: {
     position: 'absolute',
     left: 16,
     right: 16,
     zIndex: 9999,
-    elevation: 10,
+    elevation: 9999,
   },
   container: {
     flex: 1,

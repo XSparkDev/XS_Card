@@ -70,6 +70,11 @@ exports.getContactById = async (req, res) => {
             
             data.contactList = data.contactList.map(contact => ({
                 ...contact,
+                // Machine-readable capture time (epoch ms) for filtering/sorting on the
+                // client. Kept alongside the human-formatted `createdAt` below.
+                createdAtMs: contact.createdAt?.seconds != null
+                    ? contact.createdAt.seconds * 1000
+                    : (contact.createdAt?._seconds != null ? contact.createdAt._seconds * 1000 : null),
                 createdAt: formatDate(contact.createdAt) // Format for display
             }));
         }

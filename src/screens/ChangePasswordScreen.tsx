@@ -125,7 +125,7 @@ export default function ChangePasswordScreen() {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <MaterialIcons name="arrow-back" size={24} color={COLORS.white} />
+            <MaterialIcons name="arrow-back" size={24} color={COLORS.black} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Change Password</Text>
           <View style={styles.placeholder} />
@@ -304,10 +304,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     paddingHorizontal: 16,
     paddingVertical: 16,
     paddingTop: 50,
+    zIndex: 1,
   },
   backButton: {
     padding: 8,
@@ -315,7 +316,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.white,
+    color: COLORS.black,
   },
   placeholder: {
     width: 40,
@@ -323,6 +324,15 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 20,
   },
   title: {
     fontSize: 24,
