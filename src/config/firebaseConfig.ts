@@ -1,6 +1,7 @@
 /// <reference path="../types/env.d.ts" />
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
+import { initializeAuth, getAuth, getReactNativePersistence, Auth } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Firebase configuration for XSCard App.
 // This must match the backend Firebase project to avoid auth mismatches.
@@ -70,19 +71,29 @@ try {
   }
   
   app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  
+
+  // Use AsyncStorage-backed persistence so Firebase itself remembers the
+  // signed-in user (and its refresh token) across app restarts. Without this,
+  // getAuth() defaults to in-memory persistence and the SDK forgets the
+  // session on every cold start, which is why "keep me logged in" previously
+  // relied on fragile custom recovery/retry logic.
+  try {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (persistenceError: any) {
+    // initializeAuth throws if auth was already initialized for this app
+    // (e.g. Fast Refresh in dev). Fall back to the existing instance.
+    auth = getAuth(app);
+  }
+
   console.log('✅ [Firebase Config] Firebase client initialized successfully');
   console.log('   Project:', firebaseConfig.projectId);
-  console.log('   Auth instance created');
-  
+  console.log('   Auth instance created with AsyncStorage persistence');
+
   if (firebaseConfig.projectId) {
     console.log('   Firebase Project ID:', firebaseConfig.projectId);
   }
-  
-  // Note: Firebase will show a warning about memory persistence
-  // However, we handle session persistence via AsyncStorage in AuthContext and authStorage
-  // The token and user data are stored in AsyncStorage, which persists across app restarts
 } catch (error: any) {
   console.error('❌ [Firebase Config] Firebase initialization failed:', error);
   console.error('   Config used:', {
