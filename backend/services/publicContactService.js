@@ -173,24 +173,39 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
   // Confirmation email to the person who scanned the card and saved the contact
   setImmediate(async () => {
     try {
-      const ownerName = [userData.name, userData.surname].filter(Boolean).join(' ') || 'XS Card';
+      const ownerName = [userData.name, userData.surname].filter(Boolean).join(' ') || 'this XS Card user';
+      const scannerFirstName = String(contactInfo.name || '').trim();
+      const appStoreUrl = 'https://apps.apple.com/app/id6742452317';
+
       const scannerMailOptions = {
         from: process.env.EMAIL_USER,
         to: contactInfo.email,
-        subject: `You saved ${ownerName}'s contact details`,
+        subject: `You just scanned an XS Card`,
         html: `
-          <h2>Contact Saved</h2>
-          <p>You've successfully saved <strong>${ownerName}</strong>'s contact details via XS Card.</p>
-          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-            <p><strong>Their Details:</strong></p>
-            <ul style="list-style: none; padding-left: 0;">
-              <li><strong>Name:</strong> ${ownerName}</li>
-              ${userData.company ? `<li><strong>Company:</strong> ${userData.company}</li>` : ''}
-              ${userData.email ? `<li><strong>Email:</strong> ${userData.email}</li>` : ''}
-              ${userData.phone ? `<li><strong>Phone:</strong> ${userData.phone}</li>` : ''}
-            </ul>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #ff4b6e; padding: 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 22px;">XS Card</h1>
+            </div>
+            <div style="padding: 24px;">
+              <h2 style="margin-top: 0;">Nice scan${scannerFirstName ? `, ${scannerFirstName}` : ''}! 👋</h2>
+              <p>You just saved <strong>${ownerName}</strong>'s contact details straight from their digital business card — no paper, no typing.</p>
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 8px; margin: 16px 0;">
+                <p style="margin-top: 0;"><strong>Who you connected with:</strong></p>
+                <ul style="list-style: none; padding-left: 0; margin-bottom: 0;">
+                  <li><strong>Name:</strong> ${ownerName}</li>
+                  ${userData.company ? `<li><strong>Company:</strong> ${userData.company}</li>` : ''}
+                  ${userData.email ? `<li><strong>Email:</strong> ${userData.email}</li>` : ''}
+                  ${userData.phone ? `<li><strong>Phone:</strong> ${userData.phone}</li>` : ''}
+                </ul>
+              </div>
+              <div style="background-color: #fff0f3; padding: 20px; border-radius: 8px; margin: 24px 0; text-align: center;">
+                <h3 style="color: #ff4b6e; margin-top: 0;">Get your own XS Card</h3>
+                <p style="margin-bottom: 16px;">Share your details just as easily — create your free digital business card and start collecting contacts like this one, without printing a single card.</p>
+                <a href="${appStoreUrl}" style="display: inline-block; background-color: #ff4b6e; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold;">Get XS Card</a>
+              </div>
+              <p style="color: #666; font-size: 12px;">This is an automated notification from XS Card.</p>
+            </div>
           </div>
-          <p style="color: #666; font-size: 12px;">This is an automated notification from XS Card.</p>
         `,
       };
 
