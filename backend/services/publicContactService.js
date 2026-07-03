@@ -138,25 +138,32 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
           to: userData.email,
           subject: `${contactInfo.name} Saved Your Contact Information`,
           html: `
-            <h2>New Contact Added</h2>
-            <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
-            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
-              <p><strong>Contact Details:</strong></p>
-              <ul style="list-style: none; padding-left: 0;">
-                <li><strong>Name:</strong> ${contactInfo.name}</li>
-                <li><strong>Surname:</strong> ${contactInfo.surname}</li>
-                <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
-                <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
-                ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
-                <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
-              </ul>
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+              <div style="background-color: #1B2B5B; padding: 24px; text-align: center;">
+                <span style="color: #FF4B6E; font-size: 24px; font-weight: bold;">XS</span><span style="color: #ffffff; font-size: 24px; font-weight: bold;">Card</span>
+              </div>
+              <div style="padding: 24px;">
+                <h2 style="color: #1B2B5B; margin-top: 0;">New Contact Added</h2>
+                <p><strong>${contactInfo.name} ${contactInfo.surname}</strong> recently received your XS Card and has sent you their details:</p>
+                <div style="background-color: #FFE5E9; border-left: 4px solid #FF4B6E; padding: 16px; border-radius: 6px; margin: 16px 0;">
+                  <p style="margin-top: 0;"><strong>Contact Details:</strong></p>
+                  <ul style="list-style: none; padding-left: 0; margin-bottom: 0;">
+                    <li><strong>Name:</strong> ${contactInfo.name}</li>
+                    <li><strong>Surname:</strong> ${contactInfo.surname}</li>
+                    <li><strong>Phone Number:</strong> ${contactInfo.phone || 'Not provided'}</li>
+                    <li><strong>Email:</strong> ${contactInfo.email || 'Not provided'}</li>
+                    ${contactInfo.company ? `<li><strong>Company:</strong> ${contactInfo.company}</li>` : ''}
+                    <li><strong>How You Met:</strong> ${contactInfo.howWeMet || 'Not provided'}</li>
+                  </ul>
+                </div>
+                ${
+                  userData.plan === 'free'
+                    ? `<p style="color: #FF4B6E; font-weight: bold;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>`
+                    : ''
+                }
+                <p style="color: #888888; font-size: 12px; margin-top: 24px;">This is an automated notification from your XS Card application.</p>
+              </div>
             </div>
-            <p style="color: #666; font-size: 12px;">This is an automated notification from your XS Card application.</p>
-            ${
-              userData.plan === 'free'
-                ? `<p style="color: #ff4b6e;">You have ${FREE_PLAN_CONTACT_LIMIT - currentContacts.length} contacts remaining in your free plan.</p>`
-                : ''
-            }
           `,
         };
 
@@ -169,6 +176,54 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
       }
     });
   }
+
+  // Confirmation email to the person who scanned the card and saved the contact
+  setImmediate(async () => {
+    try {
+      const ownerName = [userData.name, userData.surname].filter(Boolean).join(' ') || 'this XS Card user';
+      const scannerFirstName = String(contactInfo.name || '').trim();
+      const appStoreUrl = 'https://apps.apple.com/app/id6742452317';
+
+      const scannerMailOptions = {
+        from: process.env.EMAIL_USER,
+        to: contactInfo.email,
+        subject: `You just scanned an XS Card`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <div style="background-color: #1B2B5B; padding: 24px; text-align: center;">
+              <span style="color: #FF4B6E; font-size: 24px; font-weight: bold;">XS</span><span style="color: #ffffff; font-size: 24px; font-weight: bold;">Card</span>
+            </div>
+            <div style="padding: 24px;">
+              <h2 style="color: #1B2B5B; margin-top: 0;">Nice scan${scannerFirstName ? `, ${scannerFirstName}` : ''}! 👋</h2>
+              <p>You just saved <strong>${ownerName}</strong>'s contact details straight from their digital business card — no paper, no typing.</p>
+              <div style="background-color: #FFE5E9; border-left: 4px solid #FF4B6E; padding: 16px; border-radius: 6px; margin: 16px 0;">
+                <p style="margin-top: 0;"><strong>Who you connected with:</strong></p>
+                <ul style="list-style: none; padding-left: 0; margin-bottom: 0;">
+                  <li><strong>Name:</strong> ${ownerName}</li>
+                  ${userData.company ? `<li><strong>Company:</strong> ${userData.company}</li>` : ''}
+                  ${userData.email ? `<li><strong>Email:</strong> ${userData.email}</li>` : ''}
+                  ${userData.phone ? `<li><strong>Phone:</strong> ${userData.phone}</li>` : ''}
+                </ul>
+              </div>
+              <div style="background-color: #1B2B5B; padding: 20px; border-radius: 8px; margin: 24px 0; text-align: center;">
+                <h3 style="color: #ffffff; margin-top: 0;">Get your own XS Card</h3>
+                <p style="color: #E0E0E0; margin-bottom: 16px;">Share your details just as easily — create your free digital business card and start collecting contacts like this one, without printing a single card.</p>
+                <a href="${appStoreUrl}" style="display: inline-block; background-color: #FF4B6E; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold;">Get XS Card</a>
+              </div>
+              <p style="color: #888888; font-size: 12px;">This is an automated notification from XS Card.</p>
+            </div>
+          </div>
+        `,
+      };
+
+      const scannerMailResult = await sendMailWithStatus(scannerMailOptions);
+      if (!scannerMailResult.success) {
+        console.error('Failed to send scanner confirmation email:', scannerMailResult.error);
+      }
+    } catch (scannerEmailError) {
+      console.error('Scanner confirmation email error:', scannerEmailError);
+    }
+  });
 
   return {
     success: true,
