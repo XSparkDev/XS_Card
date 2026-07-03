@@ -1,12 +1,16 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
-const sgMail = require('@sendgrid/mail'); // SendGrid integration
+const sgMail = require('@sendgrid/mail'); // SendGrid integration (kept as emergency fallback, no longer in the primary chain)
+const { Resend } = require('resend');
 const { db } = require('../../firebase.js');
 
 // Set SendGrid API key if available
 if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY !== 'YOUR_SENDGRID_API_KEY') {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
+
+// Resend client
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 // Email service configuration
 const EMAIL_SERVICE = process.env.EMAIL_SERVICE || 'smtp'; // Options: 'smtp', 'sendgrid', 'gmail'
@@ -109,7 +113,12 @@ const sendMailWithStatus = async (mailOptions) => {
     console.log(`Sending email to: ${mailOptions.to} using ${EMAIL_SERVICE}`);
     console.log('Email subject:', mailOptions.subject);
     
-    // Try SendGrid if configured
+    // Try Resend if explicitly configured as the primary service
+    if (EMAIL_SERVICE === 'resend') {
+      return await sendWithResend(mailOptions);
+    }
+
+    // Try SendGrid if explicitly configured as the primary service
     if (EMAIL_SERVICE === 'sendgrid') {
       return await sendWithSendGrid(mailOptions);
     }
@@ -134,16 +143,16 @@ const sendMailWithStatus = async (mailOptions) => {
         command: primaryError.command
       });
       
-      // TIER 1 FALLBACK: Try SendGrid
-      if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY !== 'YOUR_SENDGRID_API_KEY') {
-        console.log('Primary SMTP failed, trying SendGrid as fallback...');
+      // TIER 1 FALLBACK: Try Resend
+      if (resend) {
+        console.log('Primary SMTP failed, trying Resend as fallback...');
         try {
-          const sendgridResult = await sendWithSendGrid(mailOptions);
-          if (sendgridResult.success) {
-            return sendgridResult;
+          const resendResult = await sendWithResend(mailOptions);
+          if (resendResult.success) {
+            return resendResult;
           }
-        } catch (sendgridError) {
-          console.log('SendGrid fallback also failed:', sendgridError.message);
+        } catch (resendError) {
+          console.log('Resend fallback also failed:', resendError.message);
         }
       }
       
@@ -267,6 +276,51 @@ const sendWithSendGrid = async (mailOptions) => {
       error: error.message,
       errorCode: error.code || 'UNKNOWN',
       provider: 'sendgrid-failed'
+    };
+  }
+};
+
+// Helper function to send email using Resend
+const sendWithResend = async (mailOptions) => {
+  try {
+    if (!resend) {
+      throw new Error('Resend API key not configured');
+    }
+
+    const fromAddress = typeof mailOptions.from === 'object'
+      ? `${mailOptions.from.name} <${mailOptions.from.address}>`
+      : mailOptions.from;
+
+    const { data, error } = await resend.emails.send({
+      from: fromAddress,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      html: mailOptions.html || undefined,
+      text: mailOptions.text || undefined,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    console.log('Email sent via Resend to:', mailOptions.to);
+
+    return {
+      success: true,
+      accepted: [mailOptions.to],
+      rejected: [],
+      messageId: data?.id || 'unknown',
+      provider: 'resend'
+    };
+  } catch (error) {
+    console.error('Resend email error:', error);
+
+    // Return error - let the main function handle fallbacks
+    return {
+      success: false,
+      error: error.message,
+      errorCode: error.code || 'UNKNOWN',
+      provider: 'resend-failed'
     };
   }
 };
