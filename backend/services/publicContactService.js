@@ -170,6 +170,39 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
     });
   }
 
+  // Confirmation email to the person who scanned the card and saved the contact
+  setImmediate(async () => {
+    try {
+      const ownerName = [userData.name, userData.surname].filter(Boolean).join(' ') || 'XS Card';
+      const scannerMailOptions = {
+        from: process.env.EMAIL_USER,
+        to: contactInfo.email,
+        subject: `You saved ${ownerName}'s contact details`,
+        html: `
+          <h2>Contact Saved</h2>
+          <p>You've successfully saved <strong>${ownerName}</strong>'s contact details via XS Card.</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
+            <p><strong>Their Details:</strong></p>
+            <ul style="list-style: none; padding-left: 0;">
+              <li><strong>Name:</strong> ${ownerName}</li>
+              ${userData.company ? `<li><strong>Company:</strong> ${userData.company}</li>` : ''}
+              ${userData.email ? `<li><strong>Email:</strong> ${userData.email}</li>` : ''}
+              ${userData.phone ? `<li><strong>Phone:</strong> ${userData.phone}</li>` : ''}
+            </ul>
+          </div>
+          <p style="color: #666; font-size: 12px;">This is an automated notification from XS Card.</p>
+        `,
+      };
+
+      const scannerMailResult = await sendMailWithStatus(scannerMailOptions);
+      if (!scannerMailResult.success) {
+        console.error('Failed to send scanner confirmation email:', scannerMailResult.error);
+      }
+    } catch (scannerEmailError) {
+      console.error('Scanner confirmation email error:', scannerEmailError);
+    }
+  });
+
   return {
     success: true,
     message: 'Contact added successfully',
