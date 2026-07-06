@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Pla
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
+import { formatSocialLinkDisplay } from '../../utils/socialLinkDisplay';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
@@ -153,7 +154,9 @@ export default function CardTemplate2(props: Props) {
             onPress={() => onPressSocial(platform, textValue)}
           >
             <MaterialCommunityIcons name={socialIcon(platform)} size={22} color={COLORS.white} />
-            <Text style={styles.pillText}>{textValue}</Text>
+            <Text style={styles.pillText} numberOfLines={1} ellipsizeMode="tail">
+              {formatSocialLinkDisplay(platform, textValue)}
+            </Text>
           </TouchableOpacity>
         );
       })}

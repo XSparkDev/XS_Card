@@ -12,6 +12,7 @@ import { ScrollView, View, Text, Image, TouchableOpacity, StyleSheet } from 'rea
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
+import { formatSocialLinkDisplay } from '../../utils/socialLinkDisplay';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
 import QrPlaceholder from '../QrPlaceholder';
@@ -128,7 +129,9 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
                 return (
                   <TouchableOpacity key={socialId} style={styles.contactSection}>
                     <MaterialCommunityIcons name={icon} size={24} color={accentColor} />
-                    <Text style={styles.contactText}>{value}</Text>
+                    <Text style={styles.contactText} numberOfLines={1} ellipsizeMode="tail">
+                      {formatSocialLinkDisplay(socialId, value as string)}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}

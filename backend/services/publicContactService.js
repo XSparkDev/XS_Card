@@ -136,7 +136,7 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
         const mailOptions = {
           from: process.env.EMAIL_USER,
           to: userData.email,
-          subject: `${contactInfo.name} Saved Your Contact Information`,
+          subject: `${contactInfo.name} ${contactInfo.surname} Saved Your Contact Information`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
               <div style="background-color: #1B2B5B; padding: 24px; text-align: center;">
@@ -187,7 +187,7 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
       const scannerMailOptions = {
         from: process.env.EMAIL_USER,
         to: contactInfo.email,
-        subject: `You just scanned an XS Card`,
+        subject: `You just scanned ${ownerName}'s XS Card`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
             <div style="background-color: #1B2B5B; padding: 24px; text-align: center;">

@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Pla
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { getImageUrl } from '../../utils/imageUtils';
+import { formatSocialLinkDisplay } from '../../utils/socialLinkDisplay';
 import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
@@ -252,8 +253,8 @@ export default function CardTemplate5(props: Props) {
                 <Text style={[
                   styles.contactText,
                   isTablet() && { fontSize: scale(16) }
-                ]}>
-                  {textValue || ''}
+                ]} numberOfLines={1} ellipsizeMode="tail">
+                  {textValue ? formatSocialLinkDisplay(platform, textValue) : ''}
                 </Text>
               </TouchableOpacity>
             );
