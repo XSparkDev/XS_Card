@@ -450,6 +450,7 @@ export default function ContactsScreen() {
   const [contactPanelVisible, setContactPanelVisible] = useState(false);
   const [contactPanelDockedTop, setContactPanelDockedTop] = useState(0);
   const [contactPanelContact, setContactPanelContact] = useState<Contact | null>(null);
+  const [contactPanelIndex, setContactPanelIndex] = useState(0);
   // Refs that let us scroll a tapped contact up into the visible "priority" zone
   // above the docked panel (so the panel stops right at the contact's bottom and
   // the space above stays scrollable for picking another contact).
@@ -1068,7 +1069,7 @@ export default function ContactsScreen() {
 
 
   // Contact press handler
-  const handleContactPress = useCallback((contact: Contact, contactKey: string, touchY: number = 0) => {
+  const handleContactPress = useCallback((contact: Contact, contactKey: string, touchY: number = 0, index: number = 0) => {
     if (isSelectionMode) {
       toggleContactSelection(contact);
       return;
@@ -1082,6 +1083,7 @@ export default function ContactsScreen() {
     // panel never flashes from the top while we refine the position below.
     const initialDock = Math.max(180, Math.min(touchY + 55, MAX_DOCK));
     setContactPanelContact(contact);
+    setContactPanelIndex(index);
     setContactPanelDockedTop(initialDock);
     setContactPanelVisible(true);
 
@@ -1991,7 +1993,7 @@ export default function ContactsScreen() {
                   >
                     <TouchableOpacity
                       style={[styles.contactCard, isSelected && styles.contactCardSelected]}
-                      onPress={(e) => handleContactPress(contact, contactKey, e.nativeEvent.pageY)}
+                      onPress={(e) => handleContactPress(contact, contactKey, e.nativeEvent.pageY, index)}
                       onLongPress={() => openCopyFieldSheet(contact)}
                       activeOpacity={0.7}
                       delayLongPress={250}
@@ -2018,7 +2020,13 @@ export default function ContactsScreen() {
                               the selected field is always bold and appears first/top. */}
                           {emphasisField === 'company' && contact.company ? (
                             <>
-                              <Text style={styles.contactPrimaryText} numberOfLines={1}>
+                              {/* Prioritized field: shrink to fit rather than truncate with an ellipsis. */}
+                              <Text
+                                style={styles.contactPrimaryText}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.5}
+                              >
                                 {contact.company}
                               </Text>
                               <Text style={styles.contactSecondaryText} numberOfLines={1}>
@@ -2027,7 +2035,13 @@ export default function ContactsScreen() {
                             </>
                           ) : (
                             <>
-                              <Text style={styles.contactPrimaryText} numberOfLines={1}>
+                              {/* Prioritized field: shrink to fit rather than truncate with an ellipsis. */}
+                              <Text
+                                style={styles.contactPrimaryText}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.5}
+                              >
                                 {contact.name} {contact.surname}
                               </Text>
                               {!!contact.company && (
@@ -2719,13 +2733,20 @@ export default function ContactsScreen() {
       </View>
       </View>
 
-      {/* Draggable contact detail panel — replaces the options popup */}
+      {/* Draggable contact detail panel — replaces the options popup. Scrolls through
+          the full filtered list so the next contact peeks in beneath the tapped one. */}
       {contactPanelVisible && contactPanelContact && (
         <ContactDetailPanel
-          contact={contactPanelContact}
+          contacts={filteredContacts}
+          initialIndex={contactPanelIndex}
           visible={contactPanelVisible}
           dockedTop={contactPanelDockedTop}
           onClose={() => setContactPanelVisible(false)}
+          onIndexChange={(index) => {
+            setContactPanelIndex(index);
+            const next = filteredContacts[index];
+            if (next) setContactPanelContact(next);
+          }}
         />
       )}
 

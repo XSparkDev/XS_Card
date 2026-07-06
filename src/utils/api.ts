@@ -79,6 +79,7 @@ export const ENDPOINTS = {
     ADD_TO_WALLET: '/Cards/:userId/wallet/:cardIndex',
     DELETE_CONTACT: '/Contacts',
     UPDATE_CARD: '/Cards/:id',
+    RESTART_SPEAKER_WINDOW: '/Cards/:id/restart-speaker-window',
     UPDATE_CARD_COLOR: '/Cards/:id/color',
     CREATE_MEETING: '/meetings',
     MEETING_INVITE: '/meetings/invite',

@@ -41,6 +41,9 @@ const isSpeakerCardEnabled = (value: unknown): boolean => {
 
 // Salutation options for the Title dropdown — primary-card-only, canonical field.
 const TITLE_OPTIONS = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Dr.', 'Prof.'];
+// Fixed per-row height so the dropdown's expand/collapse animation can
+// target an exact height (avoids measuring content on every open/close).
+const TITLE_ROW_HEIGHT = 48;
 
 const normalizeUserPlan = (plan?: string | null): UserPlan => {
   const normalizedPlan = String(plan || 'free').toLowerCase();
@@ -150,7 +153,34 @@ export default function EditCard() {
   const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
-  const [isTitleModalVisible, setIsTitleModalVisible] = useState(false);
+  // Title/salutation — inline collapsible dropdown (replaces the old popup).
+  const [isTitleDropdownOpen, setIsTitleDropdownOpen] = useState(false);
+  const titleDropdownAnim = useRef(new Animated.Value(0)).current;
+  // Title/salutation inline dropdown — expands/collapses in place (no popup).
+  // Height animates between 0 and a fixed, known content height (row count *
+  // TITLE_ROW_HEIGHT), so no runtime measurement is needed.
+  const closeTitleDropdown = useCallback(() => {
+    Animated.timing(titleDropdownAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: false, // height isn't supported by the native driver
+    }).start();
+    setIsTitleDropdownOpen(false);
+  }, [titleDropdownAnim]);
+  const toggleTitleDropdown = useCallback(() => {
+    const opening = !isTitleDropdownOpen;
+    setIsTitleDropdownOpen(opening);
+    const rowCount = TITLE_OPTIONS.length + (formData.salutation ? 1 : 0); // +1 for "Clear"
+    Animated.timing(titleDropdownAnim, {
+      toValue: opening ? rowCount * TITLE_ROW_HEIGHT : 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  }, [isTitleDropdownOpen, titleDropdownAnim, formData.salutation]);
+  const selectTitle = useCallback((option: string) => {
+    setFormData((prev: any) => ({ ...prev, salutation: option }));
+    closeTitleDropdown();
+  }, [closeTitleDropdown]);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState('');
@@ -182,6 +212,7 @@ export default function EditCard() {
   const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
   const [speakerConflictLoaded, setSpeakerConflictLoaded] = useState(false);
   const [isExportingContacts, setIsExportingContacts] = useState(false);
+  const [isRestartingSpeakerList, setIsRestartingSpeakerList] = useState(false);
 
   // Widget state
   const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
@@ -832,6 +863,63 @@ export default function EditCard() {
     } finally {
       setIsExportingContacts(false);
     }
+  };
+
+  // Restart the CSV lead list for this Speaker & Engagement Card. Premium-only.
+  // Clears the "current" list by starting a fresh capture window server-side —
+  // the same card, QR code, and toggle stay exactly as they are; only future
+  // scans populate the new list, and past scans simply stop showing up in
+  // exports (they're never deleted).
+  const handleRestartSpeakerList = () => {
+    if (triggerUpsell({
+      featureName: 'Speaker & Engagement Card',
+      description: 'Restarting the CSV list is a premium feature. Upgrade to Premium to use it.',
+    })) return;
+
+    if (!savedIsSpeakerEngagementCard) {
+      Alert.alert(
+        'Save Required',
+        'Save this card with the speaker toggle on before restarting its CSV list.'
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Restart CSV List?',
+      'This clears the current list of scanned contacts and starts a brand-new, empty list. Your existing export is unaffected, and the card itself keeps working exactly as before — nothing about its QR code changes.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restart List',
+          style: 'destructive',
+          onPress: async () => {
+            if (isRestartingSpeakerList) return;
+            setIsRestartingSpeakerList(true);
+            try {
+              const userId = await getUserId();
+              if (!userId) throw new Error('Not signed in');
+
+              const response = await authenticatedFetchWithRefresh(
+                `${ENDPOINTS.RESTART_SPEAKER_WINDOW.replace(':id', userId)}?cardIndex=${cardIndex}`,
+                { method: 'POST' }
+              );
+
+              if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.message || 'Failed to restart CSV list');
+              }
+
+              toast.success('CSV List Restarted', 'Future scans will populate a fresh list.');
+            } catch (error: any) {
+              console.error('Restart speaker list failed:', error);
+              Alert.alert('Restart Failed', error?.message || 'Could not restart the CSV list. Please try again.');
+            } finally {
+              setIsRestartingSpeakerList(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Load active widgets for this card
@@ -1698,6 +1786,7 @@ export default function EditCard() {
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={() => { if (isTitleDropdownOpen) closeTitleDropdown(); }}
           onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)}
           scrollEventThrottle={16}
         enableOnAndroid={true}
@@ -1978,18 +2067,46 @@ export default function EditCard() {
                 </View>
               </Pressable>
             )}
-            {/* Title / salutation — canonical dropdown (primary card only). */}
+            {/* Title / salutation — canonical inline collapsible dropdown (primary card only). */}
             {isPrimaryCard ? (
-              <TouchableOpacity
-                style={[styles.input, styles.dropdownInput]}
-                onPress={() => setIsTitleModalVisible(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
-                  {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
-                </Text>
-                <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
-              </TouchableOpacity>
+              <View style={styles.titleDropdownWrap}>
+                <TouchableOpacity
+                  style={[styles.input, styles.dropdownInput, { marginBottom: 0 }]}
+                  onPress={toggleTitleDropdown}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
+                    {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
+                  </Text>
+                  <MaterialIcons
+                    name={isTitleDropdownOpen ? 'arrow-drop-up' : 'arrow-drop-down'}
+                    size={24}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+                <Animated.View style={[styles.titleDropdownPanel, { height: titleDropdownAnim }]}>
+                  {TITLE_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={styles.titleOptionRow}
+                      onPress={() => selectTitle(option)}
+                    >
+                      <Text style={styles.titleOptionText}>{option}</Text>
+                      {formData.salutation === option && (
+                        <MaterialIcons name="check" size={20} color={COLORS.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                  {!!formData.salutation && (
+                    <TouchableOpacity
+                      style={styles.titleOptionRow}
+                      onPress={() => selectTitle('')}
+                    >
+                      <Text style={[styles.titleOptionText, { color: COLORS.gray }]}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </Animated.View>
+              </View>
             ) : (
               <Pressable onPress={redirectToPrimaryCard}>
                 <View style={[styles.input, styles.dropdownInput, styles.disabledInput]} pointerEvents="none">
@@ -2007,6 +2124,7 @@ export default function EditCard() {
               placeholderTextColor="#999"
               value={formData.occupation}
               onChangeText={(text) => setFormData({...formData, occupation: text})}
+              onFocus={() => { if (isTitleDropdownOpen) closeTitleDropdown(); }}
             />
             {/* Qualification — canonical, optional (primary card only). */}
             {isPrimaryCard ? (
@@ -2200,6 +2318,29 @@ export default function EditCard() {
                 )}
                 <Text style={styles.exportContactsButtonText}>
                   {isExportingContacts ? 'Preparing CSV…' : 'Download scanned contacts (CSV)'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Restart the CSV list — same premium + saved-toggle gate as export.
+                Clears the current list and starts a fresh one for a new session/event,
+                without touching the card's QR code or Speaker Card status. */}
+            {isPremium && savedIsSpeakerEngagementCard && (
+              <TouchableOpacity
+                style={styles.restartSpeakerListButton}
+                onPress={handleRestartSpeakerList}
+                disabled={isRestartingSpeakerList}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Restart the CSV list for this card"
+              >
+                {isRestartingSpeakerList ? (
+                  <ActivityIndicator size="small" color={COLORS.gray} />
+                ) : (
+                  <MaterialIcons name="restart-alt" size={20} color={COLORS.gray} />
+                )}
+                <Text style={styles.restartSpeakerListButtonText}>
+                  {isRestartingSpeakerList ? 'Restarting…' : 'Restart CSV List'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -2491,43 +2632,6 @@ export default function EditCard() {
           >
             <Text style={styles.redirectCancelBtnText}>Stay here</Text>
           </TouchableOpacity>
-        </View>
-      </Modal>
-
-      {/* Title / salutation selection modal — primary card only */}
-      <Modal
-        isVisible={isTitleModalVisible}
-        onBackdropPress={() => setIsTitleModalVisible(false)}
-        onBackButtonPress={() => setIsTitleModalVisible(false)}
-      >
-        <View style={styles.titleModalContainer}>
-          <Text style={styles.titleModalHeading}>Select title</Text>
-          {TITLE_OPTIONS.map((option) => (
-            <TouchableOpacity
-              key={option}
-              style={styles.titleOptionRow}
-              onPress={() => {
-                setFormData({ ...formData, salutation: option });
-                setIsTitleModalVisible(false);
-              }}
-            >
-              <Text style={styles.titleOptionText}>{option}</Text>
-              {formData.salutation === option && (
-                <MaterialIcons name="check" size={20} color={COLORS.primary} />
-              )}
-            </TouchableOpacity>
-          ))}
-          {!!formData.salutation && (
-            <TouchableOpacity
-              style={styles.titleOptionRow}
-              onPress={() => {
-                setFormData({ ...formData, salutation: '' });
-                setIsTitleModalVisible(false);
-              }}
-            >
-              <Text style={[styles.titleOptionText, { color: COLORS.gray }]}>Clear</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </Modal>
 
@@ -3388,25 +3492,34 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.white,
   },
-  titleModalContainer: {
+  // Wraps the title trigger + its inline dropdown panel so the panel is
+  // positioned directly beneath the input, in the normal document flow.
+  titleDropdownWrap: {
+    marginBottom: 15,
+  },
+  // The collapsible panel itself — animates `height` between 0 and its full
+  // content height. Matches the input's rounded-corner language while reading
+  // clearly as a distinct dropdown surface (border + subtle shadow), the same
+  // visual treatment used for cards elsewhere in the app.
+  titleDropdownPanel: {
+    overflow: 'hidden',
     backgroundColor: COLORS.white,
     borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  titleModalHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.black,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   titleOptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    height: TITLE_ROW_HEIGHT,
     paddingHorizontal: 16,
-    paddingVertical: 14,
   },
   titleOptionText: {
     fontSize: 16,
@@ -3597,6 +3710,24 @@ const styles = StyleSheet.create({
   },
   exportContactsButtonText: {
     color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  restartSpeakerListButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.light,
+  },
+  restartSpeakerListButtonText: {
+    color: COLORS.gray,
     fontSize: 14,
     fontWeight: '600',
   },

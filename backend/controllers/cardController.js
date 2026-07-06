@@ -633,6 +633,77 @@ exports.updateCard = async (req, res) => {
     }
 };
 
+// Restart the CSV lead list for a Speaker & Engagement Card. Premium-only.
+// Closes whatever speaker window is currently open (if any) and opens a
+// brand-new one starting now. CSV export only ever reads the LATEST window
+// (see inCurrentSpeakerWindow on the client), so this makes every prior scan
+// invisible to future exports without deleting any contact data, and without
+// touching the card's QR code, isSpeakerEngagementCard flag, or anything else
+// about the card. Future scans land in the new window and populate a fresh list.
+exports.restartSpeakerWindow = async (req, res) => {
+    const { id: userId } = req.params;
+    const { cardIndex = 0 } = req.query;
+
+    try {
+        const cardRef = db.collection('cards').doc(userId);
+        const doc = await cardRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).send({ message: 'User cards not found' });
+        }
+
+        const cardsData = doc.data();
+        const card = cardsData.cards && cardsData.cards[cardIndex];
+        if (!card) {
+            return res.status(404).send({ message: 'Card not found at specified index' });
+        }
+
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userPlan = String(userDoc.data()?.plan || 'free').toLowerCase();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userPlan);
+
+        if (!hasSpeakerCardAccess) {
+            return res.status(403).send({
+                message: 'Restarting the CSV list is a Premium feature',
+                code: 'SPEAKER_CARD_PREMIUM_REQUIRED'
+            });
+        }
+
+        const isSpeaker = card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true';
+        if (!isSpeaker) {
+            return res.status(400).send({ message: 'Card is not currently a Speaker & Engagement Card' });
+        }
+
+        const now = new Date().toISOString();
+        const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+        const last = windows[windows.length - 1];
+        if (last && (last.end === null || last.end === undefined)) {
+            windows[windows.length - 1] = { ...last, end: now };
+        }
+        windows.push({ start: now, end: null });
+
+        const updatedCards = [...cardsData.cards];
+        updatedCards[cardIndex] = {
+            ...card,
+            speakerWindows: windows
+        };
+
+        await cardRef.update({ cards: updatedCards });
+
+        res.status(200).send({
+            message: 'CSV list restarted — new scans will populate a fresh list',
+            updatedCard: updatedCards[cardIndex],
+            cards: updatedCards
+        });
+    } catch (error) {
+        console.error('Restart speaker window error:', error);
+        res.status(500).send({
+            message: 'Failed to restart CSV list',
+            error: error.message
+        });
+    }
+};
+
 exports.deleteCard = async (req, res) => {
     const { id: userId } = req.params;
     const { cardIndex } = req.query;
