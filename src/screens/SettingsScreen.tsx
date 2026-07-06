@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Linking,
   Image,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -20,9 +21,12 @@ import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, API_BASE_URL } fro
 import { useToast } from '../hooks/useToast';
 import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
 import Header from '../components/Header';
+import GlassSurface from '../components/GlassSurface';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getImageUrl } from '../utils/imageUtils';
 import { useFocusEffect } from '@react-navigation/native';
+import { useGhostMode } from '../context/GhostModeContext';
+import { useTooltipContext } from '../context/TooltipContext';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -64,6 +68,8 @@ export default function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const toast = useToast();
   const { triggerUpsell } = usePremiumUpsell();
+  const { ghostModeEnabled, setGhostModeEnabled } = useGhostMode();
+  const { tooltipsEnabled, setTooltipsEnabled } = useTooltipContext();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
@@ -360,6 +366,30 @@ export default function SettingsScreen() {
   );
   };
 
+  const renderToggleItem = (
+    icon: string,
+    title: string,
+    subtitle: string,
+    value: boolean,
+    onValueChange: (value: boolean) => void
+  ) => (
+    <View style={styles.settingItem}>
+      <View style={styles.settingItemLeft}>
+        <MaterialIcons name={icon as any} size={24} color={COLORS.secondary} />
+        <View style={styles.settingItemText}>
+          <Text style={styles.settingItemTitle}>{title}</Text>
+          <Text style={styles.settingItemSubtitle}>{subtitle}</Text>
+        </View>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: COLORS.disabled, true: COLORS.primary }}
+        thumbColor={COLORS.white}
+      />
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <Header title="Settings" />
@@ -380,8 +410,9 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Account</Text>
           
           {userData && (
+            <GlassSurface style={styles.userInfo} borderRadius={12}>
             <TouchableOpacity
-              style={styles.userInfo}
+              style={styles.userInfoTouchable}
               activeOpacity={0.85}
               onPress={handleProfilePress}
             >
@@ -429,6 +460,7 @@ export default function SettingsScreen() {
               </View>
               <MaterialIcons name="chevron-right" size={24} color={COLORS.gray} />
             </TouchableOpacity>
+            </GlassSurface>
           )}
         </View>
 
@@ -519,6 +551,27 @@ export default function SettingsScreen() {
             'Privacy & Security',
             'Manage your privacy and security settings',
             () => navigation.navigate('PrivacySecurity')
+          )}
+        </View>
+
+        {/* Display Section — Ghost Mode sits directly above Tooltips, per design. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Display</Text>
+
+          {renderToggleItem(
+            'auto-awesome',
+            'Ghost Mode',
+            'A frosted-glass look across the app',
+            ghostModeEnabled,
+            setGhostModeEnabled
+          )}
+
+          {renderToggleItem(
+            'lightbulb-outline',
+            'Tooltips',
+            'Show helpful tips while using the app',
+            tooltipsEnabled,
+            setTooltipsEnabled
           )}
         </View>
 
@@ -634,6 +687,12 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     justifyContent: 'space-between',
+  },
+  userInfoTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
   },
   userInfoContent: {
     flexDirection: 'row',

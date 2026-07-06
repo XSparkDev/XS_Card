@@ -12,6 +12,7 @@ import AddCards from '../screens/cards/AddCards';
 import EditCard from '../screens/contacts/EditCard';
 import UnlockPremium from '../screens/Unlockpremium/UnlockPremium';
 import { useColorScheme } from '../context/ColorSchemeContext';
+import GlassSurface from '../components/GlassSurface';
 import EventsScreen from '../screens/events/EventsScreen';
 import EventDetailsScreen from '../screens/events/EventDetailsScreen';
 import EventPreferencesScreen from '../screens/events/EventPreferencesScreen';
@@ -109,7 +110,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   return (
     <View style={pillStyles.wrapper} pointerEvents="box-none">
-      <View style={[pillStyles.pill, { opacity }]}>
+      <GlassSurface style={[pillStyles.pill, { opacity }]} borderRadius={32}>
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
           const item = TAB_ITEMS[index];
@@ -134,7 +135,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             </TouchableOpacity>
           );
         })}
-      </View>
+      </GlassSurface>
     </View>
   );
 }

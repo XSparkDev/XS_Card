@@ -11,6 +11,7 @@ import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
 import PremiumUpsellProvider from './src/components/PremiumUpsellProvider';
 import { TooltipProvider } from './src/context/TooltipContext';
+import { GhostModeProvider } from './src/context/GhostModeContext';
 import { ScanLimitProvider } from './src/context/ScanLimitContext';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
@@ -162,6 +163,7 @@ function AppContent() {
           <MeetingNotificationProvider>
           <ToastProvider>
             <TooltipProvider>
+            <GhostModeProvider>
             <ScanLimitProvider>
             <NavigationContainer ref={navigationRef}>
               <PremiumUpsellProvider>
@@ -173,6 +175,7 @@ function AppContent() {
               </PremiumUpsellProvider>
             </NavigationContainer>
             </ScanLimitProvider>
+            </GhostModeProvider>
             </TooltipProvider>
 
             {/* First-launch location permission rationale (optional feature) */}
