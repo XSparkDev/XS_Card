@@ -14,6 +14,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useGhostMode } from '../context/GhostModeContext';
 
 interface GlassSurfaceProps {
@@ -26,8 +27,12 @@ interface GlassSurfaceProps {
   tint?: 'light' | 'dark' | 'default';
 }
 
-const GLASS_OVERLAY_COLOR = 'rgba(255, 255, 255, 0.32)';
-const GLASS_BORDER_COLOR = 'rgba(255, 255, 255, 0.55)';
+// A brand-tinted diagonal gradient (secondary navy -> primary pink), kept very
+// low-opacity, layered over the native blur. Backdrop blur alone is nearly
+// invisible over this app's mostly-flat, near-white screens — the tint is
+// what actually makes "glass" read as a distinct surface, on any background.
+const GLASS_GRADIENT = ['rgba(27, 43, 91, 0.16)', 'rgba(255, 75, 110, 0.10)'] as const;
+const GLASS_BORDER_COLOR = 'rgba(255, 255, 255, 0.65)';
 
 export default function GlassSurface({
   children,
@@ -54,7 +59,12 @@ export default function GlassSurface({
         style={[StyleSheet.absoluteFill, { opacity: glassOpacity, borderRadius }]}
       >
         <BlurView intensity={intensity} tint={tint} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, styles.overlay]} />
+        <LinearGradient
+          colors={GLASS_GRADIENT}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
         <View style={[StyleSheet.absoluteFill, styles.border, { borderRadius }]} />
       </Animated.View>
       {children}
@@ -63,9 +73,6 @@ export default function GlassSurface({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    backgroundColor: GLASS_OVERLAY_COLOR,
-  },
   border: {
     borderWidth: 1,
     borderColor: GLASS_BORDER_COLOR,

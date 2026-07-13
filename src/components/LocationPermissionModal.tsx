@@ -12,6 +12,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import GlassSurface from './GlassSurface';
 import {
   Modal,
   View,
@@ -109,18 +110,20 @@ export default function LocationPermissionModal() {
       statusBarTranslucent
     >
       <View style={styles.overlay}>
-        <View style={styles.card}>
+        <GlassSurface style={styles.card} borderRadius={20}>
           <MaterialCommunityIcons
             name="map-marker-radius"
             size={64}
             color={COLORS.primary}
             style={styles.icon}
           />
-          <Text style={styles.headline}>See where you met your contacts</Text>
+          <Text style={styles.headline}>Remember where you connect</Text>
           <Text style={styles.body}>
-            XS Card would like to know your location so you can see where you met
-            your contacts. This is optional and can be changed in your device
-            settings at any time.
+            XS Card uses your location to record the approximate place where you
+            exchange or scan contacts — like the event, venue, or city — so you can
+            look back and see exactly where you met each connection. This makes your
+            contact history more useful for networking. It's optional and can be
+            changed in your device settings at any time.
           </Text>
           <TouchableOpacity
             style={styles.primaryButton}
@@ -136,7 +139,7 @@ export default function LocationPermissionModal() {
           >
             <Text style={styles.secondaryButtonText}>Not Now</Text>
           </TouchableOpacity>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );

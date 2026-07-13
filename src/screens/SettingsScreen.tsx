@@ -454,7 +454,7 @@ export default function SettingsScreen() {
                   </Text>
                   <Text style={styles.userEmail}>{userData.email || 'No email'}</Text>
                   <Text style={styles.userPlan}>
-                    Plan: {userData.plan === 'premium' ? 'Premium' : 'Free'}
+                    Plan: <Text style={styles.userPlanValue}>{userData.plan === 'premium' ? 'Premium' : 'Free'}</Text>
                   </Text>
                 </View>
               </View>
@@ -733,6 +733,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.secondary,
     fontWeight: '500',
+  },
+  userPlanValue: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   settingItem: {
     flexDirection: 'row',

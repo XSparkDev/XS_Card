@@ -10,6 +10,7 @@ import {
 import { COLORS } from '../constants/colors';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useToast, buildUrl, ENDPOINTS } from '../utils/api';
+import GlassSurface from './GlassSurface';
 
 interface EmailVerificationModalProps {
   visible: boolean;
@@ -87,7 +88,7 @@ export default function EmailVerificationModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        <GlassSurface style={styles.modal} borderRadius={20}>
           <View style={styles.header}>
             <View style={styles.iconContainer}>
               <MaterialIcons name="email" size={40} color={COLORS.primary} />
@@ -143,7 +144,7 @@ export default function EmailVerificationModal({
               • Contact support if you continue having issues
             </Text>
           </View>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );

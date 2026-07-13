@@ -8,6 +8,7 @@ import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
 import QrPlaceholder from '../QrPlaceholder';
+import InlineTextField from './InlineTextField';
 
 type CardData = any;
 
@@ -27,6 +28,9 @@ interface Props {
   scanCountdown?: string;
   qrTimedOut?: boolean;
   onRetryQr?: () => void;
+  onChangeField?: (field: string, value: string) => void;
+  onEditProfileImage?: () => void;
+  onEditCompanyLogo?: () => void;
 }
 
 // Social icons mapping - EXACT same as Template 1
@@ -41,7 +45,7 @@ const socialIcons: { [key: string]: keyof typeof MaterialCommunityIcons.glyphMap
 };
 
 export default function CardTemplate4(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr, onChangeField, onEditProfileImage, onEditCompanyLogo } = props;
   const theme = card.colorScheme || colorFallback;
 
   // EXACT same getDynamicStyles as Template 1
@@ -103,7 +107,7 @@ export default function CardTemplate4(props: Props) {
       {/* Top row: Logo left, QR right - bottoms aligned */}
       <View style={styles.topRow}>
         {/* Company Logo - Left */}
-        <View style={styles.logoContainer}>
+        <TouchableOpacity style={styles.logoContainer} activeOpacity={1} onPress={onEditCompanyLogo} disabled={!onEditCompanyLogo}>
           {card.companyLogo && getImageUrl(card.companyLogo) ? (
             <Image
               source={{ uri: getImageUrl(card.companyLogo) || '' }}
@@ -113,7 +117,7 @@ export default function CardTemplate4(props: Props) {
           ) : (
             <LogoPlaceholder style={styles.logo} />
           )}
-        </View>
+        </TouchableOpacity>
         
         {/* QR Code - Right */}
         <View style={styles.qrContainer}>
@@ -136,137 +140,85 @@ export default function CardTemplate4(props: Props) {
 
       {/* Large Profile Picture - Center Stage */}
       <View style={styles.profileCenterContainer}>
-        <View style={styles.profileCircleContainer}>
+        <TouchableOpacity style={styles.profileCircleContainer} activeOpacity={1} onPress={onEditProfileImage} disabled={!onEditProfileImage}>
           {card.profileImage && getImageUrl(card.profileImage) ? (
             <Image
               style={styles.profileCenterImage}
               source={{ uri: getImageUrl(card.profileImage) || '' }}
             />
           ) : (
-            <GradientAvatar 
+            <GradientAvatar
               size={225}
               style={styles.profileCenterImage}
             />
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
-      {/* Basic Info - EXACT same as Template 1 */}
-      <Text style={[
-        styles.name,
-        styles.leftAligned,
-        isTablet() && { fontSize: scale(22), marginLeft: scale(25), marginTop: scale(20), marginBottom: scale(5) }
-      ]}>
-        {`${card.name || ''} ${card.surname || ''}`}
-      </Text>
-      <Text style={[
-        styles.position,
-        styles.leftAligned,
-        isTablet() && { fontSize: scale(20), marginLeft: scale(25), marginBottom: scale(5) }
-      ]}>
-        {card.occupation || 'No occupation'}
-      </Text>
-      <Text style={[
-        styles.company,
-        styles.leftAligned,
-        isTablet() && { fontSize: scale(17), marginLeft: scale(25), marginBottom: scale(10) }
-      ]}>
-        {card.company || 'No company'}
-      </Text>
+      {/* Basic Info */}
+      <InlineTextField
+        value={`${card.name || ''} ${card.surname || ''}`.trim()}
+        onChange={onChangeField ? v => onChangeField('fullName', v) : undefined}
+        style={[styles.name, styles.leftAligned, isTablet() && { fontSize: scale(22), marginLeft: scale(25), marginTop: scale(20), marginBottom: scale(5) }]}
+      />
+      <InlineTextField
+        value={card.occupation || 'No occupation'}
+        onChange={onChangeField ? v => onChangeField('occupation', v) : undefined}
+        style={[styles.position, styles.leftAligned, isTablet() && { fontSize: scale(20), marginLeft: scale(25), marginBottom: scale(5) }]}
+      />
+      <InlineTextField
+        value={card.company || 'No company'}
+        onChange={onChangeField ? v => onChangeField('company', v) : undefined}
+        style={[styles.company, styles.leftAligned, isTablet() && { fontSize: scale(17), marginLeft: scale(25), marginBottom: scale(10) }]}
+      />
 
-      {/* Contact Info - EXACT same as Template 1 */}
-      <TouchableOpacity 
-        style={[
-          styles.contactSection,
-          styles.leftAligned,
-          isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }
-        ]}
-        onPress={() => onPressEmail(card.email)}
-      >
-        <MaterialCommunityIcons 
-          name="email-outline" 
-          size={isTablet() ? scale(30) : 30} 
-          color={theme} 
+      {/* Contact Info */}
+      <View style={[styles.contactSection, styles.leftAligned, isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }]}>
+        <MaterialCommunityIcons name="email-outline" size={isTablet() ? scale(30) : 30} color={theme} />
+        <InlineTextField
+          value={card.email || 'No email address'}
+          onChange={onChangeField ? v => onChangeField('email', v) : undefined}
+          style={[styles.contactText, isTablet() && { fontSize: scale(16), marginLeft: scale(10) }]}
         />
-        <Text style={[
-          styles.contactText,
-          isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
-        ]}>
-          {card.email || 'No email address'}
-        </Text>
-      </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity 
-        style={[
-          styles.contactSection,
-          styles.leftAligned,
-          isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }
-        ]}
-        onPress={() => onPressPhone(card.phone)}
-      >
-        <MaterialCommunityIcons 
-          name="phone-outline" 
-          size={isTablet() ? scale(30) : 30} 
-          color={theme} 
+      <View style={[styles.contactSection, styles.leftAligned, isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }]}>
+        <MaterialCommunityIcons name="phone-outline" size={isTablet() ? scale(30) : 30} color={theme} />
+        <InlineTextField
+          value={card.phone || 'No phone number'}
+          onChange={onChangeField ? v => onChangeField('phoneNumber', v) : undefined}
+          style={[styles.contactText, isTablet() && { fontSize: scale(16), marginLeft: scale(10) }]}
         />
-        <Text style={[
-          styles.contactText,
-          isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
-        ]}>
-          {card.phone || 'No phone number'}
-        </Text>
-      </TouchableOpacity>
+      </View>
 
-      {/* Alt Number - only show if toggle is enabled and alt number exists - EXACT same as Template 1 */}
+      {/* Alt Number */}
       {altNumber?.showAltNumber && altNumber?.altNumber && (
-        <TouchableOpacity 
-          style={[
-            styles.contactSection,
-            styles.leftAligned,
-            isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }
-          ]}
-          onPress={() => onPressPhone(`${altNumber?.altCountryCode || ''}${altNumber?.altNumber || ''}`)}
-        >
-          <MaterialCommunityIcons 
-            name="phone-outline" 
-            size={isTablet() ? scale(30) : 30} 
-            color={theme} 
-          />
-          <Text style={[
-            styles.contactText,
-            isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
-          ]}>
+        <View style={[styles.contactSection, styles.leftAligned, isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }]}>
+          <MaterialCommunityIcons name="phone-outline" size={isTablet() ? scale(30) : 30} color={theme} />
+          <Text style={[styles.contactText, isTablet() && { fontSize: scale(16), marginLeft: scale(10) }]}>
             {`${altNumber?.altCountryCode || ''}${altNumber?.altNumber || ''}`}
           </Text>
-        </TouchableOpacity>
+        </View>
       )}
 
-      {/* Social Links - EXACT same as Template 1 */}
+      {/* Social Links */}
       {card.socials && Object.entries(card.socials).map(([platform, value]: any) => {
         const textValue = typeof value === 'string' ? value.trim() : '';
         if (socialIcons[platform] && textValue !== '') {
           return (
-            <TouchableOpacity 
+            <View
               key={platform}
-              style={[
-                styles.contactSection,
-                styles.leftAligned,
-                isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }
-              ]}
-              onPress={() => onPressSocial(platform, textValue)}
+              style={[styles.contactSection, styles.leftAligned, isTablet() && { marginLeft: scale(17), marginBottom: scale(15), padding: scale(5) }]}
             >
-              <MaterialCommunityIcons 
-                name={socialIcons[platform]} 
-                size={isTablet() ? scale(30) : 30} 
-                color={theme} 
+              <MaterialCommunityIcons name={socialIcons[platform]} size={isTablet() ? scale(30) : 30} color={theme} />
+              <InlineTextField
+                value={textValue ? formatSocialLinkDisplay(platform, textValue) : ''}
+                onChange={onChangeField ? v => onChangeField(platform, v) : undefined}
+                style={[styles.contactText, isTablet() && { fontSize: scale(16), marginLeft: scale(10) }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
               />
-              <Text style={[
-                styles.contactText,
-                isTablet() && { fontSize: scale(16), marginLeft: scale(10) }
-              ]} numberOfLines={1} ellipsizeMode="tail">
-                {textValue ? formatSocialLinkDisplay(platform, textValue) : ''}
-              </Text>
-            </TouchableOpacity>
+            </View>
           );
         }
         return null;

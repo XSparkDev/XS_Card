@@ -8,6 +8,7 @@ import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
 import QrPlaceholder from '../QrPlaceholder';
+import InlineTextField from './InlineTextField';
 
 type CardData = any;
 
@@ -27,6 +28,9 @@ interface Props {
   scanCountdown?: string;
   qrTimedOut?: boolean;
   onRetryQr?: () => void;
+  onChangeField?: (field: string, value: string) => void;
+  onEditProfileImage?: () => void;
+  onEditCompanyLogo?: () => void;
 }
 
 // Social icons mapping - EXACT same as Template 1
@@ -41,7 +45,7 @@ const socialIcons: { [key: string]: keyof typeof MaterialCommunityIcons.glyphMap
 };
 
 export default function CardTemplate5(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr, onChangeField, onEditProfileImage, onEditCompanyLogo } = props;
   const theme = card.colorScheme || colorFallback;
 
   // EXACT same getDynamicStyles as Template 1
@@ -120,8 +124,7 @@ export default function CardTemplate5(props: Props) {
 
       {/* Logo & Profile Section - Side by side, no overlap */}
       <View style={styles.logoProfileSection}>
-        {/* Logo on left */}
-        <View style={styles.logoContainer}>
+        <TouchableOpacity style={styles.logoContainer} activeOpacity={1} onPress={onEditCompanyLogo} disabled={!onEditCompanyLogo}>
           {card.companyLogo && getImageUrl(card.companyLogo) ? (
             <Image
               source={{ uri: getImageUrl(card.companyLogo) || '' }}
@@ -131,132 +134,95 @@ export default function CardTemplate5(props: Props) {
           ) : (
             <LogoPlaceholder style={styles.logo} />
           )}
-        </View>
+        </TouchableOpacity>
 
-        {/* Profile on right */}
-        <View style={styles.profileContainer}>
+        <TouchableOpacity style={styles.profileContainer} activeOpacity={1} onPress={onEditProfileImage} disabled={!onEditProfileImage}>
           {card.profileImage && getImageUrl(card.profileImage) ? (
             <Image
               style={styles.profileImage}
               source={{ uri: getImageUrl(card.profileImage) || '' }}
             />
           ) : (
-            <GradientAvatar 
+            <GradientAvatar
               size={120}
               style={styles.profileImage}
             />
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
-      {/* Text Information - Better hierarchy and spacing */}
+      {/* Text Information */}
       <View style={styles.textSection}>
-        <Text style={[
-          styles.name,
-          isTablet() && { fontSize: scale(28) }
-        ]}>
-          {`${card.name || ''} ${card.surname || ''}`.trim()}
-        </Text>
-        <Text style={[
-          styles.position,
-          isTablet() && { fontSize: scale(18) }
-        ]}>
-          {card.occupation || 'No occupation'}
-        </Text>
-        <Text style={[
-          styles.company,
-          isTablet() && { fontSize: scale(18) }
-        ]}>
-          {card.company || 'No company'}
-        </Text>
+        <InlineTextField
+          value={`${card.name || ''} ${card.surname || ''}`.trim()}
+          onChange={onChangeField ? v => onChangeField('fullName', v) : undefined}
+          style={[styles.name, isTablet() && { fontSize: scale(28) }]}
+        />
+        <InlineTextField
+          value={card.occupation || 'No occupation'}
+          onChange={onChangeField ? v => onChangeField('occupation', v) : undefined}
+          style={[styles.position, isTablet() && { fontSize: scale(18) }]}
+        />
+        <InlineTextField
+          value={card.company || 'No company'}
+          onChange={onChangeField ? v => onChangeField('company', v) : undefined}
+          style={[styles.company, isTablet() && { fontSize: scale(18) }]}
+        />
       </View>
 
       {/* Contact Section - Circular icon backgrounds */}
       <View style={styles.contactSection}>
-        <TouchableOpacity 
-          style={styles.contactRow}
-          onPress={() => onPressEmail(card.email)}
-        >
+        <View style={styles.contactRow}>
           <View style={[styles.iconCircle, { backgroundColor: theme }]}>
-            <MaterialCommunityIcons 
-              name="email-outline" 
-              size={isTablet() ? scale(20) : 20} 
-              color={COLORS.white} 
-            />
+            <MaterialCommunityIcons name="email-outline" size={isTablet() ? scale(20) : 20} color={COLORS.white} />
           </View>
-          <Text style={[
-            styles.contactText,
-            isTablet() && { fontSize: scale(16) }
-          ]}>
-            {card.email || 'No email address'}
-          </Text>
-        </TouchableOpacity>
+          <InlineTextField
+            value={card.email || 'No email address'}
+            onChange={onChangeField ? v => onChangeField('email', v) : undefined}
+            style={[styles.contactText, isTablet() && { fontSize: scale(16) }]}
+          />
+        </View>
 
-        <TouchableOpacity 
-          style={styles.contactRow}
-          onPress={() => onPressPhone(card.phone)}
-        >
+        <View style={styles.contactRow}>
           <View style={[styles.iconCircle, { backgroundColor: theme }]}>
-            <MaterialCommunityIcons 
-              name="phone-outline" 
-              size={isTablet() ? scale(20) : 20} 
-              color={COLORS.white} 
-            />
+            <MaterialCommunityIcons name="phone-outline" size={isTablet() ? scale(20) : 20} color={COLORS.white} />
           </View>
-          <Text style={[
-            styles.contactText,
-            isTablet() && { fontSize: scale(16) }
-          ]}>
-            {card.phone || 'No phone number'}
-          </Text>
-        </TouchableOpacity>
+          <InlineTextField
+            value={card.phone || 'No phone number'}
+            onChange={onChangeField ? v => onChangeField('phoneNumber', v) : undefined}
+            style={[styles.contactText, isTablet() && { fontSize: scale(16) }]}
+          />
+        </View>
 
         {/* Alt Number */}
         {altNumber?.showAltNumber && altNumber?.altNumber && (
-          <TouchableOpacity 
-            style={styles.contactRow}
-            onPress={() => onPressPhone(`${altNumber?.altCountryCode || ''}${altNumber?.altNumber || ''}`)}
-          >
+          <View style={styles.contactRow}>
             <View style={[styles.iconCircle, { backgroundColor: theme }]}>
-              <MaterialCommunityIcons 
-                name="phone-outline" 
-                size={isTablet() ? scale(20) : 20} 
-                color={COLORS.white} 
-              />
+              <MaterialCommunityIcons name="phone-outline" size={isTablet() ? scale(20) : 20} color={COLORS.white} />
             </View>
-            <Text style={[
-              styles.contactText,
-              isTablet() && { fontSize: scale(16) }
-            ]}>
+            <Text style={[styles.contactText, isTablet() && { fontSize: scale(16) }]}>
               {`${altNumber?.altCountryCode || ''}${altNumber?.altNumber || ''}`}
             </Text>
-          </TouchableOpacity>
+          </View>
         )}
 
-        {/* Social Links - Same circular icon treatment */}
+        {/* Social Links */}
         {card.socials && Object.entries(card.socials).map(([platform, value]: any) => {
           const textValue = typeof value === 'string' ? value.trim() : '';
           if (socialIcons[platform] && textValue !== '') {
             return (
-              <TouchableOpacity 
-                key={platform}
-                style={styles.contactRow}
-                onPress={() => onPressSocial(platform, textValue)}
-              >
+              <View key={platform} style={styles.contactRow}>
                 <View style={[styles.iconCircle, { backgroundColor: theme }]}>
-                  <MaterialCommunityIcons 
-                    name={socialIcons[platform]} 
-                    size={isTablet() ? scale(20) : 20} 
-                    color={COLORS.white} 
-                  />
+                  <MaterialCommunityIcons name={socialIcons[platform]} size={isTablet() ? scale(20) : 20} color={COLORS.white} />
                 </View>
-                <Text style={[
-                  styles.contactText,
-                  isTablet() && { fontSize: scale(16) }
-                ]} numberOfLines={1} ellipsizeMode="tail">
-                  {textValue ? formatSocialLinkDisplay(platform, textValue) : ''}
-                </Text>
-              </TouchableOpacity>
+                <InlineTextField
+                  value={textValue ? formatSocialLinkDisplay(platform, textValue) : ''}
+                  onChange={onChangeField ? v => onChangeField(platform, v) : undefined}
+                  style={[styles.contactText, isTablet() && { fontSize: scale(16) }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                />
+              </View>
             );
           }
           return null;

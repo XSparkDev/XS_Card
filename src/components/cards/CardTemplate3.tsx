@@ -8,6 +8,7 @@ import { isTablet, scale } from '../../utils/responsive';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
 import QrPlaceholder from '../QrPlaceholder';
+import InlineTextField from './InlineTextField';
 
 type CardData = any;
 
@@ -27,10 +28,13 @@ interface Props {
   scanCountdown?: string;
   qrTimedOut?: boolean;
   onRetryQr?: () => void;
+  onChangeField?: (field: string, value: string) => void;
+  onEditProfileImage?: () => void;
+  onEditCompanyLogo?: () => void;
 }
 
 export default function CardTemplate3(props: Props) {
-  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr } = props;
+  const { card, qrUri, colorFallback, isWalletLoading, onPressShare, onPressWallet, onPressEmail, onPressPhone, onPressSocial, altNumber, onPressEdit, scanLimited, scanCountdown, qrTimedOut, onRetryQr, onChangeField, onEditProfileImage, onEditCompanyLogo } = props;
   const theme = card.colorScheme || colorFallback;
 
   // Use exact same icon mapping as Template 1
@@ -90,9 +94,9 @@ export default function CardTemplate3(props: Props) {
         )}
       </View>
 
-      {/* Logo and Profile on same line - logo takes most of line, profile on right */}
+      {/* Logo and Profile on same line */}
       <View style={styles.imagesRow}>
-        <View style={styles.logoContainer}>
+        <TouchableOpacity style={styles.logoContainer} activeOpacity={1} onPress={onEditCompanyLogo} disabled={!onEditCompanyLogo}>
           {card.companyLogo && getImageUrl(card.companyLogo) ? (
             <Image
               source={{ uri: getImageUrl(card.companyLogo) || '' }}
@@ -102,45 +106,64 @@ export default function CardTemplate3(props: Props) {
           ) : (
             <LogoPlaceholder style={styles.logo} />
           )}
-        </View>
-        {card.profileImage && getImageUrl(card.profileImage) ? (
-          <Image
-            source={{ uri: getImageUrl(card.profileImage) || '' }}
-            style={styles.profile}
-          />
-        ) : (
-          <GradientAvatar 
-            size={120}
-            style={styles.profile}
-          />
-        )}
+        </TouchableOpacity>
+        <TouchableOpacity activeOpacity={1} onPress={onEditProfileImage} disabled={!onEditProfileImage}>
+          {card.profileImage && getImageUrl(card.profileImage) ? (
+            <Image
+              source={{ uri: getImageUrl(card.profileImage) || '' }}
+              style={styles.profile}
+            />
+          ) : (
+            <GradientAvatar
+              size={120}
+              style={styles.profile}
+            />
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Personal details */}
-      <Text style={styles.name}>{`${card.name || ''} ${card.surname || ''}`.trim()}</Text>
-      <Text style={styles.position}>{card.occupation || ''}</Text>
-      <Text style={styles.company}>{card.company || ''}</Text>
+      <InlineTextField
+        value={`${card.name || ''} ${card.surname || ''}`.trim()}
+        onChange={onChangeField ? v => onChangeField('fullName', v) : undefined}
+        style={styles.name}
+      />
+      <InlineTextField
+        value={card.occupation || ''}
+        onChange={onChangeField ? v => onChangeField('occupation', v) : undefined}
+        style={styles.position}
+      />
+      <InlineTextField
+        value={card.company || ''}
+        onChange={onChangeField ? v => onChangeField('company', v) : undefined}
+        style={styles.company}
+      />
 
-      {/* Contact Info - exact sequence as Template 1: Email, Phone, Alt Number, Socials - OUTLINED */}
-      <TouchableOpacity style={[styles.pill, { borderColor: theme }]} onPress={() => onPressEmail(card.email)}>
+      {/* Contact Info - OUTLINED */}
+      <View style={[styles.pill, { borderColor: theme }]}>
         <MaterialCommunityIcons name="email-outline" size={22} color={theme} />
-        <Text style={[styles.pillText, { color: theme }]}>{card.email || 'No email address'}</Text>
-      </TouchableOpacity>
+        <InlineTextField
+          value={card.email || 'No email address'}
+          onChange={onChangeField ? v => onChangeField('email', v) : undefined}
+          style={[styles.pillText, { color: theme, flex: 1 }]}
+        />
+      </View>
 
-      <TouchableOpacity style={[styles.pill, { borderColor: theme }]} onPress={() => onPressPhone(card.phone)}>
+      <View style={[styles.pill, { borderColor: theme }]}>
         <MaterialCommunityIcons name="phone-outline" size={22} color={theme} />
-        <Text style={[styles.pillText, { color: theme }]}>{card.phone || 'No phone number'}</Text>
-      </TouchableOpacity>
+        <InlineTextField
+          value={card.phone || 'No phone number'}
+          onChange={onChangeField ? v => onChangeField('phoneNumber', v) : undefined}
+          style={[styles.pillText, { color: theme, flex: 1 }]}
+        />
+      </View>
 
-      {/* Alt Number - only show if toggle is enabled and alt number exists */}
+      {/* Alt Number */}
       {altNumber?.showAltNumber && altNumber?.altNumber && (
-        <TouchableOpacity 
-          style={[styles.pill, { borderColor: theme }]}
-          onPress={() => onPressPhone(`${altNumber?.altCountryCode || ''}${altNumber?.altNumber || ''}`)}
-        >
+        <View style={[styles.pill, { borderColor: theme }]}>
           <MaterialCommunityIcons name="phone-outline" size={22} color={theme} />
           <Text style={[styles.pillText, { color: theme }]}>{`${altNumber?.altCountryCode || ''}${altNumber?.altNumber || ''}`}</Text>
-        </TouchableOpacity>
+        </View>
       )}
 
       {/* Social Links */}
@@ -148,16 +171,16 @@ export default function CardTemplate3(props: Props) {
         const textValue = typeof value === 'string' ? value.trim() : '';
         if (!textValue) return null;
         return (
-          <TouchableOpacity 
-            key={platform}
-            style={[styles.pill, { borderColor: theme }]} 
-            onPress={() => onPressSocial(platform, textValue)}
-          >
+          <View key={platform} style={[styles.pill, { borderColor: theme }]}>
             <MaterialCommunityIcons name={socialIcon(platform)} size={22} color={theme} />
-            <Text style={[styles.pillText, { color: theme }]} numberOfLines={1} ellipsizeMode="tail">
-              {formatSocialLinkDisplay(platform, textValue)}
-            </Text>
-          </TouchableOpacity>
+            <InlineTextField
+              value={formatSocialLinkDisplay(platform, textValue)}
+              onChange={onChangeField ? v => onChangeField(platform, v) : undefined}
+              style={[styles.pillText, { color: theme, flex: 1 }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            />
+          </View>
         );
       })}
 

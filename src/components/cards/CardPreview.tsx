@@ -4,8 +4,12 @@
  * Renders the live card preview for a given template + card, used inside the
  * shared DraggablePreviewPanel on both the Add Card and Edit Card screens.
  * Templates 2–5 delegate to the existing CardTemplate components; template 1 is
- * the original inline layout (kept here so the panel preview matches the modal
- * without modifying CardPreviewModal).
+ * the original inline layout.
+ *
+ * When onFieldEdit is provided the preview becomes an invisible editing canvas:
+ * every text element is tappable and edits in-place with no visual indicators.
+ * When onEditProfileImage / onEditCompanyLogo are provided, tapping those images
+ * opens the existing upload workflow from the parent screen.
  */
 import React from 'react';
 import { ScrollView, View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
@@ -16,6 +20,7 @@ import { formatSocialLinkDisplay } from '../../utils/socialLinkDisplay';
 import GradientAvatar from '../GradientAvatar';
 import LogoPlaceholder from '../LogoPlaceholder';
 import QrPlaceholder from '../QrPlaceholder';
+import InlineTextField from './InlineTextField';
 import CardTemplate2 from './CardTemplate2';
 import CardTemplate3 from './CardTemplate3';
 import CardTemplate4 from './CardTemplate4';
@@ -32,17 +37,40 @@ const SOCIAL_ICON_MAP: Record<string, keyof typeof MaterialCommunityIcons.glyphM
   instagram: 'instagram',
 };
 
-interface CardPreviewProps {
+export interface CardPreviewProps {
   template: number;
   card: PreviewCardData;
   altNumber?: { altNumber?: string; altCountryCode?: string; showAltNumber?: boolean };
+  /** When provided, tapping a text field edits it in-place and calls this on blur. */
+  onFieldEdit?: (field: string, value: string) => void;
+  /** When provided, tapping the profile image opens the upload workflow. */
+  onEditProfileImage?: () => void;
+  /** When provided, tapping the company logo opens the upload workflow. */
+  onEditCompanyLogo?: () => void;
 }
 
-export default function CardPreview({ template, card, altNumber }: CardPreviewProps) {
+export default function CardPreview({
+  template,
+  card,
+  altNumber,
+  onFieldEdit,
+  onEditProfileImage,
+  onEditCompanyLogo,
+}: CardPreviewProps) {
   const accentColor = card.colorScheme || '#1B2B5B';
   const zoomLevel = card.logoZoomLevel ?? 1.0;
-  // Card-name identifier shown above the card design (not part of the card face).
   const cardNameLabel = (card.cardName || '').trim() || (card.company || '').trim();
+
+  // Helper: split "First Last" back into formData fields on blur.
+  const onChangeFullName = onFieldEdit
+    ? (v: string) => {
+        const idx = v.indexOf(' ');
+        const first = idx === -1 ? v : v.slice(0, idx);
+        const last = idx === -1 ? '' : v.slice(idx + 1);
+        onFieldEdit('firstName', first);
+        onFieldEdit('lastName', last);
+      }
+    : undefined;
 
   const sharedTemplateProps = {
     card,
@@ -51,10 +79,25 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
     isWalletLoading: false,
     onPressShare: () => {},
     onPressWallet: () => {},
+    // In preview-edit mode these are re-routed through onChangeField inside the
+    // templates; keep them as no-ops here so the pills don't open mail/dialer.
     onPressEmail: () => {},
     onPressPhone: () => {},
     onPressSocial: () => {},
     altNumber: altNumber?.showAltNumber ? altNumber : undefined,
+    onChangeField: onFieldEdit
+      ? (field: string, value: string) => {
+          if (field === 'fullName') {
+            const idx = value.indexOf(' ');
+            onFieldEdit('firstName', idx === -1 ? value : value.slice(0, idx));
+            onFieldEdit('lastName', idx === -1 ? '' : value.slice(idx + 1));
+          } else {
+            onFieldEdit(field, value);
+          }
+        }
+      : undefined,
+    onEditProfileImage,
+    onEditCompanyLogo,
   };
 
   return (
@@ -68,6 +111,7 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
             </Text>
           </View>
         ) : null}
+
         {template === 1 ? (
           <>
             {/* QR Code placeholder */}
@@ -80,7 +124,12 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
 
             {/* Company logo + profile image */}
             <View style={styles.logoContainer}>
-              <View style={styles.logoFrame}>
+              <TouchableOpacity
+                activeOpacity={onEditCompanyLogo ? 1 : 1}
+                onPress={onEditCompanyLogo}
+                disabled={!onEditCompanyLogo}
+                style={styles.logoFrame}
+              >
                 {card.companyLogo && getImageUrl(card.companyLogo) ? (
                   <Image
                     source={{ uri: getImageUrl(card.companyLogo) || '' }}
@@ -91,35 +140,60 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
                 ) : (
                   <LogoPlaceholder textSize={22} />
                 )}
-              </View>
+              </TouchableOpacity>
 
               <View style={styles.profileContainer}>
-                <View style={styles.profileImageContainer}>
+                <TouchableOpacity
+                  activeOpacity={onEditProfileImage ? 1 : 1}
+                  onPress={onEditProfileImage}
+                  disabled={!onEditProfileImage}
+                  style={styles.profileImageContainer}
+                >
                   {card.profileImage ? (
                     <Image style={styles.profileImage} source={{ uri: getImageUrl(card.profileImage) || '' }} />
                   ) : (
                     <GradientAvatar size={110} style={styles.profileImage} />
                   )}
-                </View>
+                </TouchableOpacity>
               </View>
             </View>
 
-            {/* Name / role / company */}
-            <Text style={styles.name}>{`${card.name ?? ''} ${card.surname ?? ''}`.trim()}</Text>
-            <Text style={styles.position}>{card.occupation}</Text>
-            <Text style={styles.company}>{card.company}</Text>
+            {/* Name / role / company — invisible inline editors */}
+            <InlineTextField
+              value={`${card.name ?? ''} ${card.surname ?? ''}`.trim()}
+              onChange={onChangeFullName}
+              style={styles.name}
+            />
+            <InlineTextField
+              value={card.occupation ?? ''}
+              onChange={onFieldEdit ? v => onFieldEdit('occupation', v) : undefined}
+              style={styles.position}
+            />
+            <InlineTextField
+              value={card.company ?? ''}
+              onChange={onFieldEdit ? v => onFieldEdit('company', v) : undefined}
+              style={styles.company}
+            />
 
             {/* Email */}
-            <TouchableOpacity style={styles.contactSection}>
+            <View style={styles.contactSection}>
               <MaterialCommunityIcons name="email-outline" size={24} color={accentColor} />
-              <Text style={styles.contactText}>{card.email}</Text>
-            </TouchableOpacity>
+              <InlineTextField
+                value={card.email ?? ''}
+                onChange={onFieldEdit ? v => onFieldEdit('email', v) : undefined}
+                style={styles.contactText}
+              />
+            </View>
 
             {/* Phone */}
-            <TouchableOpacity style={styles.contactSection}>
+            <View style={styles.contactSection}>
               <MaterialCommunityIcons name="phone-outline" size={24} color={accentColor} />
-              <Text style={styles.contactText}>{card.phone}</Text>
-            </TouchableOpacity>
+              <InlineTextField
+                value={card.phone ?? ''}
+                onChange={onFieldEdit ? v => onFieldEdit('phoneNumber', v) : undefined}
+                style={styles.contactText}
+              />
+            </View>
 
             {/* Social links */}
             {Object.entries(card.socials ?? {})
@@ -127,12 +201,16 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
               .map(([socialId, value]) => {
                 const icon = SOCIAL_ICON_MAP[socialId] ?? 'link';
                 return (
-                  <TouchableOpacity key={socialId} style={styles.contactSection}>
+                  <View key={socialId} style={styles.contactSection}>
                     <MaterialCommunityIcons name={icon} size={24} color={accentColor} />
-                    <Text style={styles.contactText} numberOfLines={1} ellipsizeMode="tail">
-                      {formatSocialLinkDisplay(socialId, value as string)}
-                    </Text>
-                  </TouchableOpacity>
+                    <InlineTextField
+                      value={formatSocialLinkDisplay(socialId, value as string)}
+                      onChange={onFieldEdit ? v => onFieldEdit(socialId, v) : undefined}
+                      style={styles.contactText}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    />
+                  </View>
                 );
               })}
           </>
@@ -154,8 +232,6 @@ export default function CardPreview({ template, card, altNumber }: CardPreviewPr
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  // Generous bottom padding so the entire card (incl. the bottom share/wallet row)
-  // can be scrolled fully into view above the bottom edge of the screen.
   scrollContent: { paddingBottom: 160 },
   cardContainer: {
     backgroundColor: COLORS.white,
@@ -189,15 +265,13 @@ const styles = StyleSheet.create({
   qrLabel: { marginTop: 8, fontSize: 18, color: '#444', textAlign: 'center' },
   logoContainer: { width: '100%', position: 'relative', overflow: 'visible', marginBottom: 80, borderRadius: 12, padding: 8 },
   logoFrame: { width: '100%', height: 200, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderRadius: 12 },
-  logoPlaceholder: { width: '100%', height: '100%', backgroundColor: '#d3d3d3', justifyContent: 'center', alignItems: 'center' },
-  logoPlaceholderText: { fontSize: 48, fontWeight: 'bold', color: '#ffffff', textShadowColor: 'rgba(255, 255, 255, 0.6)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
   profileContainer: { position: 'absolute', bottom: -60, left: '50%', transform: [{ translateX: -60 }], alignItems: 'center' },
-  profileImageContainer: { width: 120, height: 120, borderRadius: 60, borderWidth: 5, borderColor: COLORS.white, justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent' },
+  profileImageContainer: { width: 120, height: 120, borderRadius: 60, borderWidth: 5, borderColor: COLORS.white, justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent', overflow: 'hidden' },
   profileImage: { width: 110, height: 110, borderRadius: 55 },
   name: { fontSize: 22, fontWeight: '600', marginBottom: 5, marginTop: 20, color: COLORS.black, marginLeft: 10 },
   position: { fontSize: 18, marginBottom: 5, color: '#444', marginLeft: 10 },
   company: { fontSize: 16, fontWeight: '500', marginBottom: 20, color: '#666', marginLeft: 10 },
   contactSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, padding: 5, borderRadius: 8, marginLeft: 10 },
-  contactText: { marginLeft: 10, fontSize: 16, color: '#333' },
+  contactText: { marginLeft: 10, fontSize: 16, color: '#333', flex: 1 },
   fallbackText: { textAlign: 'center', color: '#888', padding: 24 },
 });

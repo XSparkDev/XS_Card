@@ -11,6 +11,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { ToastMessage, toastService } from '../hooks/useToast';
+import GlassSurface from './GlassSurface';
 
 interface ToastNotificationProps {
   toast: ToastMessage;
@@ -99,7 +100,7 @@ function ToastNotification({ toast, onDismiss }: ToastNotificationProps) {
         },
       ]}
     >
-      <View style={styles.toast}>
+      <GlassSurface style={styles.toast} borderRadius={12}>
         {/* Icon */}
         <View style={[styles.iconContainer, { backgroundColor: getToastColor() }]}>
           <MaterialIcons
@@ -129,7 +130,7 @@ function ToastNotification({ toast, onDismiss }: ToastNotificationProps) {
         >
           <MaterialIcons name="close" size={18} color={COLORS.gray} />
         </TouchableOpacity>
-      </View>
+      </GlassSurface>
     </Animated.View>
   );
 }

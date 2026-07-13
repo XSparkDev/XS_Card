@@ -7,6 +7,13 @@
       "runtimeArgs": ["-c", "python3 -m http.server \"$PORT\" --directory /Users/xspark2/Desktop/JogedaRedev/site"],
       "port": 4173,
       "autoPort": true
+    },
+    {
+      "name": "jogeda-nextjs",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/xspark2/Desktop/JogedaRedev/nextjs-app && npm run dev -- -p \"$PORT\""],
+      "port": 4200,
+      "autoPort": true
     }
   ]
 }

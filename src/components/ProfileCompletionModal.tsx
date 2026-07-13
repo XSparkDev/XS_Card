@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
+import GlassSurface from './GlassSurface';
 
 interface ProfileCompletionModalProps {
   visible: boolean;
@@ -28,7 +29,7 @@ const ProfileCompletionModal: React.FC<ProfileCompletionModalProps> = ({
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+        <GlassSurface style={styles.modalContent} borderRadius={20}>
           <View style={styles.iconContainer}>
             <MaterialIcons name="person-add" size={60} color={COLORS.primary} />
           </View>
@@ -55,7 +56,7 @@ const ProfileCompletionModal: React.FC<ProfileCompletionModalProps> = ({
               <Text style={styles.secondaryButtonText}>Maybe Later</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );

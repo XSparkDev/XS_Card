@@ -161,9 +161,9 @@ function AppContent() {
       <EventNotificationProvider>
         <ColorSchemeProvider>
           <MeetingNotificationProvider>
+          <GhostModeProvider>
           <ToastProvider>
             <TooltipProvider>
-            <GhostModeProvider>
             <ScanLimitProvider>
             <NavigationContainer ref={navigationRef}>
               <PremiumUpsellProvider>
@@ -174,10 +174,6 @@ function AppContent() {
                 </Stack.Navigator>
               </PremiumUpsellProvider>
             </NavigationContainer>
-            </ScanLimitProvider>
-            </GhostModeProvider>
-            </TooltipProvider>
-
             {/* First-launch location permission rationale (optional feature) */}
             <LocationPermissionModal />
 
@@ -190,7 +186,10 @@ function AppContent() {
                 onDismiss={() => setUpdateModalVisible(false)}
               />
             )}
+            </ScanLimitProvider>
+            </TooltipProvider>
           </ToastProvider>
+          </GhostModeProvider>
           </MeetingNotificationProvider>
         </ColorSchemeProvider>
       </EventNotificationProvider>

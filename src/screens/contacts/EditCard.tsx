@@ -2646,6 +2646,9 @@ export default function EditCard() {
             toast.success('Template Selected', `Template ${n} applied to your card`);
           }}
           onClose={() => setPreviewVisible(false)}
+          onFieldEdit={(field, value) => setFormData((prev: any) => ({ ...prev, [field]: value }))}
+          onEditProfileImage={handleProfileImageEdit}
+          onEditCompanyLogo={handleLogoEdit}
         />
       )}
 
