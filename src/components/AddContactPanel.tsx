@@ -23,6 +23,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/colors';
+import PhoneNumberInput from './PhoneNumberInput';
 import DraggablePreviewPanel, {
   DraggablePreviewPanelRef,
   SnapPosition,
@@ -164,13 +165,10 @@ export default function AddContactPanel({
             />
 
             <Text style={styles.label}>Phone number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+27 ..."
-              placeholderTextColor={COLORS.gray}
-              value={form.phone}
-              onChangeText={(t) => onChange('phone', t)}
-              keyboardType="phone-pad"
+            <PhoneNumberInput
+              e164Value={form.phone}
+              onChange={(e164) => onChange('phone', e164)}
+              placeholder="Phone number"
             />
 
             <Text style={styles.label}>How we met *</Text>

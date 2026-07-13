@@ -18,6 +18,7 @@ import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import { parsePhoneNumber as libParse } from 'libphonenumber-js';
 import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
 import LogoPlaceholder from '../../components/LogoPlaceholder';
@@ -65,8 +66,7 @@ interface FormData {
   qualification: string;
   company: string;
   email: string;
-  phoneNumber: string;
-  countryCode: string; // Add country code field
+  phone: string;
   // Social media fields
   whatsapp?: string;
   x?: string;
@@ -135,8 +135,7 @@ export default function EditCard() {
     qualification: '',
     company: '',
     email: '',
-    phoneNumber: '',
-    countryCode: '+27', // Default to South Africa
+    phone: '',
     whatsapp: '',
     x: '',
     facebook: '',
@@ -198,8 +197,7 @@ export default function EditCard() {
   const [isHexEditing, setIsHexEditing] = useState(false);
   const [template, setTemplate] = useState<number>(1);
   // Alt number state
-  const [altNumber, setAltNumber] = useState('');
-  const [altCountryCode, setAltCountryCode] = useState('+27');
+  const [altPhone, setAltPhone] = useState('');
   const [showAltNumber, setShowAltNumber] = useState(false);
   const [altNumberError, setAltNumberError] = useState<string>('');
   const [isSpeakerEngagementCard, setIsSpeakerEngagementCard] = useState(false);
@@ -232,8 +230,7 @@ export default function EditCard() {
     selectedColor,
     selectedSocials,
     zoomLevel,
-    altNumber,
-    altCountryCode,
+    altPhone,
     showAltNumber,
     isSpeakerEngagementCard,
   });
@@ -303,28 +300,6 @@ export default function EditCard() {
     handleSaveRef.current = handleSave;
   });
 
-  // Helper function to parse phone number and extract country code
-  const parsePhoneNumber = (phone: string) => {
-    if (!phone) return { countryCode: '+27', number: '' };
-    
-    // If phone starts with +, try to find matching country code
-    if (phone.startsWith('+')) {
-      // Common country codes to check (sorted by length, longest first)
-      const countryCodes = ['+27', '+44', '+33', '+49', '+86', '+91', '+81', '+61', '+55', '+39', '+34', '+31', '+46', '+47', '+45', '+41', '+43', '+32', '+351', '+30', '+48', '+420', '+36', '+40', '+359', '+385', '+386', '+421', '+370', '+371', '+372', '+358', '+353', '+354', '+352', '+7', '+380', '+90', '+82', '+65', '+60', '+66', '+84', '+63', '+62', '+880', '+92', '+98', '+972', '+966', '+971', '+20', '+234', '+254', '+52', '+54', '+56', '+57', '+51', '+64', '+1'];
-      
-      for (const code of countryCodes) {
-        if (phone.startsWith(code)) {
-          return {
-            countryCode: code,
-            number: phone.substring(code.length)
-          };
-        }
-      }
-    }
-    
-    // Default to South Africa if no match found
-    return { countryCode: '+27', number: phone };
-  };
 
   useEffect(() => {
     // Use passed card data if available, otherwise fall back to API call
@@ -373,8 +348,9 @@ export default function EditCard() {
     try {
       const altData = await getAltNumber(cardIndex);
       if (altData) {
-        setAltNumber(altData.altNumber || '');
-        setAltCountryCode(altData.altCountryCode || '+27');
+        const an = altData.altNumber || '';
+        const ac = altData.altCountryCode || '+27';
+        setAltPhone(an ? ac + an : '');
         setShowAltNumber(altData.showAltNumber || false);
       }
     } catch (error) {
@@ -405,8 +381,7 @@ export default function EditCard() {
         qualification: cardData.qualification || '',
         company: cardData.company || '',
         email: cardData.email || '',
-        phoneNumber: parsePhoneNumber(cardData.phone || '').number,
-        countryCode: parsePhoneNumber(cardData.phone || '').countryCode,
+        phone: cardData.phone || '',
         ...Object.keys(cardData.socials || {}).reduce((acc, key) => ({
           ...acc,
           [key]: cardData.socials[key]
@@ -432,8 +407,9 @@ export default function EditCard() {
 
       // Load alt number from card data (backend) with fallback to AsyncStorage
       if (cardData.altNumber !== undefined || cardData.altCountryCode !== undefined || cardData.showAltNumber !== undefined) {
-        setAltNumber(cardData.altNumber || '');
-        setAltCountryCode(cardData.altCountryCode || '+27');
+        const an = cardData.altNumber || '';
+        const ac = cardData.altCountryCode || '+27';
+        setAltPhone(an ? ac + an : '');
         setShowAltNumber(cardData.showAltNumber || false);
       } else {
         // Fallback to AsyncStorage for backward compatibility during migration
@@ -503,8 +479,7 @@ export default function EditCard() {
           qualification: userData.qualification || '',
           company: userData.company || '',
           email: userData.email || '',
-          phoneNumber: parsePhoneNumber(userData.phone || '').number,
-          countryCode: parsePhoneNumber(userData.phone || '').countryCode,
+          phone: userData.phone || '',
           ...Object.keys(userData.socials || {}).reduce((acc, key) => ({
             ...acc,
             [key]: userData.socials[key]
@@ -530,8 +505,9 @@ export default function EditCard() {
 
         // Load alt number from card data (backend) with fallback to AsyncStorage
         if (userData.altNumber !== undefined || userData.altCountryCode !== undefined || userData.showAltNumber !== undefined) {
-          setAltNumber(userData.altNumber || '');
-          setAltCountryCode(userData.altCountryCode || '+27');
+          const an = userData.altNumber || '';
+          const ac = userData.altCountryCode || '+27';
+          setAltPhone(an ? ac + an : '');
           setShowAltNumber(userData.showAltNumber || false);
         } else {
           // Fallback to AsyncStorage for backward compatibility during migration
@@ -948,7 +924,7 @@ export default function EditCard() {
         name: formData.firstName,
         surname: formData.lastName,
         email: formData.email,
-        phone: `${formData.countryCode}${formData.phoneNumber}`,
+        phone: formData.phone,
         company: formData.company,
         occupation: formData.occupation,
         profileImage: formData.profileImage,
@@ -1040,7 +1016,7 @@ export default function EditCard() {
 
 
   const validateForm = () => {
-    if (!formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
+    if (!formData.company || !formData.email || !formData.phone || !formData.occupation) {
       setError('Please fill in all required fields');
       return false;
     }
@@ -1051,7 +1027,7 @@ export default function EditCard() {
     }
 
     // Premium-only: if showing alt number on card, alt number becomes required.
-    const trimmedAlt = String(altNumber || '').trim();
+    const trimmedAlt = String(altPhone || '').trim();
     if (hasAltNumberAccess && showAltNumber && !trimmedAlt) {
       setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
       setError('Please fix the highlighted fields');
@@ -1101,7 +1077,7 @@ export default function EditCard() {
         occupation: formData.occupation,
         company: formData.company,
         email: formData.email,
-        phone: `${formData.countryCode}${formData.phoneNumber}`,
+        phone: formData.phone,
         socials: socialFields,
         colorScheme: selectedColor,
         profileImage: formData.profileImage,
@@ -1113,8 +1089,13 @@ export default function EditCard() {
 
       // Alt number is Premium-only. For Free users, do not submit alt fields.
       if (hasAltNumberAccess) {
-        cardData.altNumber = altNumber || '';
-        cardData.altCountryCode = altCountryCode || '+27';
+        const altParsed = altPhone ? (() => {
+          try { const p = libParse(altPhone); if (p) return { num: String(p.nationalNumber), code: '+' + p.countryCallingCode }; } catch {}
+          const m = altPhone.match(/^(\+\d{1,4})(\d+)$/);
+          return m ? { num: m[2], code: m[1] } : { num: altPhone, code: '+27' };
+        })() : { num: '', code: '+27' };
+        cardData.altNumber = altParsed.num;
+        cardData.altCountryCode = altParsed.code;
         cardData.showAltNumber = showAltNumber || false;
       } else {
         cardData.showAltNumber = false;
@@ -1232,7 +1213,7 @@ export default function EditCard() {
           name: formData.firstName,
           surname: formData.lastName,
           email: formData.email,
-          phone: `${formData.countryCode}${formData.phoneNumber}`,
+          phone: formData.phone,
           company: formData.company,
           occupation: formData.occupation,
           profileImage: formData.profileImage,
@@ -1731,7 +1712,7 @@ export default function EditCard() {
       occupation: formData.occupation || '',
       company: formData.company || '',
       email: formData.email || '',
-      phone: `${formData.countryCode}${formData.phoneNumber}`,
+      phone: formData.phone,
       socials: socialFields,
       colorScheme: selectedColor,
       profileImage: formData.profileImage || null,
@@ -2177,27 +2158,27 @@ export default function EditCard() {
               editable={userPlan !== 'enterprise'}
             />
             <PhoneNumberInput
-              value={formData.phoneNumber}
-              onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-              onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
+              e164Value={formData.phone}
+              onChange={(e164) => setFormData({...formData, phone: e164})}
               placeholder="Phone number"
+              variant="filled"
             />
-            
+
             <Pressable
               onPress={isAltNumberLocked ? showAltNumberUpsell : undefined}
               style={[isAltNumberLocked && styles.altLockedContainer]}
             >
               <View pointerEvents={isAltNumberLocked ? 'none' : 'auto'}>
                 <PhoneNumberInput
-                  value={altNumber}
-                  onChangeText={(text) => {
-                    setAltNumber(text);
+                  e164Value={altPhone}
+                  onChange={(e164) => {
+                    setAltPhone(e164);
                     if (altNumberError) setAltNumberError('');
                   }}
-                  onCountryCodeChange={(code) => setAltCountryCode(code)}
                   placeholder="Alt number"
                   disabled={isAltNumberLocked}
                   error={!isAltNumberLocked ? altNumberError : undefined}
+                  variant="filled"
                 />
               </View>
             </Pressable>
@@ -2640,7 +2621,11 @@ export default function EditCard() {
         <TemplatePreviewOverlay
           template={template}
           card={buildCardObject()}
-          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          altNumber={showAltNumber && altPhone ? (() => {
+            try { const p = libParse(altPhone); if (p) return { altNumber: String(p.nationalNumber), altCountryCode: '+' + p.countryCallingCode, showAltNumber }; } catch {}
+            const m = altPhone.match(/^(\+\d{1,4})(\d+)$/);
+            return m ? { altNumber: m[2], altCountryCode: m[1], showAltNumber } : { altNumber: altPhone, altCountryCode: '+27', showAltNumber };
+          })() : undefined}
           onSelectTemplate={(n) => {
             setTemplate(n);
             toast.success('Template Selected', `Template ${n} applied to your card`);
@@ -2666,7 +2651,7 @@ export default function EditCard() {
           name: formData.firstName,
           surname: formData.lastName,
           email: formData.email,
-          phone: `${formData.countryCode}${formData.phoneNumber}`,
+          phone: formData.phone,
           company: formData.company,
           occupation: formData.occupation,
           profileImage: formData.profileImage,

@@ -451,11 +451,24 @@ exports.updateCard = async (req, res) => {
             updateData = JSON.parse(JSON.stringify(req.body));
         }
 
-        if (updateData.phone) {
-            const normalizedPhone = normalizePhone(updateData.phone);
-            await ensurePhoneAvailable(db, normalizedPhone, userId);
-            updateData.phone = normalizedPhone;
-            updateData.phoneNormalized = normalizedPhone;
+        let phoneChangedForPrimaryCard = false;
+        let newNormalizedPhone = null;
+        if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) {
+            if (updateData.phone) {
+                newNormalizedPhone = normalizePhone(updateData.phone);
+                await ensurePhoneAvailable(db, newNormalizedPhone, userId);
+                updateData.phone = newNormalizedPhone;
+                updateData.phoneNormalized = newNormalizedPhone;
+            } else {
+                // Phone is being cleared
+                updateData.phone = '';
+                updateData.phoneNormalized = '';
+                newNormalizedPhone = '';
+            }
+            // Sync users collection only for the primary card (index 0)
+            if (Number(cardIndex) === 0) {
+                phoneChangedForPrimaryCard = true;
+            }
         }
 
         // ===== Name-change policy =====
@@ -597,16 +610,25 @@ exports.updateCard = async (req, res) => {
             cards: updatedCards
         });
 
-        // Record the name change on the user record (canonical name + 30-day stamp).
-        if (stampNameChange) {
+        // Sync users collection: phone (primary card) and/or name change stamp.
+        // ensurePhoneAvailable queries users.phoneNormalized, so it must stay in
+        // sync with the card — otherwise stale data lets another user claim a
+        // number still in use, then blocks the original user from reclaiming it.
+        if (phoneChangedForPrimaryCard || stampNameChange) {
             try {
-                await db.collection('users').doc(userId).update({
-                    name: String(updatedCards[cardIndex].name ?? ''),
-                    surname: String(updatedCards[cardIndex].surname ?? ''),
-                    nameLastChangedAt: admin.firestore.Timestamp.now(),
-                });
-            } catch (stampError) {
-                console.error('Failed to stamp nameLastChangedAt:', stampError);
+                const usersUpdate = {};
+                if (phoneChangedForPrimaryCard) {
+                    usersUpdate.phone = newNormalizedPhone || '';
+                    usersUpdate.phoneNormalized = newNormalizedPhone || '';
+                }
+                if (stampNameChange) {
+                    usersUpdate.name = String(updatedCards[cardIndex].name ?? '');
+                    usersUpdate.surname = String(updatedCards[cardIndex].surname ?? '');
+                    usersUpdate.nameLastChangedAt = admin.firestore.Timestamp.now();
+                }
+                await db.collection('users').doc(userId).update(usersUpdate);
+            } catch (userSyncError) {
+                console.error('Failed to sync users collection after card update:', userSyncError);
             }
         }
 
