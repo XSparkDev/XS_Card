@@ -1318,46 +1318,109 @@
 
         /* ── Exchange form — exactly matching AddContactPanel.tsx design ── */
 
+        /* Apply Montserrat to every element inside the modal (Part 2).
+           Explicitly exclude .material-icons so icon ligatures keep their
+           own font and don't render as raw text. */
+        #exchangeForm {
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        #exchangeForm *:not(.material-icons) {
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
         /*
-         * Part 4 — Scroll fix:
-         * The form is position:fixed at the bottom. We make it a flex column so
-         * .form-content can flex-grow and scroll independently, ensuring the
-         * app-store section at the bottom is always reachable.
+         * The form is position:fixed at the bottom, display:flex flex-direction:column.
+         * .modal-sticky-header is flex-shrink:0 — it never scrolls.
+         * .form-content is flex:1 overflow-y:auto — it scrolls beneath the header.
+         * No position:sticky needed; the flex structure itself achieves the effect.
          */
         #exchangeForm {
             display: flex;
             flex-direction: column;
         }
 
+        /* ── Sticky header (Part 3) ── */
+        #exchangeForm .modal-sticky-header {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            flex-shrink: 0;               /* never shrinks; always visible */
+            padding: 14px 16px 12px 16px;
+            background: #FFFFFF;
+            /* Subtle separator so scrolled content doesn't bleed into the header */
+            border-bottom: 1px solid #F0F0F0;
+            z-index: 2;
+        }
+
+        /* Spacer that mirrors the close button width so the title centres exactly */
+        #exchangeForm .modal-header-spacer {
+            width: 36px;
+            flex-shrink: 0;
+        }
+
+        #exchangeForm .modal-header-title {
+            flex: 1;
+            font-size: 18px;
+            font-weight: 700;
+            color: #333333;
+            text-align: center;
+            line-height: 1.25;
+        }
+
+        /* ── Close button (Part 1) — matches RN TouchableOpacity + MaterialIcons ── */
+        #exchangeForm .modal-close-btn {
+            /* Overall tap target = 36px icon area + 14px hitSlop on each side = ~64px,
+               achieved via padding so the button stays in flow and nothing clips. */
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            border-radius: 50%;
+            outline: none;
+            transition: background-color 0.15s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #exchangeForm .modal-close-btn .material-icons {
+            font-size: 24px;              /* matches size={24} in RN */
+            color: #888888;               /* matches COLORS.gray */
+            line-height: 1;
+        }
+
+        #exchangeForm .modal-close-btn:hover {
+            background-color: rgba(0, 0, 0, 0.06);
+        }
+
+        #exchangeForm .modal-close-btn:active {
+            background-color: rgba(0, 0, 0, 0.10);
+        }
+
+        #exchangeForm .modal-close-btn:focus-visible {
+            outline: 2px solid var(--secondary);
+            outline-offset: 2px;
+        }
+
+        /* Scrollable body */
         #exchangeForm .form-content {
             flex: 1;
             overflow-y: auto;
-            -webkit-overflow-scrolling: touch; /* smooth momentum scroll on iOS */
-            padding: 0 24px 32px 24px; /* matches RN paddingHorizontal: 24 */
-            padding-bottom: calc(32px + env(safe-area-inset-bottom));
+            -webkit-overflow-scrolling: touch;
+            padding: 0 24px calc(32px + env(safe-area-inset-bottom)) 24px;
         }
 
-        /* Header — centred, matches title/subtitle in AddContactPanel */
-        #exchangeForm .form-header {
-            text-align: center;
-            margin: 0 0 0 0;
-            padding: 4px 40px 0 0;
-        }
-
-        #exchangeForm .form-header h3 {
-            margin: 0 0 4px 0;
-            color: #333333; /* COLORS.black */
-            font-size: 22px;
-            font-weight: 700;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            text-align: center;
-        }
-
-        #exchangeForm .form-header p {
-            margin: 0 0 8px 0;
-            color: #888888; /* COLORS.gray */
+        /* Subtitle — sits at the top of the scrollable body */
+        #exchangeForm .modal-subtitle {
             font-size: 13px;
+            color: #888888;
             text-align: center;
+            margin: 8px 0 0 0;
+            line-height: 1.4;
         }
 
         /*
@@ -1548,6 +1611,8 @@
             }
         }
     </style>
+    <!-- Montserrat — same font family used throughout the app -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 </head>
 <body>
@@ -1599,14 +1664,18 @@
         </div>
 
         <div class="form-container hidden" id="exchangeForm">
+
+            <!-- Sticky header — always visible, never scrolls (Part 3) -->
+            <div class="modal-sticky-header">
+                <div class="modal-header-spacer"></div>
+                <span class="modal-header-title">Share your Contact</span>
+                <button class="modal-close-btn" onclick="skipForm()" aria-label="Close">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
             <div class="form-content">
-                <div class="form-header">
-                    <button class="close-btn" onclick="skipForm()">
-                        <span class="material-icons">close</span>
-                    </button>
-                    <h3>Share your Contact</h3>
-                    <p>Let's exchange details</p>
-                </div>
+                <p class="modal-subtitle">Let's exchange details</p>
 
                 <!-- Location banner — non-blocking, only requests on tap -->
                 <div id="locationBanner">
