@@ -18,6 +18,7 @@ router.post('/AddCard',
   cardController.addCard
 );
 router.patch('/Cards/:id', handleSingleUpload('image'), cardController.updateCard);
+router.post('/Cards/:id/restart-speaker-window', cardController.restartSpeakerWindow);
 router.delete('/Cards/:id', cardController.deleteCard);
 router.post('/Cards/:userId/wallet/:cardIndex?', cardController.createWalletPass);
 router.patch('/Cards/:id/color', cardController.updateCardColor);

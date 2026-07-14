@@ -14,6 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import { useColorScheme } from '../../context/ColorSchemeContext';
 import { getImageUrl } from '../../utils/imageUtils';
+import { formatSocialLinkDisplay } from '../../utils/socialLinkDisplay';
 import { isProfileIncompleteError } from '../../utils/profileErrorHandler';
 import ProfileCompletionModal from '../../components/ProfileCompletionModal';
 import { isTablet, getCardWidth, scale, getSpacing } from '../../utils/responsive';
@@ -1546,7 +1547,7 @@ export default function CardsScreen() {
                           numberOfLines={1}
                           ellipsizeMode="tail"
                         >
-                          {textValue.length > 20 ? textValue.substring(0, 20) + '…' : textValue}
+                          {formatSocialLinkDisplay(platform, textValue)}
                         </Text>
                       </TouchableOpacity>
                     );

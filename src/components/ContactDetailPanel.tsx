@@ -6,6 +6,11 @@
  * with pointerEvents="box-none" so the contact list behind it stays scrollable and
  * tappable — the user can tap another contact while this panel is open.
  *
+ * Shows the tapped contact's card at the top, with the next contact's card
+ * peeking in beneath it — a visual cue that the panel scrolls between contacts.
+ * The list snaps one contact at a time (paging), so scrolling always settles
+ * with exactly one contact in the primary focus position.
+ *
  * Snap positions:
  *   docked → dockedTop  (panel top sits right below the tapped contact)
  *   full   → 0          (full-screen contact detail view)
@@ -17,10 +22,12 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  ScrollView,
+  FlatList,
   StyleSheet,
   Linking,
   Alert,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,11 +59,21 @@ export interface ContactPanelData {
 }
 
 interface ContactDetailPanelProps {
-  contact: ContactPanelData | null;
+  /** Full list the panel scrolls through — the tapped contact plus its neighbors. */
+  contacts: ContactPanelData[];
+  /** Index within `contacts` of the tapped contact (primary focus on open). */
+  initialIndex: number;
   visible: boolean;
   dockedTop: number;
   onClose: () => void;
+  /** Fired when scrolling settles on a different contact than the one passed in. */
+  onIndexChange?: (index: number) => void;
 }
+
+// How much of the next contact's card peeks in beneath the focused one — a
+// subtle hint that the panel is scrollable, not a second fully-readable card.
+const PEEK_HEIGHT = 72;
+const MIN_CARD_HEIGHT = 360;
 
 const formatPhone = (phone: string): string => {
   if (!phone) return '';
@@ -67,19 +84,152 @@ const formatPhone = (phone: string): string => {
   return clean;
 };
 
+function ContactCard({ contact }: { contact: ContactPanelData }) {
+  const [imgError, setImgError] = useState(false);
+
+  const imageUrl = contact.isXsCardUser
+    ? (contact.profileImageUrls?.medium ??
+       contact.profileImageUrls?.thumbnail ??
+       contact.profileImageUrl ??
+       null)
+    : null;
+
+  const showImage = !!imageUrl && !imgError;
+  const showGradient = contact.isXsCardUser && !showImage;
+  const phoneFormatted = formatPhone(contact.phone);
+
+  return (
+    <View style={styles.content}>
+      {/* Avatar */}
+      <View style={styles.avatarWrap}>
+        {showImage && (
+          <Image
+            source={{ uri: imageUrl! }}
+            style={styles.avatar}
+            onError={() => setImgError(true)}
+          />
+        )}
+        {showGradient && <GradientAvatar size={88} />}
+        {!contact.isXsCardUser && (
+          <View style={styles.plainAvatar}>
+            <MaterialIcons name="person" size={44} color="#C0C0C0" />
+          </View>
+        )}
+      </View>
+
+      {/* Name */}
+      <Text style={styles.name}>
+        {contact.name} {contact.surname}
+      </Text>
+
+      {/* XS Card badge */}
+      {contact.isXsCardUser && (
+        <View style={styles.badge}>
+          <MaterialIcons name="verified" size={14} color={COLORS.primary} />
+          <Text style={styles.badgeText}>XS Card User</Text>
+        </View>
+      )}
+
+      {/* Company */}
+      {!!contact.company && (
+        <Text style={styles.company}>{contact.company}</Text>
+      )}
+
+      <View style={styles.divider} />
+
+      {/* Phone — tappable to call */}
+      <TouchableOpacity
+        style={styles.infoRow}
+        onPress={() => {
+          const dial = phoneFormatted.replace(/[^0-9+]/g, '');
+          if (!dial) return;
+          Linking.openURL(`tel:${dial}`).catch(() =>
+            Alert.alert('Unable to call', 'No phone app available on this device.')
+          );
+        }}
+      >
+        <View style={styles.infoIconWrap}>
+          <MaterialIcons name="phone" size={20} color={COLORS.secondary} />
+        </View>
+        <Text style={styles.infoText} numberOfLines={1}>
+          {phoneFormatted}
+        </Text>
+        <MaterialIcons name="chevron-right" size={18} color={COLORS.gray} />
+      </TouchableOpacity>
+
+      {/* Email — tappable to compose */}
+      {!!contact.email && (
+        <TouchableOpacity
+          style={styles.infoRow}
+          onPress={() =>
+            Linking.openURL(`mailto:${contact.email}`).catch(() =>
+              Alert.alert('Unable to email', 'No email app available on this device.')
+            )
+          }
+        >
+          <View style={styles.infoIconWrap}>
+            <MaterialIcons name="email" size={20} color={COLORS.secondary} />
+          </View>
+          <Text style={styles.infoText} numberOfLines={1}>
+            {contact.email}
+          </Text>
+          <MaterialIcons name="chevron-right" size={18} color={COLORS.gray} />
+        </TouchableOpacity>
+      )}
+
+      {/* How we met */}
+      {!!contact.howWeMet && (
+        <View style={styles.infoRow}>
+          <View style={styles.infoIconWrap}>
+            <MaterialIcons
+              name={contact.howWeMet === 'Scanned QR Code' ? 'qr-code-scanner' : 'place'}
+              size={20}
+              color={COLORS.secondary}
+            />
+          </View>
+          <Text style={styles.infoText} numberOfLines={1}>
+            {contact.howWeMet}
+          </Text>
+        </View>
+      )}
+
+      {/* Date added */}
+      <View style={styles.infoRow}>
+        <View style={styles.infoIconWrap}>
+          <MaterialIcons name="event" size={20} color={COLORS.secondary} />
+        </View>
+        <Text style={[styles.infoText, styles.dateText]} numberOfLines={1}>
+          {formatTimestamp(contact.createdAt)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function ContactDetailPanel({
-  contact,
+  contacts,
+  initialIndex,
   visible,
   dockedTop,
   onClose,
+  onIndexChange,
 }: ContactDetailPanelProps) {
   const insets = useSafeAreaInsets();
   const [containerH, setContainerH] = useState(0);
-  const [imgError, setImgError] = useState(false);
+  const [listAreaH, setListAreaH] = useState(0);
   const [snapPos, setSnapPos] = useState<SnapPosition>('hidden');
   const panelRef = useRef<DraggablePreviewPanelRef>(null);
+  const listRef = useRef<FlatList<ContactPanelData>>(null);
   const opened = useRef(false);
-  const prevContactKey = useRef<string | null>(null);
+  const prevIndex = useRef<number | null>(null);
+
+  const safeIndex = Math.max(0, Math.min(initialIndex, Math.max(0, contacts.length - 1)));
+
+  // Each row is the visible-list-area height minus a small peek of the next
+  // contact — a subtle cue that there's more to scroll to. Recomputes whenever
+  // the panel's own layout changes, so it stays correct across screen sizes
+  // and between the docked / expanded snap states.
+  const cardHeight = Math.max(MIN_CARD_HEIGHT, listAreaH - PEEK_HEIGHT);
 
   // Open panel once layout is measured
   useEffect(() => {
@@ -89,20 +239,19 @@ export default function ContactDetailPanel({
     }
   }, [visible, containerH]);
 
-  // When the contact changes while the panel is already open: reset image error
-  // and let DraggablePreviewPanel's own effect re-clamp to the new dockedTop.
+  // When a different contact is tapped (either fresh open, or tapped again
+  // while the panel is already showing another one): scroll the list so that
+  // contact becomes the primary focus, and reopen if it had been dismissed.
   useEffect(() => {
-    if (!contact) return;
-    const key = `${contact.phone}-${contact.name}`;
-    if (prevContactKey.current !== null && prevContactKey.current !== key) {
-      setImgError(false);
-      // If panel was hidden (tapped after dismiss), reopen
+    if (prevIndex.current !== null && prevIndex.current !== safeIndex && cardHeight > 0) {
+      listRef.current?.scrollToOffset({ offset: safeIndex * cardHeight, animated: opened.current });
       if (opened.current && panelRef.current?.getSnap() === 'hidden') {
         panelRef.current.snapTo('docked');
       }
     }
-    prevContactKey.current = key;
-  }, [contact]);
+    prevIndex.current = safeIndex;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeIndex, cardHeight]);
 
   // Close from parent
   useEffect(() => {
@@ -117,18 +266,19 @@ export default function ContactDetailPanel({
     if (pos === 'hidden') onClose();
   };
 
-  if (!contact) return null;
+  const handleMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (cardHeight <= 0) return;
+    const idx = Math.max(
+      0,
+      Math.min(Math.round(e.nativeEvent.contentOffset.y / cardHeight), contacts.length - 1)
+    );
+    if (idx !== prevIndex.current) {
+      prevIndex.current = idx;
+      onIndexChange?.(idx);
+    }
+  };
 
-  const imageUrl = contact.isXsCardUser
-    ? (contact.profileImageUrls?.medium ??
-       contact.profileImageUrls?.thumbnail ??
-       contact.profileImageUrl ??
-       null)
-    : null;
-
-  const showImage = !!imageUrl && !imgError;
-  const showGradient = contact.isXsCardUser && !showImage;
-  const phoneFormatted = formatPhone(contact.phone);
+  if (!contacts.length) return null;
 
   return (
     <View
@@ -161,113 +311,34 @@ export default function ContactDetailPanel({
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.content}
+          <View
+            style={styles.listArea}
+            onLayout={(e) => setListAreaH(e.nativeEvent.layout.height)}
           >
-            {/* Avatar */}
-            <View style={styles.avatarWrap}>
-              {showImage && (
-                <Image
-                  source={{ uri: imageUrl! }}
-                  style={styles.avatar}
-                  onError={() => setImgError(true)}
-                />
-              )}
-              {showGradient && <GradientAvatar size={88} />}
-              {!contact.isXsCardUser && (
-                <View style={styles.plainAvatar}>
-                  <MaterialIcons name="person" size={44} color="#C0C0C0" />
-                </View>
-              )}
-            </View>
-
-            {/* Name */}
-            <Text style={styles.name}>
-              {contact.name} {contact.surname}
-            </Text>
-
-            {/* XS Card badge */}
-            {contact.isXsCardUser && (
-              <View style={styles.badge}>
-                <MaterialIcons name="verified" size={14} color={COLORS.primary} />
-                <Text style={styles.badgeText}>XS Card User</Text>
-              </View>
+            {listAreaH > 0 && (
+              <FlatList
+                ref={listRef}
+                data={contacts}
+                keyExtractor={(item, index) => `${item.phone}-${item.name}-${index}`}
+                renderItem={({ item }) => (
+                  <View style={{ height: cardHeight, overflow: 'hidden' }}>
+                    <ContactCard contact={item} />
+                  </View>
+                )}
+                showsVerticalScrollIndicator={false}
+                snapToInterval={cardHeight}
+                decelerationRate="fast"
+                disableIntervalMomentum
+                getItemLayout={(_, index) => ({
+                  length: cardHeight,
+                  offset: cardHeight * index,
+                  index,
+                })}
+                initialScrollIndex={safeIndex}
+                onMomentumScrollEnd={handleMomentumScrollEnd}
+              />
             )}
-
-            {/* Company */}
-            {!!contact.company && (
-              <Text style={styles.company}>{contact.company}</Text>
-            )}
-
-            <View style={styles.divider} />
-
-            {/* Phone — tappable to call */}
-            <TouchableOpacity
-              style={styles.infoRow}
-              onPress={() => {
-                const dial = phoneFormatted.replace(/[^0-9+]/g, '');
-                if (!dial) return;
-                Linking.openURL(`tel:${dial}`).catch(() =>
-                  Alert.alert('Unable to call', 'No phone app available on this device.')
-                );
-              }}
-            >
-              <View style={styles.infoIconWrap}>
-                <MaterialIcons name="phone" size={20} color={COLORS.secondary} />
-              </View>
-              <Text style={styles.infoText} numberOfLines={1}>
-                {phoneFormatted}
-              </Text>
-              <MaterialIcons name="chevron-right" size={18} color={COLORS.gray} />
-            </TouchableOpacity>
-
-            {/* Email — tappable to compose */}
-            {!!contact.email && (
-              <TouchableOpacity
-                style={styles.infoRow}
-                onPress={() =>
-                  Linking.openURL(`mailto:${contact.email}`).catch(() =>
-                    Alert.alert('Unable to email', 'No email app available on this device.')
-                  )
-                }
-              >
-                <View style={styles.infoIconWrap}>
-                  <MaterialIcons name="email" size={20} color={COLORS.secondary} />
-                </View>
-                <Text style={styles.infoText} numberOfLines={1}>
-                  {contact.email}
-                </Text>
-                <MaterialIcons name="chevron-right" size={18} color={COLORS.gray} />
-              </TouchableOpacity>
-            )}
-
-            {/* How we met */}
-            {!!contact.howWeMet && (
-              <View style={styles.infoRow}>
-                <View style={styles.infoIconWrap}>
-                  <MaterialIcons
-                    name={contact.howWeMet === 'Scanned QR Code' ? 'qr-code-scanner' : 'place'}
-                    size={20}
-                    color={COLORS.secondary}
-                  />
-                </View>
-                <Text style={styles.infoText} numberOfLines={1}>
-                  {contact.howWeMet}
-                </Text>
-              </View>
-            )}
-
-            {/* Date added */}
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconWrap}>
-                <MaterialIcons name="event" size={20} color={COLORS.secondary} />
-              </View>
-              <Text style={[styles.infoText, styles.dateText]} numberOfLines={1}>
-                {formatTimestamp(contact.createdAt)}
-              </Text>
-            </View>
-          </ScrollView>
+          </View>
         </DraggablePreviewPanel>
       )}
     </View>
@@ -288,6 +359,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 4,
+  },
+  listArea: {
+    flex: 1,
   },
   content: {
     alignItems: 'center',

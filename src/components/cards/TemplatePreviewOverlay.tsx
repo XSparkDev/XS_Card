@@ -30,6 +30,12 @@ interface TemplatePreviewOverlayProps {
   onSelectTemplate: (n: number) => void;
   /** Called when the panel is fully dismissed (dragged to hidden) or closed. */
   onClose: () => void;
+  /** When provided, tapping a text field edits it in-place. */
+  onFieldEdit?: (field: string, value: string) => void;
+  /** When provided, tapping the profile image opens the upload workflow. */
+  onEditProfileImage?: () => void;
+  /** When provided, tapping the company logo opens the upload workflow. */
+  onEditCompanyLogo?: () => void;
 }
 
 export default function TemplatePreviewOverlay({
@@ -39,6 +45,9 @@ export default function TemplatePreviewOverlay({
   templates = [1, 2, 3, 4, 5],
   onSelectTemplate,
   onClose,
+  onFieldEdit,
+  onEditProfileImage,
+  onEditCompanyLogo,
 }: TemplatePreviewOverlayProps) {
   const [containerH, setContainerH] = useState(0);
   const [stripH, setStripH] = useState(0);
@@ -115,7 +124,14 @@ export default function TemplatePreviewOverlay({
           availableHeight={containerH}
           onSnapChange={handleSnapChange}
         >
-          <CardPreview template={template} card={card} altNumber={altNumber} />
+          <CardPreview
+            template={template}
+            card={card}
+            altNumber={altNumber}
+            onFieldEdit={onFieldEdit}
+            onEditProfileImage={onEditProfileImage}
+            onEditCompanyLogo={onEditCompanyLogo}
+          />
         </DraggablePreviewPanel>
       )}
     </View>

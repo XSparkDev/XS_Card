@@ -11,6 +11,7 @@ import { ColorSchemeProvider } from './src/context/ColorSchemeContext';
 import ToastProvider from './src/components/ToastProvider';
 import PremiumUpsellProvider from './src/components/PremiumUpsellProvider';
 import { TooltipProvider } from './src/context/TooltipContext';
+import { GhostModeProvider } from './src/context/GhostModeContext';
 import { ScanLimitProvider } from './src/context/ScanLimitContext';
 import { AuthManager } from './src/utils/authManager';
 import { setGlobalNavigationRef } from './src/utils/api';
@@ -160,6 +161,7 @@ function AppContent() {
       <EventNotificationProvider>
         <ColorSchemeProvider>
           <MeetingNotificationProvider>
+          <GhostModeProvider>
           <ToastProvider>
             <TooltipProvider>
             <ScanLimitProvider>
@@ -172,9 +174,6 @@ function AppContent() {
                 </Stack.Navigator>
               </PremiumUpsellProvider>
             </NavigationContainer>
-            </ScanLimitProvider>
-            </TooltipProvider>
-
             {/* First-launch location permission rationale (optional feature) */}
             <LocationPermissionModal />
 
@@ -187,7 +186,10 @@ function AppContent() {
                 onDismiss={() => setUpdateModalVisible(false)}
               />
             )}
+            </ScanLimitProvider>
+            </TooltipProvider>
           </ToastProvider>
+          </GhostModeProvider>
           </MeetingNotificationProvider>
         </ColorSchemeProvider>
       </EventNotificationProvider>

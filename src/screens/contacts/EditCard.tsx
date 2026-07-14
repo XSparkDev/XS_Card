@@ -18,6 +18,7 @@ import { RouteProp } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { getImageUrl, pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import { parsePhoneNumber as libParse } from 'libphonenumber-js';
 import { getAltNumber, AltNumberData } from '../../utils/tempAltNumber';
 import GradientAvatar from '../../components/GradientAvatar';
 import LogoPlaceholder from '../../components/LogoPlaceholder';
@@ -41,6 +42,9 @@ const isSpeakerCardEnabled = (value: unknown): boolean => {
 
 // Salutation options for the Title dropdown — primary-card-only, canonical field.
 const TITLE_OPTIONS = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Dr.', 'Prof.'];
+// Fixed per-row height so the dropdown's expand/collapse animation can
+// target an exact height (avoids measuring content on every open/close).
+const TITLE_ROW_HEIGHT = 48;
 
 const normalizeUserPlan = (plan?: string | null): UserPlan => {
   const normalizedPlan = String(plan || 'free').toLowerCase();
@@ -62,8 +66,7 @@ interface FormData {
   qualification: string;
   company: string;
   email: string;
-  phoneNumber: string;
-  countryCode: string; // Add country code field
+  phone: string;
   // Social media fields
   whatsapp?: string;
   x?: string;
@@ -132,8 +135,7 @@ export default function EditCard() {
     qualification: '',
     company: '',
     email: '',
-    phoneNumber: '',
-    countryCode: '+27', // Default to South Africa
+    phone: '',
     whatsapp: '',
     x: '',
     facebook: '',
@@ -150,7 +152,34 @@ export default function EditCard() {
   const scrollViewRef = useRef<any>(null);
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [isSocialRemoveModalVisible, setIsSocialRemoveModalVisible] = useState(false);
-  const [isTitleModalVisible, setIsTitleModalVisible] = useState(false);
+  // Title/salutation — inline collapsible dropdown (replaces the old popup).
+  const [isTitleDropdownOpen, setIsTitleDropdownOpen] = useState(false);
+  const titleDropdownAnim = useRef(new Animated.Value(0)).current;
+  // Title/salutation inline dropdown — expands/collapses in place (no popup).
+  // Height animates between 0 and a fixed, known content height (row count *
+  // TITLE_ROW_HEIGHT), so no runtime measurement is needed.
+  const closeTitleDropdown = useCallback(() => {
+    Animated.timing(titleDropdownAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: false, // height isn't supported by the native driver
+    }).start();
+    setIsTitleDropdownOpen(false);
+  }, [titleDropdownAnim]);
+  const toggleTitleDropdown = useCallback(() => {
+    const opening = !isTitleDropdownOpen;
+    setIsTitleDropdownOpen(opening);
+    const rowCount = TITLE_OPTIONS.length + (formData.salutation ? 1 : 0); // +1 for "Clear"
+    Animated.timing(titleDropdownAnim, {
+      toValue: opening ? rowCount * TITLE_ROW_HEIGHT : 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  }, [isTitleDropdownOpen, titleDropdownAnim, formData.salutation]);
+  const selectTitle = useCallback((option: string) => {
+    setFormData((prev: any) => ({ ...prev, salutation: option }));
+    closeTitleDropdown();
+  }, [closeTitleDropdown]);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [currentSocialToRemove, setCurrentSocialToRemove] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState('');
@@ -168,8 +197,7 @@ export default function EditCard() {
   const [isHexEditing, setIsHexEditing] = useState(false);
   const [template, setTemplate] = useState<number>(1);
   // Alt number state
-  const [altNumber, setAltNumber] = useState('');
-  const [altCountryCode, setAltCountryCode] = useState('+27');
+  const [altPhone, setAltPhone] = useState('');
   const [showAltNumber, setShowAltNumber] = useState(false);
   const [altNumberError, setAltNumberError] = useState<string>('');
   const [isSpeakerEngagementCard, setIsSpeakerEngagementCard] = useState(false);
@@ -182,6 +210,7 @@ export default function EditCard() {
   const [existingSpeakerCardLabel, setExistingSpeakerCardLabel] = useState('');
   const [speakerConflictLoaded, setSpeakerConflictLoaded] = useState(false);
   const [isExportingContacts, setIsExportingContacts] = useState(false);
+  const [isRestartingSpeakerList, setIsRestartingSpeakerList] = useState(false);
 
   // Widget state
   const [isWidgetConfigVisible, setIsWidgetConfigVisible] = useState(false);
@@ -201,8 +230,7 @@ export default function EditCard() {
     selectedColor,
     selectedSocials,
     zoomLevel,
-    altNumber,
-    altCountryCode,
+    altPhone,
     showAltNumber,
     isSpeakerEngagementCard,
   });
@@ -272,28 +300,6 @@ export default function EditCard() {
     handleSaveRef.current = handleSave;
   });
 
-  // Helper function to parse phone number and extract country code
-  const parsePhoneNumber = (phone: string) => {
-    if (!phone) return { countryCode: '+27', number: '' };
-    
-    // If phone starts with +, try to find matching country code
-    if (phone.startsWith('+')) {
-      // Common country codes to check (sorted by length, longest first)
-      const countryCodes = ['+27', '+44', '+33', '+49', '+86', '+91', '+81', '+61', '+55', '+39', '+34', '+31', '+46', '+47', '+45', '+41', '+43', '+32', '+351', '+30', '+48', '+420', '+36', '+40', '+359', '+385', '+386', '+421', '+370', '+371', '+372', '+358', '+353', '+354', '+352', '+7', '+380', '+90', '+82', '+65', '+60', '+66', '+84', '+63', '+62', '+880', '+92', '+98', '+972', '+966', '+971', '+20', '+234', '+254', '+52', '+54', '+56', '+57', '+51', '+64', '+1'];
-      
-      for (const code of countryCodes) {
-        if (phone.startsWith(code)) {
-          return {
-            countryCode: code,
-            number: phone.substring(code.length)
-          };
-        }
-      }
-    }
-    
-    // Default to South Africa if no match found
-    return { countryCode: '+27', number: phone };
-  };
 
   useEffect(() => {
     // Use passed card data if available, otherwise fall back to API call
@@ -342,8 +348,9 @@ export default function EditCard() {
     try {
       const altData = await getAltNumber(cardIndex);
       if (altData) {
-        setAltNumber(altData.altNumber || '');
-        setAltCountryCode(altData.altCountryCode || '+27');
+        const an = altData.altNumber || '';
+        const ac = altData.altCountryCode || '+27';
+        setAltPhone(an ? ac + an : '');
         setShowAltNumber(altData.showAltNumber || false);
       }
     } catch (error) {
@@ -374,8 +381,7 @@ export default function EditCard() {
         qualification: cardData.qualification || '',
         company: cardData.company || '',
         email: cardData.email || '',
-        phoneNumber: parsePhoneNumber(cardData.phone || '').number,
-        countryCode: parsePhoneNumber(cardData.phone || '').countryCode,
+        phone: cardData.phone || '',
         ...Object.keys(cardData.socials || {}).reduce((acc, key) => ({
           ...acc,
           [key]: cardData.socials[key]
@@ -401,8 +407,9 @@ export default function EditCard() {
 
       // Load alt number from card data (backend) with fallback to AsyncStorage
       if (cardData.altNumber !== undefined || cardData.altCountryCode !== undefined || cardData.showAltNumber !== undefined) {
-        setAltNumber(cardData.altNumber || '');
-        setAltCountryCode(cardData.altCountryCode || '+27');
+        const an = cardData.altNumber || '';
+        const ac = cardData.altCountryCode || '+27';
+        setAltPhone(an ? ac + an : '');
         setShowAltNumber(cardData.showAltNumber || false);
       } else {
         // Fallback to AsyncStorage for backward compatibility during migration
@@ -472,8 +479,7 @@ export default function EditCard() {
           qualification: userData.qualification || '',
           company: userData.company || '',
           email: userData.email || '',
-          phoneNumber: parsePhoneNumber(userData.phone || '').number,
-          countryCode: parsePhoneNumber(userData.phone || '').countryCode,
+          phone: userData.phone || '',
           ...Object.keys(userData.socials || {}).reduce((acc, key) => ({
             ...acc,
             [key]: userData.socials[key]
@@ -499,8 +505,9 @@ export default function EditCard() {
 
         // Load alt number from card data (backend) with fallback to AsyncStorage
         if (userData.altNumber !== undefined || userData.altCountryCode !== undefined || userData.showAltNumber !== undefined) {
-          setAltNumber(userData.altNumber || '');
-          setAltCountryCode(userData.altCountryCode || '+27');
+          const an = userData.altNumber || '';
+          const ac = userData.altCountryCode || '+27';
+          setAltPhone(an ? ac + an : '');
           setShowAltNumber(userData.showAltNumber || false);
         } else {
           // Fallback to AsyncStorage for backward compatibility during migration
@@ -834,6 +841,63 @@ export default function EditCard() {
     }
   };
 
+  // Restart the CSV lead list for this Speaker & Engagement Card. Premium-only.
+  // Clears the "current" list by starting a fresh capture window server-side —
+  // the same card, QR code, and toggle stay exactly as they are; only future
+  // scans populate the new list, and past scans simply stop showing up in
+  // exports (they're never deleted).
+  const handleRestartSpeakerList = () => {
+    if (triggerUpsell({
+      featureName: 'Speaker & Engagement Card',
+      description: 'Restarting the CSV list is a premium feature. Upgrade to Premium to use it.',
+    })) return;
+
+    if (!savedIsSpeakerEngagementCard) {
+      Alert.alert(
+        'Save Required',
+        'Save this card with the speaker toggle on before restarting its CSV list.'
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Restart CSV List?',
+      'This clears the current list of scanned contacts and starts a brand-new, empty list. Your existing export is unaffected, and the card itself keeps working exactly as before — nothing about its QR code changes.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restart List',
+          style: 'destructive',
+          onPress: async () => {
+            if (isRestartingSpeakerList) return;
+            setIsRestartingSpeakerList(true);
+            try {
+              const userId = await getUserId();
+              if (!userId) throw new Error('Not signed in');
+
+              const response = await authenticatedFetchWithRefresh(
+                `${ENDPOINTS.RESTART_SPEAKER_WINDOW.replace(':id', userId)}?cardIndex=${cardIndex}`,
+                { method: 'POST' }
+              );
+
+              if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.message || 'Failed to restart CSV list');
+              }
+
+              toast.success('CSV List Restarted', 'Future scans will populate a fresh list.');
+            } catch (error: any) {
+              console.error('Restart speaker list failed:', error);
+              Alert.alert('Restart Failed', error?.message || 'Could not restart the CSV list. Please try again.');
+            } finally {
+              setIsRestartingSpeakerList(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Load active widgets for this card
   const loadActiveWidgets = async () => {
     try {
@@ -860,7 +924,7 @@ export default function EditCard() {
         name: formData.firstName,
         surname: formData.lastName,
         email: formData.email,
-        phone: `${formData.countryCode}${formData.phoneNumber}`,
+        phone: formData.phone,
         company: formData.company,
         occupation: formData.occupation,
         profileImage: formData.profileImage,
@@ -952,7 +1016,7 @@ export default function EditCard() {
 
 
   const validateForm = () => {
-    if (!formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
+    if (!formData.company || !formData.email || !formData.phone || !formData.occupation) {
       setError('Please fill in all required fields');
       return false;
     }
@@ -963,7 +1027,7 @@ export default function EditCard() {
     }
 
     // Premium-only: if showing alt number on card, alt number becomes required.
-    const trimmedAlt = String(altNumber || '').trim();
+    const trimmedAlt = String(altPhone || '').trim();
     if (hasAltNumberAccess && showAltNumber && !trimmedAlt) {
       setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
       setError('Please fix the highlighted fields');
@@ -1013,7 +1077,7 @@ export default function EditCard() {
         occupation: formData.occupation,
         company: formData.company,
         email: formData.email,
-        phone: `${formData.countryCode}${formData.phoneNumber}`,
+        phone: formData.phone,
         socials: socialFields,
         colorScheme: selectedColor,
         profileImage: formData.profileImage,
@@ -1025,8 +1089,13 @@ export default function EditCard() {
 
       // Alt number is Premium-only. For Free users, do not submit alt fields.
       if (hasAltNumberAccess) {
-        cardData.altNumber = altNumber || '';
-        cardData.altCountryCode = altCountryCode || '+27';
+        const altParsed = altPhone ? (() => {
+          try { const p = libParse(altPhone); if (p) return { num: String(p.nationalNumber), code: '+' + p.countryCallingCode }; } catch {}
+          const m = altPhone.match(/^(\+\d{1,4})(\d+)$/);
+          return m ? { num: m[2], code: m[1] } : { num: altPhone, code: '+27' };
+        })() : { num: '', code: '+27' };
+        cardData.altNumber = altParsed.num;
+        cardData.altCountryCode = altParsed.code;
         cardData.showAltNumber = showAltNumber || false;
       } else {
         cardData.showAltNumber = false;
@@ -1144,7 +1213,7 @@ export default function EditCard() {
           name: formData.firstName,
           surname: formData.lastName,
           email: formData.email,
-          phone: `${formData.countryCode}${formData.phoneNumber}`,
+          phone: formData.phone,
           company: formData.company,
           occupation: formData.occupation,
           profileImage: formData.profileImage,
@@ -1643,7 +1712,7 @@ export default function EditCard() {
       occupation: formData.occupation || '',
       company: formData.company || '',
       email: formData.email || '',
-      phone: `${formData.countryCode}${formData.phoneNumber}`,
+      phone: formData.phone,
       socials: socialFields,
       colorScheme: selectedColor,
       profileImage: formData.profileImage || null,
@@ -1698,6 +1767,7 @@ export default function EditCard() {
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={() => { if (isTitleDropdownOpen) closeTitleDropdown(); }}
           onScroll={(e) => notifyScroll(e.nativeEvent.contentOffset.y)}
           scrollEventThrottle={16}
         enableOnAndroid={true}
@@ -1978,18 +2048,46 @@ export default function EditCard() {
                 </View>
               </Pressable>
             )}
-            {/* Title / salutation — canonical dropdown (primary card only). */}
+            {/* Title / salutation — canonical inline collapsible dropdown (primary card only). */}
             {isPrimaryCard ? (
-              <TouchableOpacity
-                style={[styles.input, styles.dropdownInput]}
-                onPress={() => setIsTitleModalVisible(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
-                  {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
-                </Text>
-                <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
-              </TouchableOpacity>
+              <View style={styles.titleDropdownWrap}>
+                <TouchableOpacity
+                  style={[styles.input, styles.dropdownInput, { marginBottom: 0 }]}
+                  onPress={toggleTitleDropdown}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ color: formData.salutation ? COLORS.black : '#999' }}>
+                    {formData.salutation || 'Title (e.g. Mr., Mrs., Dr.)'}
+                  </Text>
+                  <MaterialIcons
+                    name={isTitleDropdownOpen ? 'arrow-drop-up' : 'arrow-drop-down'}
+                    size={24}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+                <Animated.View style={[styles.titleDropdownPanel, { height: titleDropdownAnim }]}>
+                  {TITLE_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={styles.titleOptionRow}
+                      onPress={() => selectTitle(option)}
+                    >
+                      <Text style={styles.titleOptionText}>{option}</Text>
+                      {formData.salutation === option && (
+                        <MaterialIcons name="check" size={20} color={COLORS.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                  {!!formData.salutation && (
+                    <TouchableOpacity
+                      style={styles.titleOptionRow}
+                      onPress={() => selectTitle('')}
+                    >
+                      <Text style={[styles.titleOptionText, { color: COLORS.gray }]}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </Animated.View>
+              </View>
             ) : (
               <Pressable onPress={redirectToPrimaryCard}>
                 <View style={[styles.input, styles.dropdownInput, styles.disabledInput]} pointerEvents="none">
@@ -2007,6 +2105,7 @@ export default function EditCard() {
               placeholderTextColor="#999"
               value={formData.occupation}
               onChangeText={(text) => setFormData({...formData, occupation: text})}
+              onFocus={() => { if (isTitleDropdownOpen) closeTitleDropdown(); }}
             />
             {/* Qualification — canonical, optional (primary card only). */}
             {isPrimaryCard ? (
@@ -2059,27 +2158,27 @@ export default function EditCard() {
               editable={userPlan !== 'enterprise'}
             />
             <PhoneNumberInput
-              value={formData.phoneNumber}
-              onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-              onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
+              e164Value={formData.phone}
+              onChange={(e164) => setFormData({...formData, phone: e164})}
               placeholder="Phone number"
+              variant="filled"
             />
-            
+
             <Pressable
               onPress={isAltNumberLocked ? showAltNumberUpsell : undefined}
               style={[isAltNumberLocked && styles.altLockedContainer]}
             >
               <View pointerEvents={isAltNumberLocked ? 'none' : 'auto'}>
                 <PhoneNumberInput
-                  value={altNumber}
-                  onChangeText={(text) => {
-                    setAltNumber(text);
+                  e164Value={altPhone}
+                  onChange={(e164) => {
+                    setAltPhone(e164);
                     if (altNumberError) setAltNumberError('');
                   }}
-                  onCountryCodeChange={(code) => setAltCountryCode(code)}
                   placeholder="Alt number"
                   disabled={isAltNumberLocked}
                   error={!isAltNumberLocked ? altNumberError : undefined}
+                  variant="filled"
                 />
               </View>
             </Pressable>
@@ -2200,6 +2299,29 @@ export default function EditCard() {
                 )}
                 <Text style={styles.exportContactsButtonText}>
                   {isExportingContacts ? 'Preparing CSV…' : 'Download scanned contacts (CSV)'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Restart the CSV list — same premium + saved-toggle gate as export.
+                Clears the current list and starts a fresh one for a new session/event,
+                without touching the card's QR code or Speaker Card status. */}
+            {isPremium && savedIsSpeakerEngagementCard && (
+              <TouchableOpacity
+                style={styles.restartSpeakerListButton}
+                onPress={handleRestartSpeakerList}
+                disabled={isRestartingSpeakerList}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Restart the CSV list for this card"
+              >
+                {isRestartingSpeakerList ? (
+                  <ActivityIndicator size="small" color={COLORS.gray} />
+                ) : (
+                  <MaterialIcons name="restart-alt" size={20} color={COLORS.gray} />
+                )}
+                <Text style={styles.restartSpeakerListButtonText}>
+                  {isRestartingSpeakerList ? 'Restarting…' : 'Restart CSV List'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -2494,54 +2616,24 @@ export default function EditCard() {
         </View>
       </Modal>
 
-      {/* Title / salutation selection modal — primary card only */}
-      <Modal
-        isVisible={isTitleModalVisible}
-        onBackdropPress={() => setIsTitleModalVisible(false)}
-        onBackButtonPress={() => setIsTitleModalVisible(false)}
-      >
-        <View style={styles.titleModalContainer}>
-          <Text style={styles.titleModalHeading}>Select title</Text>
-          {TITLE_OPTIONS.map((option) => (
-            <TouchableOpacity
-              key={option}
-              style={styles.titleOptionRow}
-              onPress={() => {
-                setFormData({ ...formData, salutation: option });
-                setIsTitleModalVisible(false);
-              }}
-            >
-              <Text style={styles.titleOptionText}>{option}</Text>
-              {formData.salutation === option && (
-                <MaterialIcons name="check" size={20} color={COLORS.primary} />
-              )}
-            </TouchableOpacity>
-          ))}
-          {!!formData.salutation && (
-            <TouchableOpacity
-              style={styles.titleOptionRow}
-              onPress={() => {
-                setFormData({ ...formData, salutation: '' });
-                setIsTitleModalVisible(false);
-              }}
-            >
-              <Text style={[styles.titleOptionText, { color: COLORS.gray }]}>Clear</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </Modal>
-
       {/* Draggable template preview overlay — shows when previewing/selecting templates */}
       {previewVisible && (
         <TemplatePreviewOverlay
           template={template}
           card={buildCardObject()}
-          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          altNumber={showAltNumber && altPhone ? (() => {
+            try { const p = libParse(altPhone); if (p) return { altNumber: String(p.nationalNumber), altCountryCode: '+' + p.countryCallingCode, showAltNumber }; } catch {}
+            const m = altPhone.match(/^(\+\d{1,4})(\d+)$/);
+            return m ? { altNumber: m[2], altCountryCode: m[1], showAltNumber } : { altNumber: altPhone, altCountryCode: '+27', showAltNumber };
+          })() : undefined}
           onSelectTemplate={(n) => {
             setTemplate(n);
             toast.success('Template Selected', `Template ${n} applied to your card`);
           }}
           onClose={() => setPreviewVisible(false)}
+          onFieldEdit={(field, value) => setFormData((prev: any) => ({ ...prev, [field]: value }))}
+          onEditProfileImage={handleProfileImageEdit}
+          onEditCompanyLogo={handleLogoEdit}
         />
       )}
 
@@ -2559,7 +2651,7 @@ export default function EditCard() {
           name: formData.firstName,
           surname: formData.lastName,
           email: formData.email,
-          phone: `${formData.countryCode}${formData.phoneNumber}`,
+          phone: formData.phone,
           company: formData.company,
           occupation: formData.occupation,
           profileImage: formData.profileImage,
@@ -3388,25 +3480,34 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.white,
   },
-  titleModalContainer: {
+  // Wraps the title trigger + its inline dropdown panel so the panel is
+  // positioned directly beneath the input, in the normal document flow.
+  titleDropdownWrap: {
+    marginBottom: 15,
+  },
+  // The collapsible panel itself — animates `height` between 0 and its full
+  // content height. Matches the input's rounded-corner language while reading
+  // clearly as a distinct dropdown surface (border + subtle shadow), the same
+  // visual treatment used for cards elsewhere in the app.
+  titleDropdownPanel: {
+    overflow: 'hidden',
     backgroundColor: COLORS.white,
     borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  titleModalHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.black,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   titleOptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    height: TITLE_ROW_HEIGHT,
     paddingHorizontal: 16,
-    paddingVertical: 14,
   },
   titleOptionText: {
     fontSize: 16,
@@ -3597,6 +3698,24 @@ const styles = StyleSheet.create({
   },
   exportContactsButtonText: {
     color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  restartSpeakerListButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.light,
+  },
+  restartSpeakerListButtonText: {
+    color: COLORS.gray,
     fontSize: 14,
     fontWeight: '600',
   },

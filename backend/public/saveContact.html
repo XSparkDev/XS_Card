@@ -1315,8 +1315,307 @@
             position: relative;
             top: -2px;
         }
+
+        /* ── Exchange form — exactly matching AddContactPanel.tsx design ── */
+
+        /* Apply Montserrat to every element inside the modal (Part 2).
+           Explicitly exclude .material-icons so icon ligatures keep their
+           own font and don't render as raw text. */
+        #exchangeForm {
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        #exchangeForm *:not(.material-icons) {
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        /*
+         * The form is position:fixed at the bottom, display:flex flex-direction:column.
+         * .modal-sticky-header is flex-shrink:0 — it never scrolls.
+         * .form-content is flex:1 overflow-y:auto — it scrolls beneath the header.
+         * No position:sticky needed; the flex structure itself achieves the effect.
+         */
+        #exchangeForm {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Sticky header (Part 3) ── */
+        #exchangeForm .modal-sticky-header {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            flex-shrink: 0;               /* never shrinks; always visible */
+            padding: 14px 16px 12px 16px;
+            background: #FFFFFF;
+            /* Subtle separator so scrolled content doesn't bleed into the header */
+            border-bottom: 1px solid #F0F0F0;
+            z-index: 2;
+        }
+
+        /* Spacer that mirrors the close button width so the title centres exactly */
+        #exchangeForm .modal-header-spacer {
+            width: 36px;
+            flex-shrink: 0;
+        }
+
+        #exchangeForm .modal-header-title {
+            flex: 1;
+            font-size: 18px;
+            font-weight: 700;
+            color: #333333;
+            text-align: center;
+            line-height: 1.25;
+        }
+
+        /* ── Close button (Part 1) — matches RN TouchableOpacity + MaterialIcons ── */
+        #exchangeForm .modal-close-btn {
+            /* Overall tap target = 36px icon area + 14px hitSlop on each side = ~64px,
+               achieved via padding so the button stays in flow and nothing clips. */
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            border-radius: 50%;
+            outline: none;
+            transition: background-color 0.15s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #exchangeForm .modal-close-btn .material-icons {
+            font-size: 24px;              /* matches size={24} in RN */
+            color: #888888;               /* matches COLORS.gray */
+            line-height: 1;
+        }
+
+        #exchangeForm .modal-close-btn:hover {
+            background-color: rgba(0, 0, 0, 0.06);
+        }
+
+        #exchangeForm .modal-close-btn:active {
+            background-color: rgba(0, 0, 0, 0.10);
+        }
+
+        #exchangeForm .modal-close-btn:focus-visible {
+            outline: 2px solid var(--secondary);
+            outline-offset: 2px;
+        }
+
+        /* Scrollable body */
+        #exchangeForm .form-content {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 0 24px calc(32px + env(safe-area-inset-bottom)) 24px;
+        }
+
+        /* Subtitle — sits at the top of the scrollable body */
+        #exchangeForm .modal-subtitle {
+            font-size: 13px;
+            color: #888888;
+            text-align: center;
+            margin: 8px 0 0 0;
+            line-height: 1.4;
+        }
+
+        /*
+         * Part 3 — Dark input root cause fix:
+         * Previous version used background:#F9F9FB. The app uses COLORS.white
+         * (#FFFFFF) as confirmed in AddContactPanel.tsx styles.input.
+         */
+
+        /* Field group — label above, full-width input below */
+        #exchangeForm .field-group {
+            margin-top: 0;  /* spacing comes from label margin-top */
+            margin-bottom: 0;
+        }
+
+        #exchangeForm .field-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #888888; /* COLORS.gray — matches label style in AddContactPanel */
+            margin-top: 12px;
+            margin-bottom: 6px;
+            letter-spacing: 0;
+        }
+
+        #exchangeForm .field-required {
+            color: var(--primary);
+        }
+
+        #exchangeForm .field-input {
+            width: 100%;
+            padding: 12px 14px; /* matches paddingHorizontal:14, paddingVertical:12 */
+            border: 1px solid #E0E0E0; /* COLORS.border */
+            border-radius: 12px;       /* matches borderRadius:12 */
+            font-size: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #333333;            /* COLORS.black */
+            background: #FFFFFF;       /* COLORS.white — this is the fix for Part 3 */
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            -webkit-appearance: none;
+            appearance: none;
+            /* Ensure min touch height on mobile without a fixed height
+               so the input naturally sizes to its padding */
+            min-height: 44px;
+        }
+
+        #exchangeForm .field-input::placeholder {
+            color: #888888; /* COLORS.gray — matches placeholderTextColor */
+        }
+
+        #exchangeForm .field-input:focus {
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 3px rgba(27, 43, 91, 0.08);
+            background: #FFFFFF;
+        }
+
+        /* Phone row: country code button + number input side by side */
+        .phone-field-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        .cc-wrapper {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .country-code-btn {
+            padding: 12px 10px;
+            border: 1px solid #E0E0E0;
+            border-radius: 12px;
+            background: #FFFFFF;
+            font-size: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #333333;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            white-space: nowrap;
+            outline: none;
+            min-height: 44px;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .country-code-btn:focus,
+        .country-code-btn:active {
+            border-color: var(--secondary);
+        }
+
+        .cc-arrow {
+            font-size: 16px !important;
+            color: #888888;
+            line-height: 1;
+        }
+
+        .phone-number-input {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Location banner */
+        #locationBanner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #F0F4FF;
+            border: 1px solid #D0DBFF;
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin-top: 12px;
+            margin-bottom: 4px;
+        }
+
+        #locationBanner.captured {
+            background: #F0FBF4;
+            border-color: #BBF0D0;
+        }
+
+        #locationBanner.error-state {
+            background: #FFF5F5;
+            border-color: #FFD0D0;
+        }
+
+        #locationBanner.loading-state {
+            background: #FAFAFA;
+            border-color: #E0E0E0;
+        }
+
+        .location-banner-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .location-banner-text {
+            flex: 1;
+            font-size: 13px;
+            color: #4A5568;
+            line-height: 1.4;
+        }
+
+        #locationBanner.captured .location-banner-text { color: #15803D; }
+        #locationBanner.error-state .location-banner-text { color: #C0392B; }
+
+        .location-allow-btn {
+            flex-shrink: 0;
+            background: var(--secondary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .location-allow-btn:active { opacity: 0.8; }
+        .location-allow-btn.hidden { display: none; }
+
+        /* Submit button — pill shape matching AddContactPanel submit */
+        #exchangeForm .submit-btn {
+            margin: 24px 0 10px 0;
+            width: 100%;
+            border-radius: 25px; /* matches borderRadius:25 pill */
+            padding: 14px 10px;  /* matches paddingVertical:14 */
+        }
+
+        #exchangeForm .app-btn {
+            margin: 0 0 6px 0;
+            width: 100%;
+            border-radius: 25px;
+        }
+
+        /* iOS font-size 16px prevents auto-zoom on input focus */
+        @media (max-width: 480px) {
+            #exchangeForm .field-input,
+            .country-code-btn {
+                font-size: 16px;
+            }
+        }
     </style>
+    <!-- Montserrat — same font family used throughout the app -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- libphonenumber-js for E.164 formatting, validation, and as-you-type formatting -->
+    <script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.13.8/bundle/libphonenumber-min.js"></script>
 </head>
 <body>
     <!-- Modal overlay for background darkening -->
@@ -1367,87 +1666,88 @@
         </div>
 
         <div class="form-container hidden" id="exchangeForm">
+
+            <!-- Sticky header — always visible, never scrolls (Part 3) -->
+            <div class="modal-sticky-header">
+                <div class="modal-header-spacer"></div>
+                <span class="modal-header-title">Share your Contact</span>
+                <button class="modal-close-btn" onclick="skipForm()" aria-label="Close">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
             <div class="form-content">
-                <div class="form-header">
-                    <button class="close-btn" onclick="skipForm()">
-                        <span class="material-icons">close</span>
-                    </button>
-                    <h3>Share your Contact</h3>
-                    <p>Please share your contacts with me</p>
+                <p class="modal-subtitle">Let's exchange details</p>
+
+                <!-- Location banner — non-blocking, only requests on tap -->
+                <div id="locationBanner">
+                    <span class="location-banner-icon" id="locationBannerIcon">📍</span>
+                    <span class="location-banner-text" id="locationBannerText">Share your location so they know where you met</span>
+                    <button type="button" class="location-allow-btn" id="locationAllowBtn" onclick="requestScannerLocation()">Allow</button>
                 </div>
 
-                <!-- Optional geolocation capture banner. Non-blocking: the form
-                     always submits whether or not location is granted. -->
-                <div class="location-banner" id="locationBanner">
-                    <span class="location-banner-text" id="locationBannerText">📍 Share your location so the card owner knows where you met</span>
-                    <button type="button" class="location-banner-btn" id="locationAllowBtn" onclick="requestScannerLocation()">Allow</button>
+                <!-- First name — full width -->
+                <div class="field-group">
+                    <label class="field-label" for="scannerName">First name <span class="field-required">*</span></label>
+                    <input class="field-input" type="text" id="scannerName" placeholder="First name" autocomplete="given-name">
                 </div>
 
-                  <div class="form-row">
-                    <div class="form-group">
-                        <div class="floating-label">
-                            <input type="text" id="scannerName" placeholder=" ">
-                            <label for="scannerName" class="required">First name</label>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <div class="floating-label">
-                            <input type="text" id="scannerSurname" placeholder=" ">
-                            <label for="scannerSurname" class="required">Last name</label>
-                        </div>
-                    </div>
-                </div>
-                  <div class="form-group">
-                    <div class="floating-label">
-                        <input type="email" id="scannerEmail" placeholder=" ">
-                        <label for="scannerEmail" class="required">Email</label>
-                    </div>
+                <!-- Last name — full width -->
+                <div class="field-group">
+                    <label class="field-label" for="scannerSurname">Last name <span class="field-required">*</span></label>
+                    <input class="field-input" type="text" id="scannerSurname" placeholder="Last name" autocomplete="family-name">
                 </div>
 
-                <!-- Company field -->
-                <div class="form-group">
-                    <div class="floating-label">
-                        <input type="text" id="scannerCompany" placeholder=" ">
-                        <label for="scannerCompany">Company</label>
-                    </div>
+                <!-- Email -->
+                <div class="field-group">
+                    <label class="field-label" for="scannerEmail">Email <span class="field-required">*</span></label>
+                    <input class="field-input" type="email" id="scannerEmail" placeholder="jane@company.com" autocomplete="email">
                 </div>
-                
-                <div class="form-group">
-                    <div class="phone-input-container">
-                        <div class="country-code-selector">
-                            <span class="country-code-label">Country</span>
-                            <button type="button" class="country-code-button" id="countryCodeButton" onclick="toggleCountryCodeDropdown(event)">
-                                <span id="selectedCountryCode">+27</span>
-                                <span class="material-icons" style="font-size: 18px;">arrow_drop_down</span>
+
+                <!-- Company -->
+                <div class="field-group">
+                    <label class="field-label" for="scannerCompany">Company</label>
+                    <input class="field-input" type="text" id="scannerCompany" placeholder="Company name" autocomplete="organization">
+                </div>
+
+                <!-- Phone with country code -->
+                <div class="field-group">
+                    <label class="field-label">Phone number</label>
+                    <div class="phone-field-row">
+                        <div class="cc-wrapper">
+                            <button type="button" class="country-code-btn" id="countryCodeButton" onclick="toggleCountryCodeDropdown(event)" aria-label="Select country code">
+                                <span id="selectedFlag" style="font-size:18px;line-height:1;">🇿🇦</span>
+                                <span id="selectedCountryCode" style="font-weight:600;">+27</span>
+                                <span class="material-icons cc-arrow">arrow_drop_down</span>
                             </button>
                             <div class="country-code-dropdown" id="countryCodeDropdown">
-                                <!-- Country options will be populated by JavaScript -->
+                                <div style="padding:8px 10px;border-bottom:1px solid #F0F0F0;">
+                                    <input type="text" id="ccSearch" placeholder="Search country…" oninput="filterCountryCodes(this.value)"
+                                        style="width:100%;border:1px solid #E0E0E0;border-radius:8px;padding:8px 10px;font-size:14px;outline:none;box-sizing:border-box;">
+                                </div>
+                                <div id="ccList"><!-- populated by JS --></div>
                             </div>
                         </div>
-                        <div class="phone-input-wrapper">
-                            <div class="floating-label">
-                                <input type="tel" id="scannerPhone" placeholder=" " oninput="formatPhoneNumber(this)">
-                                <label for="scannerPhone">Phone number</label>
-                            </div>
-                        </div>
-                    </div>
-                </div><div class="form-group">
-                    <div class="floating-label">
-                        <input type="text" id="howWeMet" placeholder=" ">
-                        <label for="howWeMet" class="required">How we met</label>
+                        <input class="field-input phone-number-input" type="tel" id="scannerPhone" placeholder="81 234 5678" oninput="formatPhoneNumber(this)" autocomplete="tel-national">
                     </div>
                 </div>
-                
+
+                <!-- How we met -->
+                <div class="field-group">
+                    <label class="field-label" for="howWeMet">How we met <span class="field-required">*</span></label>
+                    <input class="field-input" type="text" id="howWeMet" placeholder="Conference, networking event…">
+                </div>
+
                 <button class="submit-btn" onclick="handleExchangeSubmit()">
                     <span class="material-icons">send</span>
                     Send Contact
                 </button>
-                
+
                 <button class="app-btn" id="appButton2" data-app-button>
                     <span class="material-icons" data-app-icon>android</span>
                     <span data-app-text>Get XS Card</span>
                 </button>
-                
+
                 <div class="app-description-text" data-app-description>
                     Available on Google Play and the App Store
                 </div>
@@ -1952,16 +2252,31 @@ END:VCARD`;
         // still captured and stored (address fields are simply left empty).
         const GOOGLE_MAPS_API_KEY = 'REPLACE_WITH_GOOGLE_MAPS_API_KEY';
 
-        // Kick off the browser permission prompt for the scanner's location.
+        // Request the scanner's location. Must be called directly from a user
+        // tap — iOS Safari refuses geolocation triggered outside a user gesture.
         function requestScannerLocation() {
+            const btn = document.getElementById('locationAllowBtn');
+            const icon = document.getElementById('locationBannerIcon');
+            const text = document.getElementById('locationBannerText');
+            const banner = document.getElementById('locationBanner');
+
             if (!navigator.geolocation) {
-                console.log('[Geolocation] Not supported by this browser');
+                if (icon) icon.textContent = 'ℹ️';
+                if (text) text.textContent = 'Location is not supported by this browser.';
+                if (btn) btn.classList.add('hidden');
                 return;
             }
+
+            // Show loading state while waiting for permission / position.
+            if (btn) { btn.textContent = '…'; btn.disabled = true; }
+            if (icon) icon.textContent = '⏳';
+            if (text) text.textContent = 'Requesting location…';
+            if (banner) { banner.className = 'location-banner loading-state'; }
+
             navigator.geolocation.getCurrentPosition(
                 onLocationSuccess,
                 onLocationError,
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
         }
 
@@ -1983,54 +2298,89 @@ END:VCARD`;
                 };
 
                 if (GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== 'REPLACE_WITH_GOOGLE_MAPS_API_KEY') {
-                    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
-                    const response = await fetch(url);
-                    const data = await response.json();
+                    try {
+                        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+                        const response = await fetch(url);
+                        const data = await response.json();
 
-                    if (data.status === 'OK' && data.results.length > 0) {
-                        const formatted = data.results[0].formatted_address;
-                        const components = data.results[0].address_components || [];
+                        if (data.status === 'OK' && data.results.length > 0) {
+                            const formatted = data.results[0].formatted_address;
+                            const components = data.results[0].address_components || [];
 
-                        const city = components.find(c => c.types.includes('locality'))?.long_name || '';
-                        const country = components.find(c => c.types.includes('country'))?.long_name || '';
-                        const area = components.find(c => c.types.includes('sublocality') || c.types.includes('neighborhood'))?.long_name || '';
+                            const city = components.find(c => c.types.includes('locality'))?.long_name || '';
+                            const country = components.find(c => c.types.includes('country'))?.long_name || '';
+                            const area = components.find(c => c.types.includes('sublocality') || c.types.includes('neighborhood'))?.long_name || '';
 
-                        locationData.formattedAddress = formatted || '';
-                        locationData.city = city;
-                        locationData.area = area;
-                        locationData.country = country;
-                    } else {
-                        console.log('[Geolocation] Geocoding returned no usable result:', data.status);
+                            locationData.formattedAddress = formatted || '';
+                            locationData.city = city;
+                            locationData.area = area;
+                            locationData.country = country;
+                        }
+                    } catch (geocodeError) {
+                        // Coordinates already stored; geocoding failure is non-fatal.
                     }
-                } else {
-                    console.log('[Geolocation] No Maps API key configured — storing coordinates only');
                 }
 
-                const label = locationData.city || locationData.country
+                const label = (locationData.city || locationData.country)
                     ? [locationData.city, locationData.country].filter(Boolean).join(', ')
                     : 'your location';
                 showLocationConfirmed(label);
             } catch (error) {
-                console.error('[Geolocation] Reverse geocoding failed (coordinates kept):', error);
-                // Coordinates already stored above; just confirm generically.
+                // Coordinates already stored above; confirm generically.
                 showLocationConfirmed('your location');
             }
         }
 
-        // Permission denied or position unavailable — proceed silently.
+        // Permission denied or position unavailable — show a clear message,
+        // keep the form fully usable without location.
         function onLocationError(error) {
-            console.log('[Geolocation] Permission denied or unavailable:', error && error.message);
             locationData = null;
+            const btn = document.getElementById('locationAllowBtn');
+            const icon = document.getElementById('locationBannerIcon');
+            const text = document.getElementById('locationBannerText');
+            const banner = document.getElementById('locationBanner');
+
+            let message = 'Location unavailable. Your contact will still be saved.';
+            let showRetry = false;
+
+            if (error) {
+                switch (error.code) {
+                    case 1: // PERMISSION_DENIED
+                        message = 'Location access was denied. Your contact will still be saved.';
+                        break;
+                    case 2: // POSITION_UNAVAILABLE
+                        message = 'Could not determine your location. Your contact will still be saved.';
+                        showRetry = true;
+                        break;
+                    case 3: // TIMEOUT
+                        message = 'Location request timed out. Tap Allow to try again.';
+                        showRetry = true;
+                        break;
+                    default:
+                        message = 'Location unavailable. Your contact will still be saved.';
+                }
+            }
+
+            if (icon) icon.textContent = 'ℹ️';
+            if (text) text.textContent = message;
+            if (banner) { banner.className = showRetry ? 'location-banner' : 'location-banner error-state'; }
+            if (btn) {
+                btn.textContent = 'Allow';
+                btn.disabled = false;
+                if (!showRetry) btn.classList.add('hidden');
+            }
         }
 
         // Update the banner to a green "captured" confirmation.
         function showLocationConfirmed(label) {
             const banner = document.getElementById('locationBanner');
+            const icon = document.getElementById('locationBannerIcon');
             const text = document.getElementById('locationBannerText');
             const btn = document.getElementById('locationAllowBtn');
-            if (text) text.textContent = `📍 Location captured: ${label}`;
+            if (icon) icon.textContent = '✅';
+            if (text) text.textContent = `Location captured: ${label}`;
             if (btn) btn.classList.add('hidden');
-            if (banner) banner.classList.add('captured');
+            if (banner) banner.className = 'location-banner captured';
         }
 
         // Debug logging for URL params
@@ -2040,212 +2390,246 @@ END:VCARD`;
         // Initialize session for scan tracking
         initializeSession();
 
-        // Country codes data - comprehensive list
+        // Country codes data — includes ISO2 for libphonenumber-js
         const countryCodes = [
-            // Africa
-            { code: '+27', name: 'South Africa', flag: '🇿🇦' },
-            { code: '+234', name: 'Nigeria', flag: '🇳🇬' },
-            { code: '+254', name: 'Kenya', flag: '🇰🇪' },
-            { code: '+20', name: 'Egypt', flag: '🇪🇬' },
+            // Africa (prioritised — default market)
+            { iso2: 'ZA', code: '+27',  name: 'South Africa',      flag: '🇿🇦' },
+            { iso2: 'NG', code: '+234', name: 'Nigeria',            flag: '🇳🇬' },
+            { iso2: 'KE', code: '+254', name: 'Kenya',              flag: '🇰🇪' },
+            { iso2: 'EG', code: '+20',  name: 'Egypt',              flag: '🇪🇬' },
             { code: '+263', name: 'Zimbabwe', flag: '🇿🇼' },
             { code: '+267', name: 'Botswana', flag: '🇧🇼' },
-            { code: '+233', name: 'Ghana', flag: '🇬🇭' },
-            { code: '+255', name: 'Tanzania', flag: '🇹🇿' },
-            { code: '+256', name: 'Uganda', flag: '🇺🇬' },
-            { code: '+260', name: 'Zambia', flag: '🇿🇲' },
-            { code: '+265', name: 'Malawi', flag: '🇲🇼' },
-            { code: '+264', name: 'Namibia', flag: '🇳🇦' },
-            { code: '+258', name: 'Mozambique', flag: '🇲🇿' },
-            { code: '+251', name: 'Ethiopia', flag: '🇪🇹' },
-            { code: '+212', name: 'Morocco', flag: '🇲🇦' },
-            { code: '+213', name: 'Algeria', flag: '🇩🇿' },
-            { code: '+216', name: 'Tunisia', flag: '🇹🇳' },
-            { code: '+225', name: 'Ivory Coast', flag: '🇨🇮' },
-            { code: '+221', name: 'Senegal', flag: '🇸🇳' },
-            { code: '+250', name: 'Rwanda', flag: '🇷🇼' },
-            { code: '+268', name: 'Eswatini', flag: '🇸🇿' },
-            { code: '+266', name: 'Lesotho', flag: '🇱🇸' },
-            
+            { iso2: 'GH', code: '+233', name: 'Ghana',            flag: '🇬🇭' },
+            { iso2: 'TZ', code: '+255', name: 'Tanzania',          flag: '🇹🇿' },
+            { iso2: 'UG', code: '+256', name: 'Uganda',            flag: '🇺🇬' },
+            { iso2: 'ZM', code: '+260', name: 'Zambia',            flag: '🇿🇲' },
+            { iso2: 'MW', code: '+265', name: 'Malawi',            flag: '🇲🇼' },
+            { iso2: 'NA', code: '+264', name: 'Namibia',           flag: '🇳🇦' },
+            { iso2: 'MZ', code: '+258', name: 'Mozambique',        flag: '🇲🇿' },
+            { iso2: 'ET', code: '+251', name: 'Ethiopia',          flag: '🇪🇹' },
+            { iso2: 'MA', code: '+212', name: 'Morocco',           flag: '🇲🇦' },
+            { iso2: 'DZ', code: '+213', name: 'Algeria',           flag: '🇩🇿' },
+            { iso2: 'TN', code: '+216', name: 'Tunisia',           flag: '🇹🇳' },
+            { iso2: 'CI', code: '+225', name: 'Ivory Coast',       flag: '🇨🇮' },
+            { iso2: 'SN', code: '+221', name: 'Senegal',           flag: '🇸🇳' },
+            { iso2: 'RW', code: '+250', name: 'Rwanda',            flag: '🇷🇼' },
+            { iso2: 'SZ', code: '+268', name: 'Eswatini',          flag: '🇸🇿' },
+            { iso2: 'LS', code: '+266', name: 'Lesotho',           flag: '🇱🇸' },
+            { iso2: 'BW', code: '+267', name: 'Botswana',          flag: '🇧🇼' },
+            { iso2: 'ZW', code: '+263', name: 'Zimbabwe',          flag: '🇿🇼' },
+
             // North America
-            { code: '+1', name: 'United States', flag: '🇺🇸' },
-            { code: '+1', name: 'Canada', flag: '🇨🇦' },
-            { code: '+52', name: 'Mexico', flag: '🇲🇽' },
-            
+            { iso2: 'US', code: '+1',   name: 'United States',     flag: '🇺🇸' },
+            { iso2: 'CA', code: '+1',   name: 'Canada',            flag: '🇨🇦' },
+            { iso2: 'MX', code: '+52',  name: 'Mexico',            flag: '🇲🇽' },
+
             // Europe
-            { code: '+44', name: 'United Kingdom', flag: '🇬🇧' },
-            { code: '+49', name: 'Germany', flag: '🇩🇪' },
-            { code: '+33', name: 'France', flag: '🇫🇷' },
-            { code: '+39', name: 'Italy', flag: '🇮🇹' },
-            { code: '+34', name: 'Spain', flag: '🇪🇸' },
-            { code: '+31', name: 'Netherlands', flag: '🇳🇱' },
-            { code: '+41', name: 'Switzerland', flag: '🇨🇭' },
-            { code: '+32', name: 'Belgium', flag: '🇧🇪' },
-            { code: '+43', name: 'Austria', flag: '🇦🇹' },
-            { code: '+48', name: 'Poland', flag: '🇵🇱' },
-            { code: '+351', name: 'Portugal', flag: '🇵🇹' },
-            { code: '+30', name: 'Greece', flag: '🇬🇷' },
-            { code: '+46', name: 'Sweden', flag: '🇸🇪' },
-            { code: '+47', name: 'Norway', flag: '🇳🇴' },
-            { code: '+45', name: 'Denmark', flag: '🇩🇰' },
-            { code: '+358', name: 'Finland', flag: '🇫🇮' },
-            { code: '+353', name: 'Ireland', flag: '🇮🇪' },
-            { code: '+7', name: 'Russia', flag: '🇷🇺' },
-            { code: '+380', name: 'Ukraine', flag: '🇺🇦' },
-            { code: '+420', name: 'Czech Republic', flag: '🇨🇿' },
-            { code: '+40', name: 'Romania', flag: '🇷🇴' },
-            
+            { iso2: 'GB', code: '+44',  name: 'United Kingdom',    flag: '🇬🇧' },
+            { iso2: 'DE', code: '+49',  name: 'Germany',           flag: '🇩🇪' },
+            { iso2: 'FR', code: '+33',  name: 'France',            flag: '🇫🇷' },
+            { iso2: 'IT', code: '+39',  name: 'Italy',             flag: '🇮🇹' },
+            { iso2: 'ES', code: '+34',  name: 'Spain',             flag: '🇪🇸' },
+            { iso2: 'NL', code: '+31',  name: 'Netherlands',       flag: '🇳🇱' },
+            { iso2: 'CH', code: '+41',  name: 'Switzerland',       flag: '🇨🇭' },
+            { iso2: 'BE', code: '+32',  name: 'Belgium',           flag: '🇧🇪' },
+            { iso2: 'AT', code: '+43',  name: 'Austria',           flag: '🇦🇹' },
+            { iso2: 'PL', code: '+48',  name: 'Poland',            flag: '🇵🇱' },
+            { iso2: 'PT', code: '+351', name: 'Portugal',          flag: '🇵🇹' },
+            { iso2: 'GR', code: '+30',  name: 'Greece',            flag: '🇬🇷' },
+            { iso2: 'SE', code: '+46',  name: 'Sweden',            flag: '🇸🇪' },
+            { iso2: 'NO', code: '+47',  name: 'Norway',            flag: '🇳🇴' },
+            { iso2: 'DK', code: '+45',  name: 'Denmark',           flag: '🇩🇰' },
+            { iso2: 'FI', code: '+358', name: 'Finland',           flag: '🇫🇮' },
+            { iso2: 'IE', code: '+353', name: 'Ireland',           flag: '🇮🇪' },
+            { iso2: 'RU', code: '+7',   name: 'Russia',            flag: '🇷🇺' },
+            { iso2: 'UA', code: '+380', name: 'Ukraine',           flag: '🇺🇦' },
+            { iso2: 'CZ', code: '+420', name: 'Czech Republic',    flag: '🇨🇿' },
+            { iso2: 'RO', code: '+40',  name: 'Romania',           flag: '🇷🇴' },
+
             // Asia
-            { code: '+91', name: 'India', flag: '🇮🇳' },
-            { code: '+86', name: 'China', flag: '🇨🇳' },
-            { code: '+81', name: 'Japan', flag: '🇯🇵' },
-            { code: '+82', name: 'South Korea', flag: '🇰🇷' },
-            { code: '+65', name: 'Singapore', flag: '🇸🇬' },
-            { code: '+60', name: 'Malaysia', flag: '🇲🇾' },
-            { code: '+62', name: 'Indonesia', flag: '🇮🇩' },
-            { code: '+63', name: 'Philippines', flag: '🇵🇭' },
-            { code: '+66', name: 'Thailand', flag: '🇹🇭' },
-            { code: '+84', name: 'Vietnam', flag: '🇻🇳' },
-            { code: '+92', name: 'Pakistan', flag: '🇵🇰' },
-            { code: '+880', name: 'Bangladesh', flag: '🇧🇩' },
-            { code: '+94', name: 'Sri Lanka', flag: '🇱🇰' },
-            { code: '+977', name: 'Nepal', flag: '🇳🇵' },
-            { code: '+852', name: 'Hong Kong', flag: '🇭🇰' },
-            { code: '+886', name: 'Taiwan', flag: '🇹🇼' },
-            { code: '+90', name: 'Turkey', flag: '🇹🇷' },
-            { code: '+971', name: 'UAE', flag: '🇦🇪' },
-            { code: '+966', name: 'Saudi Arabia', flag: '🇸🇦' },
-            { code: '+972', name: 'Israel', flag: '🇮🇱' },
-            { code: '+961', name: 'Lebanon', flag: '🇱🇧' },
-            { code: '+962', name: 'Jordan', flag: '🇯🇴' },
-            { code: '+965', name: 'Kuwait', flag: '🇰🇼' },
-            { code: '+974', name: 'Qatar', flag: '🇶🇦' },
-            
+            { iso2: 'IN', code: '+91',  name: 'India',             flag: '🇮🇳' },
+            { iso2: 'CN', code: '+86',  name: 'China',             flag: '🇨🇳' },
+            { iso2: 'JP', code: '+81',  name: 'Japan',             flag: '🇯🇵' },
+            { iso2: 'KR', code: '+82',  name: 'South Korea',       flag: '🇰🇷' },
+            { iso2: 'SG', code: '+65',  name: 'Singapore',         flag: '🇸🇬' },
+            { iso2: 'MY', code: '+60',  name: 'Malaysia',          flag: '🇲🇾' },
+            { iso2: 'ID', code: '+62',  name: 'Indonesia',         flag: '🇮🇩' },
+            { iso2: 'PH', code: '+63',  name: 'Philippines',       flag: '🇵🇭' },
+            { iso2: 'TH', code: '+66',  name: 'Thailand',          flag: '🇹🇭' },
+            { iso2: 'VN', code: '+84',  name: 'Vietnam',           flag: '🇻🇳' },
+            { iso2: 'PK', code: '+92',  name: 'Pakistan',          flag: '🇵🇰' },
+            { iso2: 'BD', code: '+880', name: 'Bangladesh',        flag: '🇧🇩' },
+            { iso2: 'LK', code: '+94',  name: 'Sri Lanka',         flag: '🇱🇰' },
+            { iso2: 'NP', code: '+977', name: 'Nepal',             flag: '🇳🇵' },
+            { iso2: 'HK', code: '+852', name: 'Hong Kong',         flag: '🇭🇰' },
+            { iso2: 'TW', code: '+886', name: 'Taiwan',            flag: '🇹🇼' },
+            { iso2: 'TR', code: '+90',  name: 'Turkey',            flag: '🇹🇷' },
+            { iso2: 'AE', code: '+971', name: 'UAE',               flag: '🇦🇪' },
+            { iso2: 'SA', code: '+966', name: 'Saudi Arabia',      flag: '🇸🇦' },
+            { iso2: 'IL', code: '+972', name: 'Israel',            flag: '🇮🇱' },
+            { iso2: 'LB', code: '+961', name: 'Lebanon',           flag: '🇱🇧' },
+            { iso2: 'JO', code: '+962', name: 'Jordan',            flag: '🇯🇴' },
+            { iso2: 'KW', code: '+965', name: 'Kuwait',            flag: '🇰🇼' },
+            { iso2: 'QA', code: '+974', name: 'Qatar',             flag: '🇶🇦' },
+
             // Oceania
-            { code: '+61', name: 'Australia', flag: '🇦🇺' },
-            { code: '+64', name: 'New Zealand', flag: '🇳🇿' },
-            { code: '+679', name: 'Fiji', flag: '🇫🇯' },
-            
+            { iso2: 'AU', code: '+61',  name: 'Australia',         flag: '🇦🇺' },
+            { iso2: 'NZ', code: '+64',  name: 'New Zealand',       flag: '🇳🇿' },
+            { iso2: 'FJ', code: '+679', name: 'Fiji',              flag: '🇫🇯' },
+
             // South America
-            { code: '+55', name: 'Brazil', flag: '🇧🇷' },
-            { code: '+54', name: 'Argentina', flag: '🇦🇷' },
-            { code: '+56', name: 'Chile', flag: '🇨🇱' },
-            { code: '+57', name: 'Colombia', flag: '🇨🇴' },
-            { code: '+51', name: 'Peru', flag: '🇵🇪' },
-            { code: '+58', name: 'Venezuela', flag: '🇻🇪' },
-            { code: '+593', name: 'Ecuador', flag: '🇪🇨' },
-            { code: '+595', name: 'Paraguay', flag: '🇵🇾' },
-            { code: '+598', name: 'Uruguay', flag: '🇺🇾' },
-            
+            { iso2: 'BR', code: '+55',  name: 'Brazil',            flag: '🇧🇷' },
+            { iso2: 'AR', code: '+54',  name: 'Argentina',         flag: '🇦🇷' },
+            { iso2: 'CL', code: '+56',  name: 'Chile',             flag: '🇨🇱' },
+            { iso2: 'CO', code: '+57',  name: 'Colombia',          flag: '🇨🇴' },
+            { iso2: 'PE', code: '+51',  name: 'Peru',              flag: '🇵🇪' },
+            { iso2: 'VE', code: '+58',  name: 'Venezuela',         flag: '🇻🇪' },
+            { iso2: 'EC', code: '+593', name: 'Ecuador',           flag: '🇪🇨' },
+            { iso2: 'PY', code: '+595', name: 'Paraguay',          flag: '🇵🇾' },
+            { iso2: 'UY', code: '+598', name: 'Uruguay',           flag: '🇺🇾' },
+
             // Caribbean
-            { code: '+1', name: 'Jamaica', flag: '🇯🇲' },
-            { code: '+1', name: 'Trinidad & Tobago', flag: '🇹🇹' },
-            { code: '+1', name: 'Barbados', flag: '🇧🇧' },
+            { iso2: 'JM', code: '+1',   name: 'Jamaica',           flag: '🇯🇲' },
+            { iso2: 'TT', code: '+1',   name: 'Trinidad & Tobago', flag: '🇹🇹' },
+            { iso2: 'BB', code: '+1',   name: 'Barbados',          flag: '🇧🇧' },
         ];
 
-        let selectedCountryCode = '+27'; // Default to South Africa
+        // Currently selected country object (default: South Africa)
+        let selectedCountry = countryCodes[0];
 
-        // Populate country code dropdown
-        function populateCountryCodeDropdown() {
-            const dropdown = document.getElementById('countryCodeDropdown');
-            if (!dropdown) return;
-
-            dropdown.innerHTML = countryCodes.map(country => `
-                <div class="country-code-option ${country.code === selectedCountryCode ? 'selected' : ''}" 
-                     onclick="selectCountryCode('${country.code}')">
-                    <span class="country-flag">${country.flag}</span>
-                    <span class="country-name">${country.name}</span>
-                    <span class="country-code-text">${country.code}</span>
+        // Render the country list (filtered or full)
+        function renderCountryList(list) {
+            const ccList = document.getElementById('ccList');
+            if (!ccList) return;
+            ccList.innerHTML = list.map((c, i) => `
+                <div class="country-code-option ${c.iso2 === selectedCountry.iso2 ? 'selected' : ''}"
+                     onclick="selectCountry(${countryCodes.indexOf(c)})"
+                     role="option" aria-selected="${c.iso2 === selectedCountry.iso2}">
+                    <span class="country-flag">${c.flag}</span>
+                    <span class="country-name">${c.name}</span>
+                    <span class="country-code-text">${c.code}</span>
                 </div>
             `).join('');
+        }
+
+        // Populate country code dropdown on first open
+        function populateCountryCodeDropdown() {
+            renderCountryList(countryCodes);
+        }
+
+        // Filter list by search query
+        function filterCountryCodes(query) {
+            const q = query.toLowerCase();
+            const filtered = countryCodes.filter(c =>
+                c.name.toLowerCase().includes(q) ||
+                c.code.includes(q.replace('+', ''))
+            );
+            renderCountryList(filtered);
         }
 
         // Toggle country code dropdown
         function toggleCountryCodeDropdown(event) {
             event.stopPropagation();
             const dropdown = document.getElementById('countryCodeDropdown');
-            dropdown.classList.toggle('active');
+            const isOpen = dropdown.classList.toggle('active');
+            if (isOpen) {
+                populateCountryCodeDropdown();
+                // Focus the search input
+                setTimeout(() => {
+                    const s = document.getElementById('ccSearch');
+                    if (s) { s.value = ''; s.focus(); }
+                }, 50);
+            }
         }
 
-        // Select country code
-        function selectCountryCode(code) {
-            selectedCountryCode = code;
-            document.getElementById('selectedCountryCode').textContent = code;
-            
-            // Update selected state in dropdown
+        // Select a country by index in countryCodes array
+        function selectCountry(index) {
+            selectedCountry = countryCodes[index];
+            document.getElementById('selectedFlag').textContent = selectedCountry.flag;
+            document.getElementById('selectedCountryCode').textContent = selectedCountry.code;
+
+            // Re-format the current phone input for the new country
+            const phoneInput = document.getElementById('scannerPhone');
+            if (phoneInput && phoneInput.value) {
+                formatPhoneNumber(phoneInput);
+            }
+
+            // Close dropdown & clear search
             const dropdown = document.getElementById('countryCodeDropdown');
-            const options = dropdown.querySelectorAll('.country-code-option');
-            options.forEach(option => {
-                option.classList.remove('selected');
-                if (option.textContent.includes(code)) {
-                    option.classList.add('selected');
-                }
-            });
-            
-            // Close dropdown
             dropdown.classList.remove('active');
+            const s = document.getElementById('ccSearch');
+            if (s) s.value = '';
         }
 
-        // Format phone number as user types (remove non-numeric characters)
+        // Format phone number as user types using libphonenumber-js AsYouType
         function formatPhoneNumber(input) {
-            // Remove all non-numeric characters except + at the start
-            let value = input.value.replace(/[^\d]/g, '');
-            
-            // Remove leading zeros
-            value = value.replace(/^0+/, '');
-            
-            // Update input value
-            input.value = value;
+            const raw = input.value;
+
+            // Handle paste of a full international number (starts with +)
+            if (raw.startsWith('+') && typeof libphonenumber !== 'undefined') {
+                try {
+                    const parsed = libphonenumber.parsePhoneNumber(raw);
+                    if (parsed && parsed.country) {
+                        const match = countryCodes.find(c => c.iso2 === parsed.country);
+                        if (match) {
+                            selectedCountry = match;
+                            document.getElementById('selectedFlag').textContent = match.flag;
+                            document.getElementById('selectedCountryCode').textContent = match.code;
+                        }
+                        input.value = parsed.formatNational();
+                        return;
+                    }
+                } catch (e) {}
+            }
+
+            // Normal typing: strip to digits then reformat
+            const digits = raw.replace(/\D/g, '');
+            if (!digits) { input.value = ''; return; }
+
+            if (typeof libphonenumber !== 'undefined') {
+                try {
+                    const formatter = new libphonenumber.AsYouType(selectedCountry.iso2);
+                    input.value = formatter.input(digits) || digits;
+                } catch (e) {
+                    input.value = digits;
+                }
+            } else {
+                input.value = digits;
+            }
         }
 
-        // Get full phone number with country code
+        // Return the E.164 phone number for storage
         function getFullPhoneNumber() {
             const phoneInput = document.getElementById('scannerPhone');
-            let phoneNumber = phoneInput.value.trim();
-            
-            // If no phone number entered, return empty
-            if (!phoneNumber) {
-                return '';
+            const raw = phoneInput ? phoneInput.value.trim() : '';
+            if (!raw) return '';
+
+            const digits = raw.replace(/\D/g, '');
+            if (!digits) return '';
+
+            if (typeof libphonenumber !== 'undefined') {
+                try {
+                    const attempt = '+' + selectedCountry.code.replace('+', '') + digits;
+                    const parsed = libphonenumber.parsePhoneNumber(attempt, selectedCountry.iso2);
+                    if (parsed && parsed.isValid()) return parsed.format('E.164');
+                } catch (e) {}
             }
-            
-            // Remove any non-numeric characters
-            phoneNumber = phoneNumber.replace(/[^\d]/g, '');
-            
-            // Remove leading zeros
-            phoneNumber = phoneNumber.replace(/^0+/, '');
-            
-            // If phone number already starts with the country code, return as is
-            if (phoneNumber.startsWith(selectedCountryCode.replace('+', ''))) {
-                return '+' + phoneNumber;
-            }
-            
-            // Otherwise, prepend the selected country code
-            return selectedCountryCode + phoneNumber;
+            // Fallback: concatenate dial code + digits (strips leading 0)
+            return selectedCountry.code + digits.replace(/^0+/, '');
         }
 
-        // Format phone number for display with country code
+        // Format a stored E.164 phone for human-readable display
         function formatPhoneWithCountryCode(phone) {
             if (!phone) return 'No phone number available';
-            
-            // Clean the phone number
-            const cleanedPhone = phone.replace(/[\s\-\(\)]/g, '');
-            
-            // If already has a country code (starts with +), return as is
-            if (cleanedPhone.startsWith('+')) {
-                return cleanedPhone;
+            if (typeof libphonenumber !== 'undefined') {
+                try {
+                    const parsed = libphonenumber.parsePhoneNumber(phone);
+                    if (parsed) return parsed.formatInternational();
+                } catch (e) {}
             }
-            
-            // If starts with 00, replace with +
-            if (cleanedPhone.startsWith('00')) {
-                return '+' + cleanedPhone.substring(2);
-            }
-            
-            // If starts with 0 (local number), add default country code +27
-            if (cleanedPhone.startsWith('0')) {
-                return '+27' + cleanedPhone.substring(1);
-            }
-            
-            // Otherwise, add default country code to the number
-            return '+27' + cleanedPhone;
+            // Fallback: return as-is if it looks like E.164
+            if (phone.startsWith('+')) return phone;
+            return '+27' + phone.replace(/^0/, '');
         }
 
         // Close dropdown when clicking outside
@@ -2533,20 +2917,9 @@ END:VCARD`;
 
         initSaveContactPage();
 
-        // Add debug information on page load
-        window.addEventListener('load', function() {
-            console.log('=== XS Card Scan Tracking Debug ===');
-            console.log('Session ID:', sessionId);
-            console.log('User ID:', userId);
-            console.log('Card Index:', cardIndex);
-            console.log('Scan Tracked:', scanTracked);
-            console.log('====================================');
-
-            // Immediately request the scanner's location on load. If the user
-            // dismisses or denies the automatic prompt, the banner's "Allow"
-            // button lets them trigger it again. Location is always optional.
-            requestScannerLocation();
-        });
+        // Location is only requested when the user explicitly taps Allow —
+        // never automatically on load. iOS Safari requires a direct user
+        // gesture for geolocation; auto-requesting on load fails silently.
 
         // Helper function to manually test scan tracking (for development)
         window.testScanTracking = function(scanType = 'save') {

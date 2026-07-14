@@ -6,7 +6,7 @@
  * options always available. Parent components own the open/close state and render
  * <SideMenu visible={...} onClose={...} /> next to their menu (hamburger) button.
  */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -18,14 +18,18 @@ import {
   StatusBar,
   Switch,
   ScrollView,
+  TouchableWithoutFeedback,
+  ActivityIndicator,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, CommonActions } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/colors';
 import { performServerLogout } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumUpsell } from '../hooks/usePremiumUpsell';
 import { useTooltipContext } from '../context/TooltipContext';
+import { useGhostMode } from '../context/GhostModeContext';
 
 // Side-menu palette: near-black text on white with soft-gray icons.
 const MENU_TEXT = '#1A1A1A';
@@ -41,6 +45,27 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
   const { logout, user } = useAuth();
   const { triggerUpsell, isPremium, isLoadingUserStatus } = usePremiumUpsell();
   const { tooltipsEnabled, setTooltipsEnabled, resetTips } = useTooltipContext();
+  const { ghostModeEnabled, setGhostModeEnabled } = useGhostMode();
+
+  const [dashboardPopupVisible, setDashboardPopupVisible] = useState(false);
+  const [contactCount, setContactCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!dashboardPopupVisible) return;
+    let active = true;
+    setContactCount(null);
+    AsyncStorage.getItem('cachedContacts')
+      .then((raw) => {
+        if (!active || !raw) { if (active) setContactCount(0); return; }
+        try {
+          const parsed = JSON.parse(raw);
+          const count = Array.isArray(parsed?.data) ? parsed.data.length : 0;
+          if (active) setContactCount(count);
+        } catch { if (active) setContactCount(0); }
+      })
+      .catch(() => { if (active) setContactCount(0); });
+    return () => { active = false; };
+  }, [dashboardPopupVisible]);
 
   // Only show premium lock badges once the plan is definitively known.
   const showLock = !isLoadingUserStatus && !isPremium;
@@ -105,15 +130,19 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
     // the menu stays open behind it; premium users navigate after it animates out.
     if (screenName === 'AdminDashboard') {
       const isCalendar = screen === 'Calendar';
-      const featureName = isCalendar ? 'Calendar' : 'Dashboard';
-      const description = isCalendar
-        ? 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.'
-        : 'The Dashboard provides analytics and insights about your cards and contacts. Upgrade to Premium to unlock it.';
-      const icon = isCalendar ? 'calendar-clock' : 'chart-bar';
-      const bodyText = isCalendar
-        ? 'Never miss an event. You have contacts ready to create an appointment and send a real invite.'
-        : undefined;
-      if (triggerUpsell({ featureName, description, icon, bodyText })) return;
+      if (!isPremium) {
+        if (isCalendar) {
+          triggerUpsell({
+            featureName: 'Calendar',
+            description: 'The Calendar gives you full control over your event schedule. Upgrade to Premium to unlock it.',
+            icon: 'calendar-clock',
+            bodyText: 'Never miss an event. You have contacts ready to create an appointment and send a real invite.',
+          });
+        } else {
+          setDashboardPopupVisible(true);
+        }
+        return;
+      }
       onClose();
       setTimeout(() => {
         try {
@@ -147,6 +176,7 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
   };
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent={true}
@@ -234,8 +264,19 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
               </TouchableOpacity>
             )}
 
-            {/* ── Feature Tips controls ── */}
+            {/* ── Ghost Mode + Feature Tips controls ── */}
             <View style={styles.divider} />
+
+            <View style={styles.menuItem}>
+              <MaterialIcons name="auto-awesome" size={22} color={MENU_ICON} />
+              <Text style={styles.menuText}>Ghost Mode</Text>
+              <Switch
+                value={ghostModeEnabled}
+                onValueChange={setGhostModeEnabled}
+                trackColor={{ false: COLORS.disabled, true: COLORS.primary }}
+                thumbColor={COLORS.white}
+              />
+            </View>
 
             <View style={styles.menuItem}>
               <MaterialIcons name="lightbulb-outline" size={22} color={MENU_ICON} />
@@ -266,8 +307,196 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
         </View>
       </View>
     </Modal>
+
+      {/* Dashboard upgrade popup — Free users only */}
+      <DashboardUpgradePopup
+        visible={dashboardPopupVisible}
+        contactCount={contactCount}
+        onDismiss={() => setDashboardPopupVisible(false)}
+        onUpgrade={() => {
+          setDashboardPopupVisible(false);
+          onClose();
+          setTimeout(() => {
+            try { navigation.navigate('UnlockPremium'); } catch {}
+          }, 300);
+        }}
+      />
+    </>
   );
 }
+
+// ── Dashboard upgrade popup ──────────────────────────────────────────────────
+
+function getDashboardMessage(count: number): { headline: string; body: string } {
+  if (count === 0) {
+    return {
+      headline: "Your network starts here.",
+      body: "You haven't collected any contacts yet — but your first one could come any minute. Upgrade to Premium and track every connection the moment it happens.",
+    };
+  }
+  if (count <= 5) {
+    return {
+      headline: `You have ${count} contact${count === 1 ? '' : 's'}!`,
+      body: "You're building something real. Upgrade to Premium to see who's viewing your card, when they connected, and how to follow up at the perfect moment.",
+    };
+  }
+  if (count <= 20) {
+    return {
+      headline: `You have ${count} contacts!`,
+      body: "Your network is growing fast. Upgrade to Premium to unlock your full Dashboard and turn those connections into opportunities.",
+    };
+  }
+  return {
+    headline: `You have ${count} contacts!`,
+    body: "That's a serious network. Upgrade to Premium to see the full picture — analytics, insights, and everything you need to stay ahead.",
+  };
+}
+
+interface DashboardUpgradePopupProps {
+  visible: boolean;
+  contactCount: number | null;
+  onDismiss: () => void;
+  onUpgrade: () => void;
+}
+
+function DashboardUpgradePopup({ visible, contactCount, onDismiss, onUpgrade }: DashboardUpgradePopupProps) {
+  const loading = contactCount === null;
+  const { headline, body } = loading ? { headline: '', body: '' } : getDashboardMessage(contactCount);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onDismiss}
+      statusBarTranslucent
+    >
+      <TouchableWithoutFeedback onPress={onDismiss}>
+        <View style={popupStyles.overlay}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <View style={popupStyles.card}>
+              <TouchableOpacity
+                style={popupStyles.closeButton}
+                onPress={onDismiss}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="close" size={22} color={COLORS.gray} />
+              </TouchableOpacity>
+
+              <MaterialCommunityIcons
+                name="chart-bar"
+                size={72}
+                color={COLORS.primary}
+                style={popupStyles.heroIcon}
+              />
+
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} style={{ marginBottom: 28 }} />
+              ) : (
+                <>
+                  <Text style={popupStyles.headline}>{headline}</Text>
+                  <Text style={popupStyles.body}>{body}</Text>
+                </>
+              )}
+
+              <TouchableOpacity
+                style={popupStyles.primaryButton}
+                onPress={onUpgrade}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="star" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                <Text style={popupStyles.primaryButtonText}>Upgrade to Premium</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={popupStyles.secondaryButton} onPress={onDismiss} activeOpacity={0.7}>
+                <Text style={popupStyles.secondaryButtonText}>Maybe Later</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+}
+
+const popupStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+    elevation: 20,
+  },
+  card: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  heroIcon: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  headline: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: 15,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    width: '100%',
+    marginBottom: 12,
+  },
+  primaryButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  secondaryButtonText: {
+    color: COLORS.gray,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+});
 
 const styles = StyleSheet.create({
   modalOverlay: {

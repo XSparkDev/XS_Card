@@ -13,6 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CommonActions } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
+import SideMenu from '../../components/SideMenu';
 import { COLORS } from '../../constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, ENDPOINTS, getUserId, performServerLogout, authenticatedFetchWithRefresh } from '../../utils/api';
@@ -30,6 +31,7 @@ type UnlockPremiumStackParamList = {
 
 const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStackParamList, 'UnlockPremium'>) => {
   const insets = useSafeAreaInsets();
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('annually');
   const [userPlan, setUserPlan] = useState<string>('free');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -555,12 +557,13 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity 
-        style={[styles.closeButton, { top: Math.max(insets.top, 25) }]} 
-        onPress={() => navigation.goBack()}
+      <TouchableOpacity
+        style={[styles.closeButton, { top: Math.max(insets.top, 25) }]}
+        onPress={() => setIsMenuVisible(true)}
       >
-        <MaterialIcons name="arrow-back" size={24} color={COLORS.text} />
+        <MaterialIcons name="menu" size={24} color={COLORS.text} />
       </TouchableOpacity>
+      <SideMenu visible={isMenuVisible} onClose={() => setIsMenuVisible(false)} />
 
       {userPlan === 'premium' ? (
         renderPremiumUserUI()

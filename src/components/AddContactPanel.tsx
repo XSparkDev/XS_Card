@@ -23,6 +23,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/colors';
+import PhoneNumberInput from './PhoneNumberInput';
 import DraggablePreviewPanel, {
   DraggablePreviewPanelRef,
   SnapPosition,
@@ -119,32 +120,27 @@ export default function AddContactPanel({
             <Text style={styles.title}>Add Contact</Text>
             <Text style={styles.subtitle}>Saved to your contacts, just like a scanned card</Text>
 
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.label}>First name *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="First name"
-                  placeholderTextColor={COLORS.gray}
-                  value={form.name}
-                  onChangeText={(t) => onChange('name', t)}
-                  autoCapitalize="words"
-                  returnKeyType="next"
-                />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.label}>Last name *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Last name"
-                  placeholderTextColor={COLORS.gray}
-                  value={form.surname}
-                  onChangeText={(t) => onChange('surname', t)}
-                  autoCapitalize="words"
-                  returnKeyType="next"
-                />
-              </View>
-            </View>
+            <Text style={styles.label}>First name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="First name"
+              placeholderTextColor={COLORS.gray}
+              value={form.name}
+              onChangeText={(t) => onChange('name', t)}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+
+            <Text style={styles.label}>Last name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Last name"
+              placeholderTextColor={COLORS.gray}
+              value={form.surname}
+              onChangeText={(t) => onChange('surname', t)}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
 
             <Text style={styles.label}>Email *</Text>
             <TextInput
@@ -169,13 +165,10 @@ export default function AddContactPanel({
             />
 
             <Text style={styles.label}>Phone number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+27 ..."
-              placeholderTextColor={COLORS.gray}
-              value={form.phone}
-              onChangeText={(t) => onChange('phone', t)}
-              keyboardType="phone-pad"
+            <PhoneNumberInput
+              e164Value={form.phone}
+              onChange={(e164) => onChange('phone', e164)}
+              placeholder="Phone number"
             />
 
             <Text style={styles.label}>How we met *</Text>
@@ -246,13 +239,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     marginBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  field: {
-    flex: 1,
   },
   label: {
     fontSize: 12,

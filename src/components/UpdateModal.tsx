@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
+import GlassSurface from './GlassSurface';
 import { openAppStore } from '../services/updateCheckService';
 import { VersionInfo } from '../services/updateCheckService';
 
@@ -47,7 +48,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       onRequestClose={handleDismiss}
     >
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+        <GlassSurface style={styles.modalContainer} borderRadius={16}>
           <View style={styles.header}>
             <Text style={styles.title}>
               {forceUpdate ? 'Update Required' : 'Update Available'}
@@ -94,7 +95,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               <Text style={styles.laterButtonText}>Later</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );
