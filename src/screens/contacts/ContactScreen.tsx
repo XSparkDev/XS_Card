@@ -98,6 +98,9 @@ interface Contact {
   // Scanner geolocation captured at scan time (optional).
   location?: ContactLocation | null;
   locationCapturedAt?: string | null;
+  // Follow-up campaign fields (set by publicContactService on QR scan).
+  contactId?: string;
+  followUpStatus?: 'active' | 'contacted' | 'not_interested' | 'completed' | 'cancelled';
 }
 
 interface ContactLocation {
@@ -417,6 +420,106 @@ const openContactLocationInMaps = (location: ContactLocation) => {
   });
 };
 
+// Follow-up status badge + "Mark as Contacted" action shown inside each contact card.
+type FollowUpRowProps = {
+  contact: Contact;
+  displayIndex: number;
+  contacts: Contact[];
+  userId: string | null;
+  onStatusChange: (updated: Contact) => void;
+};
+
+function FollowUpRow({ contact, displayIndex, contacts, userId, onStatusChange }: FollowUpRowProps) {
+  const [loading, setLoading] = React.useState(false);
+  const toast = useToast();
+
+  const status = contact.followUpStatus ?? 'active';
+
+  const badgeLabel: Record<string, string> = {
+    active: 'Follow-Up Active',
+    contacted: 'Contacted',
+    not_interested: 'Not Interested',
+    completed: 'Sequence Complete',
+  };
+  const badgeColor: Record<string, string> = {
+    active: '#22A55B',
+    contacted: '#1B2B5B',
+    not_interested: '#888888',
+    completed: '#888888',
+  };
+
+  const markAsContacted = async () => {
+    if (!userId || loading) return;
+    setLoading(true);
+    try {
+      const backendIndex = contacts.length - 1 - displayIndex;
+      const url = ENDPOINTS.UPDATE_FOLLOW_UP_STATUS
+        .replace(':userId', userId)
+        .replace(':index', String(backendIndex));
+      const res = await authenticatedFetchWithRefresh(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followUpStatus: 'contacted' }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      onStatusChange({ ...contact, followUpStatus: 'contacted' });
+    } catch {
+      toast.error('Update Failed', 'Could not update follow-up status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={followUpStyles.row}>
+      <View style={[followUpStyles.badge, { backgroundColor: badgeColor[status] ?? '#888888' }]}>
+        <Text style={followUpStyles.badgeText}>{badgeLabel[status] ?? status}</Text>
+      </View>
+      {status === 'active' && (
+        <TouchableOpacity
+          style={followUpStyles.btn}
+          onPress={markAsContacted}
+          disabled={loading}
+          activeOpacity={0.7}
+        >
+          <Text style={followUpStyles.btnText}>{loading ? '…' : 'Mark as Contacted'}</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const followUpStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  badge: {
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  btn: {
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#FF4B6E',
+  },
+  btnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+});
+
 // Main Component
 export default function ContactsScreen() {
   // Navigation
@@ -424,6 +527,7 @@ export default function ContactsScreen() {
   const { colorScheme } = useColorScheme();
   
   // Core state
+  const [userId, setUserId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const { triggerUpsell, isFreeUser: isFreeUserFromPlan, isLoadingUserStatus } = usePremiumUpsell();
   const [isLoading, setIsLoading] = useState(true);
@@ -758,6 +862,7 @@ export default function ContactsScreen() {
       if (!userId) {
         throw new Error('No user ID found');
       }
+      setUserId(userId);
 
       // Fetch contacts and user data in parallel
       const [contactResponse, userResponse] = await Promise.all([
@@ -2059,6 +2164,19 @@ export default function ContactsScreen() {
                               {formatTimestamp(contact.createdAt)}
                             </Text>
                           </View>
+                          {contact.followUpStatus && contact.followUpStatus !== 'cancelled' && (
+                            <FollowUpRow
+                              contact={contact}
+                              displayIndex={index}
+                              contacts={contacts}
+                              userId={userId}
+                              onStatusChange={(updated) => {
+                                setContacts((prev) =>
+                                  prev.map((c) => (c === contact ? updated : c))
+                                );
+                              }}
+                            />
+                          )}
                         </View>
                         <View style={styles.contactImageSpacer} />
                       </View>

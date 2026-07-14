@@ -78,6 +78,7 @@ export const ENDPOINTS = {
     UPDATE_USER_COLOR: '/Users/:id/color', 
     ADD_TO_WALLET: '/Cards/:userId/wallet/:cardIndex',
     DELETE_CONTACT: '/Contacts',
+    UPDATE_FOLLOW_UP_STATUS: '/Contacts/:userId/contact/:index/followup',
     UPDATE_CARD: '/Cards/:id',
     RESTART_SPEAKER_WINDOW: '/Cards/:id/restart-speaker-window',
     UPDATE_CARD_COLOR: '/Cards/:id/color',

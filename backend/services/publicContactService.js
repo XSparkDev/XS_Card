@@ -2,6 +2,8 @@ const { db, admin } = require('../firebase.js');
 const { sendMailWithStatus } = require('../public/Utils/emailService');
 const { checkUserExistsByEmail } = require('../utils/userDetection');
 const { linkContactToXsCardUser } = require('../utils/contactLinking');
+const { createCampaign } = require('./followUpService');
+const { v4: uuidv4 } = require('uuid');
 
 const FREE_PLAN_CONTACT_LIMIT = 20;
 
@@ -63,10 +65,14 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
     ...contactInfo,
     email: String(contactInfo.email || ''),
     sourceCardIndex: normalizedCardIndex,
+    // Stable UUID — survives array reindexing and links this entry to its
+    // follow-up campaign without relying on position or mutable fields.
+    contactId: uuidv4(),
     // Optional scanner geolocation captured at scan time. Persisted as-is when
     // provided, otherwise stored as null so the field is always present.
     location: contactInfo.location || null,
     locationCapturedAt: contactInfo.locationCapturedAt || (contactInfo.location && contactInfo.location.capturedAt) || null,
+    followUpStatus: 'active',
     createdAt: admin.firestore.Timestamp.now(),
   };
 
@@ -125,6 +131,31 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
     },
     { merge: true }
   );
+
+  // Start the three-day follow-up email campaign in the background.
+  setImmediate(async () => {
+    try {
+      const ownerData = {
+        name: userData.name || '',
+        surname: userData.surname || '',
+        email: userData.email || '',
+        phone: userData.phone || '',
+        company: userData.company || '',
+        occupation: userData.occupation || '',
+      };
+      const scannerData = {
+        name: baseContact.name || '',
+        surname: baseContact.surname || '',
+        email: baseContact.email || '',
+        phone: baseContact.phone || '',
+        company: baseContact.company || '',
+        occupation: baseContact.occupation || '',
+      };
+      await createCampaign(userId, ownerData, scannerData, baseContact.contactId);
+    } catch (campaignError) {
+      console.error('[FollowUp] Failed to create follow-up campaign:', campaignError);
+    }
+  });
 
   // NOTE: Scans are recorded at saveContact.html PAGE LOAD (via /record-scan),
   // not on contact save — a scan is "someone landed on the page", independent of
