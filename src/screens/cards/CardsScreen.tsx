@@ -1042,6 +1042,40 @@ export default function CardsScreen() {
       />
       <View style={styles.contentShell}>
       <View style={styles.contentShellInner}>
+
+      {/* Top dock — card info (left) + pagination dots (right), both fade together */}
+      {totalCards > 1 && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.dotsOverlay, { opacity: indicatorOpacity }]}
+        >
+          {/* Card info — left */}
+          <View style={styles.cardInfoLeft}>
+            <Text style={styles.cardInfoCount} numberOfLines={1}>
+              {currentPage + 1} of {totalCards}
+            </Text>
+            <Text style={styles.cardInfoName} numberOfLines={1}>
+              {currentCardLabel}
+            </Text>
+          </View>
+
+          {/* Pagination dots — right */}
+          <View style={styles.dotContainer}>
+            {userData?.cards?.map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.dot,
+                  isTablet() && styles.dotTablet,
+                  currentPage === index && styles.activeDot,
+                  currentPage === index && isTablet() && styles.activeDotTablet,
+                ]}
+              />
+            ))}
+          </View>
+        </Animated.View>
+      )}
+
       <ScrollView
         horizontal
         pagingEnabled={!isTablet()}
@@ -1618,54 +1652,6 @@ export default function CardsScreen() {
           counter clear of (above) the floating tab-bar pill, which previously
           covered the scan counter. */}
       <View style={styles.bottomOverlay} pointerEvents="box-none">
-      {/* Page Indicator — rests dim, fades to full opacity while sliding cards. */}
-      <Animated.View style={[
-        styles.pageIndicator,
-        isTablet() && styles.pageIndicatorTablet,
-        { opacity: indicatorOpacity }
-      ]}>
-        {/* Premium-only: name the card currently in view + its position so users
-            with several cards always know which one they're looking at. */}
-        {showCurrentCardPill && (
-          <View style={styles.currentCardPill}>
-            <View style={[
-              styles.currentCardDot,
-              { backgroundColor: currentCardData?.colorScheme || colorScheme }
-            ]} />
-            <Text style={styles.currentCardName} numberOfLines={1}>
-              {currentCardLabel}
-            </Text>
-            {currentCardData?.isSpeakerEngagementCard && (
-              <MaterialCommunityIcons
-                name="microphone"
-                size={13}
-                color={currentCardData?.colorScheme || colorScheme}
-                style={styles.currentCardSpeakerIcon}
-              />
-            )}
-            <View style={styles.currentCardDivider} />
-            <Text style={styles.currentCardCount}>
-              {currentPage + 1} of {totalCards}
-            </Text>
-          </View>
-        )}
-        <View style={[
-          styles.dotContainer,
-          isTablet() && styles.dotContainerTablet
-        ]}>
-          {userData?.cards?.map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.dot,
-                isTablet() && styles.dotTablet,
-                currentPage === index && styles.activeDot,
-                currentPage === index && isTablet() && styles.activeDotTablet
-              ]}
-            />
-          ))}
-        </View>
-      </Animated.View>
 
       {/* ===== Scan counter (free users only) — color escalates 1-2 green, 3-4 orange, 5 red.
             The "limit reached" state itself is now communicated by the persistent header
@@ -2227,10 +2213,38 @@ qrCode: {
   pageIndicator: {
     alignItems: 'center',
   },
+  // Top dock — absolute row spanning the card width, card info left + dots right
+  dotsOverlay: {
+    position: 'absolute',
+    top: 14,
+    left: 18,
+    right: 18,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  // Card info block on the left of the top dock
+  cardInfoLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  cardInfoCount: {
+    fontSize: 11,
+    color: COLORS.gray,
+    fontFamily: 'Montserrat-SemiBold',
+    letterSpacing: 0.4,
+  },
+  cardInfoName: {
+    fontSize: 13,
+    color: COLORS.black,
+    fontFamily: 'Montserrat-Bold',
+    marginTop: 1,
+  },
   dotContainer: {
     flexDirection: 'row',
     gap: 6,
-    alignSelf: 'center',
+    alignItems: 'center',
   },
   // Premium current-card pill (sits just above the page dots)
   currentCardPill: {
