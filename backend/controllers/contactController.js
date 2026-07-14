@@ -1,6 +1,7 @@
 const { db, admin } = require('../firebase.js');
 const { transporter, sendMailWithStatus } = require('../public/Utils/emailService');
 const { formatDate } = require('../utils/dateFormatter');
+const { cancelCampaignByContact, markAsContacted } = require('../services/followUpService');
 // Note: Public contact linking now lives in publicContactController/publicContactService.
 
 // Add constant for free plan limit
@@ -371,6 +372,55 @@ exports.updateContact = async (req, res) => {
     }
 };
 
+/**
+ * PATCH /Contacts/:id/contact/:index/followup
+ * Update the followUpStatus of a single contact and cancel its campaign when
+ * the status becomes 'contacted'.
+ */
+exports.updateFollowUpStatus = async (req, res) => {
+    const { id, index } = req.params;
+    const { status } = req.body || {};
+
+    const VALID_STATUSES = ['active', 'contacted', 'not_interested', 'completed'];
+    if (!VALID_STATUSES.includes(status)) {
+        return res.status(400).send({ message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+    }
+
+    try {
+        const contactRef = db.collection('contacts').doc(id);
+        const doc = await contactRef.get();
+        if (!doc.exists) return res.status(404).send({ message: 'Contact list not found' });
+
+        const contactIndex = parseInt(index, 10);
+        const currentContacts = doc.data().contactList || [];
+        if (contactIndex < 0 || contactIndex >= currentContacts.length) {
+            return res.status(400).send({ message: 'Contact index out of range' });
+        }
+
+        const contact = currentContacts[contactIndex];
+        currentContacts[contactIndex] = { ...contact, followUpStatus: status };
+
+        await contactRef.update({ contactList: currentContacts });
+
+        // Cancel the campaign when the owner marks the lead as contacted.
+        if (status === 'contacted' && contact.contactId) {
+            setImmediate(() =>
+                markAsContacted(id, contact.contactId).catch((e) =>
+                    console.error('[FollowUp] markAsContacted failed:', e)
+                )
+            );
+        }
+
+        res.status(200).send({
+            message: 'Follow-up status updated',
+            followUpStatus: status,
+        });
+    } catch (error) {
+        console.error('updateFollowUpStatus error:', error);
+        res.status(500).send({ message: 'Failed to update follow-up status', error: error.message });
+    }
+};
+
 exports.deleteContact = async (req, res) => {
     const { id } = req.params;
     
@@ -425,14 +475,24 @@ exports.deleteContactFromList = async (req, res) => {
             return res.status(400).send({ message: 'Contact index out of range' });
         }
 
+        const deletedContact = currentContacts[contactIndex];
         currentContacts.splice(contactIndex, 1);
-        
+
         await contactRef.update({
             contactList: currentContacts // Note: using contactList, not contactsList
         });
 
+        // Cancel any active follow-up campaign for the deleted contact.
+        if (deletedContact && deletedContact.contactId) {
+            setImmediate(() =>
+                cancelCampaignByContact(id, deletedContact.contactId, 'cancelled').catch((e) =>
+                    console.error('[FollowUp] Cancel on delete failed:', e)
+                )
+            );
+        }
+
         console.log('Contact deleted successfully');
-        res.status(200).send({ 
+        res.status(200).send({
             message: 'Contact deleted successfully',
             remainingContacts: currentContacts.length
         });
@@ -479,12 +539,25 @@ exports.deleteMultipleContacts = async (req, res) => {
             return res.status(400).send({ message: `Contact index out of range: ${invalidIndex}` });
         }
 
+        const deletedContacts = uniqueIndexes.map((i) => currentContacts[i]);
+
         uniqueIndexes.forEach((contactIndex) => {
             currentContacts.splice(contactIndex, 1);
         });
 
         await contactRef.update({
             contactList: currentContacts
+        });
+
+        // Cancel follow-up campaigns for all deleted contacts that have one.
+        setImmediate(() => {
+            deletedContacts.forEach((c) => {
+                if (c && c.contactId) {
+                    cancelCampaignByContact(id, c.contactId, 'cancelled').catch((e) =>
+                        console.error('[FollowUp] Cancel on bulk-delete failed:', e)
+                    );
+                }
+            });
         });
 
         res.status(200).send({

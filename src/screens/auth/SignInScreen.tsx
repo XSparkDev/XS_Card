@@ -783,7 +783,7 @@ export default function SignInScreen() {
           <TouchableOpacity
             style={[
               styles.oauthIconButton,
-              styles.googleCircle,
+              styles.oauthCircle,
               (isGoogleLoading || isLinkedInLoading || isLoading) && styles.oauthIconDisabled
             ]}
             onPress={handleGoogleSignIn}
@@ -791,9 +791,9 @@ export default function SignInScreen() {
             accessibilityLabel="Continue with Google"
           >
             {isGoogleLoading ? (
-              <ActivityIndicator color="#4285F4" />
+              <ActivityIndicator color={COLORS.secondary} />
             ) : (
-              <FontAwesome5 name="google" size={24} color="#4285F4" />
+              <FontAwesome5 name="google" size={24} color={COLORS.secondary} />
             )}
           </TouchableOpacity>
           <Text style={styles.oauthIconLabel}>Google</Text>
@@ -803,7 +803,7 @@ export default function SignInScreen() {
           <TouchableOpacity
             style={[
               styles.oauthIconButton,
-              styles.linkedinCircle,
+              styles.oauthCircle,
               (isLinkedInLoading || isGoogleLoading || isLoading) && styles.oauthIconDisabled
             ]}
             onPress={handleLinkedInSignIn}
@@ -811,9 +811,9 @@ export default function SignInScreen() {
             accessibilityLabel="Continue with LinkedIn"
           >
             {isLinkedInLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={COLORS.secondary} />
             ) : (
-              <FontAwesome5 name="linkedin-in" size={22} color="#FFFFFF" />
+              <FontAwesome5 name="linkedin-in" size={22} color={COLORS.secondary} />
             )}
           </TouchableOpacity>
           <Text style={styles.oauthIconLabel}>LinkedIn</Text>
@@ -823,7 +823,7 @@ export default function SignInScreen() {
           <TouchableOpacity
             style={[
               styles.oauthIconButton,
-              styles.microsoftCircle,
+              styles.oauthCircle,
               (isMicrosoftLoading || isGoogleLoading || isLinkedInLoading || isLoading) && styles.oauthIconDisabled
             ]}
             onPress={handleMicrosoftSignIn}
@@ -831,9 +831,9 @@ export default function SignInScreen() {
             accessibilityLabel="Continue with Microsoft"
           >
             {isMicrosoftLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={COLORS.secondary} />
             ) : (
-              <FontAwesome5 name="microsoft" size={22} color="#FFFFFF" />
+              <FontAwesome5 name="microsoft" size={22} color={COLORS.secondary} />
             )}
           </TouchableOpacity>
           <Text style={styles.oauthIconLabel}>Microsoft</Text>
@@ -1243,17 +1243,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
   },
-  googleCircle: {
-    backgroundColor: '#FFFFFF',
+  oauthCircle: {
+    backgroundColor: '#F5F5F5',
     borderColor: '#E0E0E0',
-  },
-  linkedinCircle: {
-    backgroundColor: '#0A66C2',
-    borderColor: '#0A66C2',
-  },
-  microsoftCircle: {
-    backgroundColor: '#00A4EF',
-    borderColor: '#00A4EF',
   },
   oauthIconLabel: {
     marginTop: 8,

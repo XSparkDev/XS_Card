@@ -7,6 +7,7 @@ const trialExpirationJob = require('./trialExpirationJob');
 const inactiveUsersJob = require('./inactiveUsersJob');
 const subscriptionListingJob = require('./subscriptionListingJob');
 const pastMeetingsCleanupJob = require('./pastMeetingsCleanupJob');
+const followUpEmailJob = require('./followUpEmailJob');
 
 /**
  * Start all jobs
@@ -24,6 +25,9 @@ const startAllJobs = (db) => {
     // inactiveUsersJob.startInactiveUsersJob(db);
     console.log('⚠️  Inactive users job temporarily disabled to prevent infinite loop');
     
+    // Start follow-up email nurturing job (every 30 minutes)
+    followUpEmailJob.startFollowUpEmailJob();
+
     console.log('All jobs started successfully');
 };
 

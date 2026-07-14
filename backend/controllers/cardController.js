@@ -451,11 +451,24 @@ exports.updateCard = async (req, res) => {
             updateData = JSON.parse(JSON.stringify(req.body));
         }
 
-        if (updateData.phone) {
-            const normalizedPhone = normalizePhone(updateData.phone);
-            await ensurePhoneAvailable(db, normalizedPhone, userId);
-            updateData.phone = normalizedPhone;
-            updateData.phoneNormalized = normalizedPhone;
+        let phoneChangedForPrimaryCard = false;
+        let newNormalizedPhone = null;
+        if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) {
+            if (updateData.phone) {
+                newNormalizedPhone = normalizePhone(updateData.phone);
+                await ensurePhoneAvailable(db, newNormalizedPhone, userId);
+                updateData.phone = newNormalizedPhone;
+                updateData.phoneNormalized = newNormalizedPhone;
+            } else {
+                // Phone is being cleared
+                updateData.phone = '';
+                updateData.phoneNormalized = '';
+                newNormalizedPhone = '';
+            }
+            // Sync users collection only for the primary card (index 0)
+            if (Number(cardIndex) === 0) {
+                phoneChangedForPrimaryCard = true;
+            }
         }
 
         // ===== Name-change policy =====
@@ -597,16 +610,25 @@ exports.updateCard = async (req, res) => {
             cards: updatedCards
         });
 
-        // Record the name change on the user record (canonical name + 30-day stamp).
-        if (stampNameChange) {
+        // Sync users collection: phone (primary card) and/or name change stamp.
+        // ensurePhoneAvailable queries users.phoneNormalized, so it must stay in
+        // sync with the card — otherwise stale data lets another user claim a
+        // number still in use, then blocks the original user from reclaiming it.
+        if (phoneChangedForPrimaryCard || stampNameChange) {
             try {
-                await db.collection('users').doc(userId).update({
-                    name: String(updatedCards[cardIndex].name ?? ''),
-                    surname: String(updatedCards[cardIndex].surname ?? ''),
-                    nameLastChangedAt: admin.firestore.Timestamp.now(),
-                });
-            } catch (stampError) {
-                console.error('Failed to stamp nameLastChangedAt:', stampError);
+                const usersUpdate = {};
+                if (phoneChangedForPrimaryCard) {
+                    usersUpdate.phone = newNormalizedPhone || '';
+                    usersUpdate.phoneNormalized = newNormalizedPhone || '';
+                }
+                if (stampNameChange) {
+                    usersUpdate.name = String(updatedCards[cardIndex].name ?? '');
+                    usersUpdate.surname = String(updatedCards[cardIndex].surname ?? '');
+                    usersUpdate.nameLastChangedAt = admin.firestore.Timestamp.now();
+                }
+                await db.collection('users').doc(userId).update(usersUpdate);
+            } catch (userSyncError) {
+                console.error('Failed to sync users collection after card update:', userSyncError);
             }
         }
 
@@ -628,6 +650,77 @@ exports.updateCard = async (req, res) => {
 
         res.status(500).send({
             message: 'Failed to update card',
+            error: error.message
+        });
+    }
+};
+
+// Restart the CSV lead list for a Speaker & Engagement Card. Premium-only.
+// Closes whatever speaker window is currently open (if any) and opens a
+// brand-new one starting now. CSV export only ever reads the LATEST window
+// (see inCurrentSpeakerWindow on the client), so this makes every prior scan
+// invisible to future exports without deleting any contact data, and without
+// touching the card's QR code, isSpeakerEngagementCard flag, or anything else
+// about the card. Future scans land in the new window and populate a fresh list.
+exports.restartSpeakerWindow = async (req, res) => {
+    const { id: userId } = req.params;
+    const { cardIndex = 0 } = req.query;
+
+    try {
+        const cardRef = db.collection('cards').doc(userId);
+        const doc = await cardRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).send({ message: 'User cards not found' });
+        }
+
+        const cardsData = doc.data();
+        const card = cardsData.cards && cardsData.cards[cardIndex];
+        if (!card) {
+            return res.status(404).send({ message: 'Card not found at specified index' });
+        }
+
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userPlan = String(userDoc.data()?.plan || 'free').toLowerCase();
+        const hasSpeakerCardAccess = ['premium', 'enterprise'].includes(userPlan);
+
+        if (!hasSpeakerCardAccess) {
+            return res.status(403).send({
+                message: 'Restarting the CSV list is a Premium feature',
+                code: 'SPEAKER_CARD_PREMIUM_REQUIRED'
+            });
+        }
+
+        const isSpeaker = card.isSpeakerEngagementCard === true || card.isSpeakerEngagementCard === 'true';
+        if (!isSpeaker) {
+            return res.status(400).send({ message: 'Card is not currently a Speaker & Engagement Card' });
+        }
+
+        const now = new Date().toISOString();
+        const windows = Array.isArray(card.speakerWindows) ? card.speakerWindows.map((w) => ({ ...w })) : [];
+        const last = windows[windows.length - 1];
+        if (last && (last.end === null || last.end === undefined)) {
+            windows[windows.length - 1] = { ...last, end: now };
+        }
+        windows.push({ start: now, end: null });
+
+        const updatedCards = [...cardsData.cards];
+        updatedCards[cardIndex] = {
+            ...card,
+            speakerWindows: windows
+        };
+
+        await cardRef.update({ cards: updatedCards });
+
+        res.status(200).send({
+            message: 'CSV list restarted — new scans will populate a fresh list',
+            updatedCard: updatedCards[cardIndex],
+            cards: updatedCards
+        });
+    } catch (error) {
+        console.error('Restart speaker window error:', error);
+        res.status(500).send({
+            message: 'Failed to restart CSV list',
             error: error.message
         });
     }

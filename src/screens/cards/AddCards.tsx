@@ -12,6 +12,7 @@ import { authenticatedFetchWithRefresh, ENDPOINTS, getUserId, buildUrl, API_BASE
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickImage, requestPermissions, checkPermissions, pickImageFromDocument } from '../../utils/imageUtils';
 import PhoneNumberInput from '../../components/PhoneNumberInput';
+import { parsePhoneNumber as libParse } from 'libphonenumber-js';
 import CardPreviewModal from '../../components/cards/CardPreviewModal';
 import TemplatePreviewOverlay from '../../components/cards/TemplatePreviewOverlay';
 import LogoPlaceholder from '../../components/LogoPlaceholder';
@@ -32,8 +33,7 @@ export default function AddCards() {
     occupation: '',
     company: '',
     email: '',
-    phoneNumber: '',
-    countryCode: '+27', // Default to South Africa
+    phone: '',
     // Social media fields
     whatsapp: '',
     x: '',
@@ -53,8 +53,7 @@ export default function AddCards() {
   const [showQuickColors, setShowQuickColors] = useState(false);
   const [socialNotification, setSocialNotification] = useState<string | null>(null);
   // Alt number state
-  const [altNumber, setAltNumber] = useState('');
-  const [altCountryCode, setAltCountryCode] = useState('+27');
+  const [altPhone, setAltPhone] = useState('');
   const [showAltNumber, setShowAltNumber] = useState(false);
   const [altNumberError, setAltNumberError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -140,7 +139,7 @@ export default function AddCards() {
       occupation: formData.occupation,
       company: formData.company,
       email: formData.email,
-      phone: `${formData.countryCode}${formData.phoneNumber}`,
+      phone: formData.phone,
       socials: socialFields,
       colorScheme: selectedColor,
       profileImage: profileImage ?? null,
@@ -161,14 +160,14 @@ export default function AddCards() {
   };
 
   const validateForm = () => {
-    if (!formData.firstName || !formData.lastName || !formData.company || !formData.email || !formData.phoneNumber || !formData.occupation) {
+    if (!formData.firstName || !formData.lastName || !formData.company || !formData.email || !formData.phone || !formData.occupation) {
       setError('Please fill in all required fields');
       return false;
     }
 
     // If the alt-number toggle is ON, the alt number field becomes required —
     // mirrors the identical validation guard in EditCardScreen.
-    const trimmedAlt = String(altNumber || '').trim();
+    const trimmedAlt = String(altPhone || '').trim();
     if (showAltNumber && !trimmedAlt) {
       setAltNumberError('Alternative number is required when "Show alt number on card" is enabled.');
       setError('Please fix the highlighted fields');
@@ -496,7 +495,7 @@ export default function AddCards() {
       form.append('cardName', (formData.cardName || '').trim());
       form.append('company', formData.company);
       form.append('email', formData.email);
-      form.append('phone', `${formData.countryCode}${formData.phoneNumber}`);
+      form.append('phone', formData.phone);
       form.append('title', formData.occupation);
       form.append('name', formData.firstName);
       form.append('surname', formData.lastName);
@@ -514,9 +513,17 @@ export default function AddCards() {
       form.append('colorScheme', selectedColor);
       // Add template
       form.append('template', String(template));
-      // Add alt number fields
-      form.append('altNumber', altNumber);
-      form.append('altCountryCode', altCountryCode);
+      // Split E.164 alt phone into number + country code for the API
+      const altPhoneParsed = altPhone ? (() => {
+        try {
+          const p = libParse(altPhone);
+          if (p) return { num: String(p.nationalNumber), code: '+' + p.countryCallingCode };
+        } catch {}
+        const m = altPhone.match(/^(\+\d{1,4})(\d+)$/);
+        return m ? { num: m[2], code: m[1] } : { num: altPhone, code: '+27' };
+      })() : { num: '', code: '+27' };
+      form.append('altNumber', altPhoneParsed.num);
+      form.append('altCountryCode', altPhoneParsed.code);
       form.append('showAltNumber', String(showAltNumber));
 
       if (profileImage) {
@@ -735,19 +742,19 @@ export default function AddCards() {
               />
 
             <PhoneNumberInput
-                value={formData.phoneNumber}
-                onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-              onCountryCodeChange={(code) => setFormData({...formData, countryCode: code})}
+              e164Value={formData.phone}
+              onChange={(e164) => setFormData({...formData, phone: e164})}
               placeholder="Phone number"
-              />
-              
+              variant="filled"
+            />
+
             <PhoneNumberInput
-                value={altNumber}
-                onChangeText={(text) => { setAltNumber(text); if (altNumberError) setAltNumberError(''); }}
-              onCountryCodeChange={(code) => setAltCountryCode(code)}
+              e164Value={altPhone}
+              onChange={(e164) => { setAltPhone(e164); if (altNumberError) setAltNumberError(''); }}
               placeholder="Alt number"
               error={altNumberError}
-              />
+              variant="filled"
+            />
 
             {/* Toggle to show/hide alt number on card */}
             <View style={styles.toggleContainer}>
@@ -775,12 +782,18 @@ export default function AddCards() {
         <TemplatePreviewOverlay
           template={template}
           card={buildCardObject()}
-          altNumber={showAltNumber ? { altNumber, altCountryCode, showAltNumber } : undefined}
+          altNumber={showAltNumber && altPhone ? (() => {
+            try { const p = libParse(altPhone); if (p) return { altNumber: String(p.nationalNumber), altCountryCode: '+' + p.countryCallingCode, showAltNumber }; } catch {}
+            return { altNumber: altPhone, altCountryCode: '+27', showAltNumber };
+          })() : undefined}
           onSelectTemplate={(n) => {
             setTemplate(n);
             toast.success('Template Selected', `Template ${n} applied to your card`);
           }}
           onClose={() => setPreviewVisible(false)}
+          onFieldEdit={(field, value) => setFormData(prev => ({ ...prev, [field]: value }))}
+          onEditProfileImage={handleProfileImagePick}
+          onEditCompanyLogo={handleLogoUpload}
         />
       )}
     </View>

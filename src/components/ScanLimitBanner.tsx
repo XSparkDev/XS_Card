@@ -46,7 +46,11 @@ export default function ScanLimitBanner({ top }: ScanLimitBannerProps) {
 const styles = StyleSheet.create({
   banner: {
     backgroundColor: '#E53935',
-    zIndex: 1,
+    // Must exceed the contentShell's zIndex: 2 / elevation: 20 used by all
+    // screen layouts, so the banner always paints above the scrollable content.
+    // Kept well below SideMenu (zIndex: 9999) so the menu still covers it.
+    zIndex: 10,
+    elevation: 25,
   },
   row: {
     flexDirection: 'row',
