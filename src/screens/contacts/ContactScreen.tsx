@@ -23,7 +23,7 @@ import {
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Swipeable } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system';
@@ -221,7 +221,6 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
       const isInViewport = pageY < windowHeight && (pageY + height) > 0;
       
       if (isInViewport && !isVisible) {
-        console.log('Contact image becoming visible:', contact.name);
         setIsVisible(true);
       }
     });
@@ -232,12 +231,7 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
     if (!isVisible || imageLoaded || imageError) return;
     
     const url = getImageUrl();
-    if (!url) {
-      console.log('No image URL for contact:', contact.name);
-      return;
-    }
-
-    console.log('Loading image for contact:', contact.name, 'URL:', url);
+    if (!url) return;
 
     // Cancel any previous request
     if (abortControllerRef.current) {
@@ -256,16 +250,13 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
         });
 
         if (response.ok) {
-          console.log('Image loaded successfully for:', contact.name);
           setImageUri(url);
           setImageLoaded(true);
         } else {
-          console.log('Image load failed for:', contact.name, 'Status:', response.status);
           setImageError(true);
         }
       } catch (error: any) {
         if (error.name !== 'AbortError') {
-          console.log('Failed to load contact image:', contact.name, error);
           setImageError(true);
         }
       }
@@ -291,7 +282,6 @@ const LazyContactImage: React.FC<LazyContactImageProps> = ({ contact, style, onL
     // Fallback: if visibility check doesn't trigger after 1 second, force load
     setTimeout(() => {
       if (!isVisible && !imageLoaded && !imageError) {
-        console.log('Fallback: forcing image load for:', contact.name);
         setIsVisible(true);
       }
     }, 1000);
@@ -494,13 +484,17 @@ const followUpStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
-    flexWrap: 'wrap',
-    gap: 6,
+    // Parent (contactInfo) centres its children, which would shrink this row to
+    // its content width. Stretch so each indicator gets a true 50% share.
+    alignSelf: 'stretch',
   },
   badge: {
+    flex: 1,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    marginRight: 3,
+    alignItems: 'center',
   },
   badgeText: {
     color: '#ffffff',
@@ -508,10 +502,13 @@ const followUpStyles = StyleSheet.create({
     fontWeight: '600',
   },
   btn: {
+    flex: 1,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
     backgroundColor: '#FF4B6E',
+    marginLeft: 3,
+    alignItems: 'center',
   },
   btnText: {
     color: '#ffffff',
@@ -785,67 +782,29 @@ export default function ContactsScreen() {
     [showCopyToast],
   );
 
-  // Debug share modal state changes
-  useEffect(() => {
-    console.log('🔍 Share modal visibility changed:', isShareModalVisible);
-    console.log('🔍 Current selectedContact:', selectedContact ? `${selectedContact.name} ${selectedContact.surname}` : 'null');
-  }, [isShareModalVisible, selectedContact]);
-
-  // Debug contact options modal state changes
-  useEffect(() => {
-    console.log('🔍 Contact options modal visibility changed:', isContactOptionsVisible);
-    console.log('🔍 Current selectedContactForOptions:', selectedContactForOptions ? `${selectedContactForOptions.name} ${selectedContactForOptions.surname}` : 'null');
-  }, [isContactOptionsVisible, selectedContactForOptions]);
-
-
   // ============= CORE FUNCTIONS =============
-  
 
-  // Share functionality - moved before useEffect that uses it
   const handleShare = useCallback(async (contact?: Contact) => {
     try {
-      console.log('🚀 handleShare called with contact:', contact ? `${contact.name} ${contact.surname}` : 'null');
-      console.log('🚀 Current isShareModalVisible:', isShareModalVisible);
-      console.log('🚀 Current selectedContact:', selectedContact ? `${selectedContact.name} ${selectedContact.surname}` : 'null');
-      
-      // Check limit for new shares
       if (!contact && remainingContacts === 0) {
-        console.log('🚀 Share limit reached, showing limit modal');
         setShowLimitModal(true);
         return;
       }
-      
-      console.log('🚀 Setting selected contact to:', contact ? `${contact.name} ${contact.surname}` : 'null');
       setSelectedContact(contact || null);
-      
-      console.log('🚀 Setting share modal visible to true');
       setIsShareModalVisible(true);
-      
-      console.log('🚀 Share modal state should now be: visible=true, contact=', contact ? `${contact.name} ${contact.surname}` : 'null');
     } catch (error) {
-      console.error('🚀 Error preparing share:', error);
       toast.error('Sharing Failed', 'Failed to prepare sharing');
     }
-  }, [remainingContacts, isShareModalVisible, selectedContact]);
+  }, [remainingContacts]);
 
   // Handle pending share when contact options modal is fully closed
   useEffect(() => {
-    console.log('💫 useEffect triggered - isContactOptionsVisible:', isContactOptionsVisible, 'pendingShareContact:', pendingShareContact ? `${pendingShareContact.name} ${pendingShareContact.surname}` : 'null');
-    
     if (!isContactOptionsVisible && pendingShareContact) {
-      console.log('💫 Contact options modal fully closed, triggering share for:', `${pendingShareContact.name} ${pendingShareContact.surname}`);
-      
-      // Store the contact before clearing it
       const contactToShare = pendingShareContact;
-      
-      // Clear the pending contact first
       setPendingShareContact(null);
-      
-      // Then trigger the share with a longer delay
       setTimeout(() => {
-        console.log('💫 Calling handleShare after modal fully closed');
         handleShare(contactToShare);
-      }, 1000); // Much longer delay to ensure modal is completely dismissed
+      }, 300);
     }
   }, [isContactOptionsVisible, pendingShareContact, handleShare]);
 
@@ -891,7 +850,6 @@ export default function ContactsScreen() {
           timestamp: Date.now()
         };
         await AsyncStorage.setItem('cachedContacts', JSON.stringify(cacheData));
-        console.log('✅ Cached contacts data for Dashboard reuse');
       } catch (cacheError) {
         console.error('Error caching contacts:', cacheError);
       }
@@ -1004,6 +962,11 @@ export default function ContactsScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
+      if (response.status === 409) {
+        toast.warning('Already in contacts', 'This contact already exists and cannot be added again.');
+        return;
+      }
 
       if (response.status === 403) {
         // Free-plan contact limit hit on the server — show the upgrade path.
@@ -1740,7 +1703,7 @@ export default function ContactsScreen() {
   // ============= RENDER =============
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.container}>
         <Header
           title="Contacts"
@@ -2217,19 +2180,13 @@ export default function ContactsScreen() {
           visible={isShareModalVisible}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => {
-            console.log('🎯 Share modal close requested');
-            setIsShareModalVisible(false);
-          }}
+          onRequestClose={() => setIsShareModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => {
-                  console.log('🎯 Share modal close button pressed');
-                  setIsShareModalVisible(false);
-                }}
+                onPress={() => setIsShareModalVisible(false)}
               >
                 <MaterialIcons name="close" size={24} color={COLORS.black} />
               </TouchableOpacity>
@@ -2879,7 +2836,7 @@ export default function ContactsScreen() {
         onClose={closeAddContact}
         accentColor={colorScheme}
       />
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
