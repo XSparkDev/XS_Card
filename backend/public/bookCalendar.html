@@ -4,23 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Book a Meeting</title>
+    <!-- Montserrat — the app's typeface (see Montserrat-Bold/Regular/Medium
+         usage across the native screens). Falls back to the system stack. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* ==========================================================
+           XS Card design system — mirrors src/constants/colors.ts and
+           the native screens' container/card treatment so this page
+           reads as an app screen rather than a web page.
+           ========================================================== */
         :root {
-            --primary-blue: #FF4B6E; /* XSCard primary */
-            --hover-blue: #E63E60;
-            --light-blue: #FFE6EE;
-            --gray-50: #f8f9fa;
-            --gray-100: #f1f3f4;
-            --gray-200: #e8eaed;
-            --gray-300: #dadce0;
-            --gray-400: #9aa0a6;
-            --gray-600: #5f6368;
-            --gray-700: #3c4043;
-            --gray-800: #202124;
-            --white: #ffffff;
-            --success-green: #34c759;
-            --error-red: #ea4335;
-            --border-color: #dadce0;
+            /* Palette — identical values to COLORS in the app */
+            --primary: #FF4B6E;
+            --primary-dark: #E63E60;
+            --primary-light: #FFE5E9;
+            --secondary: #1B2B5B;
+            --text: #333333;
+            --text-secondary: #888888;
+            --text-light: #666666;
+            --white: #FFFFFF;
+            --background: #F5F5F5;
+            --border: #E0E0E0;
+            --hairline: rgba(136, 136, 136, 0.13);
+            --success: #4CAF50;
+            --error: #FF4B6E;
+
+            /* Legacy aliases — existing rules further down still
+               reference these, so they map onto the new palette. */
+            --primary-blue: var(--primary);
+            --hover-blue: var(--primary-dark);
+            --light-blue: var(--primary-light);
+            --gray-50: #FAFAFA;
+            --gray-100: #F5F5F5;
+            --gray-200: #EEEEEE;
+            --gray-300: var(--border);
+            --gray-400: #AAAAAA;
+            --gray-600: var(--text-secondary);
+            --gray-700: var(--text-light);
+            --gray-800: var(--text);
+            --success-green: var(--success);
+            --error-red: var(--error);
+            --border-color: var(--border);
+
+            /* Radii — 24 on the body shell, 18 on cards, 16 on tiles */
+            --r-shell: 24px;
+            --r-card: 18px;
+            --r-tile: 16px;
+            --r-pill: 25px;
+
+            /* Elevation — the app's soft, low-opacity shadows */
+            --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+            --shadow-raised: 0 6px 20px rgba(0, 0, 0, 0.08);
+            --shadow-shell: 0 -4px 24px rgba(0, 0, 0, 0.18);
+            --shadow-primary: 0 6px 18px rgba(255, 75, 110, 0.30);
         }
 
         * {
@@ -30,34 +68,45 @@
         }
 
         body {
-            font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            background-color: var(--white);
-            color: var(--gray-800);
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont,
+                         'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
             line-height: 1.5;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            /* Prevent the shell's rounded corners from clipping oddly on
+               short viewports. */
+            min-height: 100vh;
         }
 
-        /* Banner Section */
+        /* ==========================================================
+           Header — flows into the rounded body beneath it, matching
+           the native screens where the header sits at zIndex 1 and the
+           content shell overlaps it at zIndex 2.
+           ========================================================== */
         .banner {
             display: flex;
             align-items: center;
-            gap: 24px;
-            padding: 40px 48px;
-            background-color: var(--white);
-            border-bottom: 1px solid var(--border-color);
+            gap: 18px;
+            padding: 28px 20px 44px;
+            background: var(--white);
+            border-bottom: none;
+            position: relative;
+            z-index: 1;
         }
 
         .profile-avatar {
-            width: 80px;
-            height: 80px;
+            width: 68px;
+            height: 68px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #FF4B6E 0%, #1B2B5B 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
             overflow: hidden;
+            box-shadow: var(--shadow-card);
         }
 
         .profile-avatar img {
@@ -68,95 +117,124 @@
 
         .profile-avatar-initials {
             color: var(--white);
-            font-size: 32px;
-            font-weight: 500;
-            user-select: none;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
         }
 
         .banner-content {
-            flex: 1;
+            min-width: 0;
         }
 
         .user-name {
-            font-size: 16px;
-            font-weight: 400;
-            color: var(--gray-700);
-            margin-bottom: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            margin-bottom: 2px;
         }
 
         .meeting-title {
-            font-size: 32px;
-            font-weight: 400;
-            color: var(--gray-800);
-            margin-bottom: 16px;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.4px;
             line-height: 1.2;
         }
 
         .banner-info {
             display: flex;
-            flex-direction: column;
+            flex-wrap: wrap;
             gap: 8px;
+            margin-top: 10px;
         }
 
+        /* Duration chip — the app's tinted-pill treatment */
         .info-item {
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
-            color: var(--gray-600);
-            font-size: 14px;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--primary-light);
+            border-radius: 999px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--primary-dark);
         }
 
         .info-icon {
-            font-size: 18px;
+            font-size: 13px;
+            line-height: 1;
         }
 
-        /* Main Container */
+        /* ==========================================================
+           Rounded body container — the app's signature treatment:
+           24px top corners, white, lifted over the header with an
+           upward shadow.
+           ========================================================== */
         .main-container {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
-            padding: 48px 48px 24px;
+            padding: 26px 16px 32px;
+            background: var(--white);
+            border-top-left-radius: var(--r-shell);
+            border-top-right-radius: var(--r-shell);
+            box-shadow: var(--shadow-shell);
+            position: relative;
+            z-index: 2;
+            margin-top: -24px;
+            min-height: 60vh;
         }
 
         .section-header {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
         .section-title {
-            font-size: 24px;
-            font-weight: 400;
-            color: var(--gray-800);
-            margin-bottom: 8px;
+            font-size: 19px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.2px;
+            margin-bottom: 4px;
         }
 
         .timezone-text {
-            font-size: 14px;
-            color: var(--gray-600);
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
         }
 
-        /* Two Column Layout */
         .calendar-layout {
             display: grid;
-            grid-template-columns: 400px 1fr;
-            gap: 48px;
-            margin-top: 32px;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 20px;
+            align-items: start;
         }
 
-        /* Month Calendar (Left) */
+        /* ==========================================================
+           Month calendar — presented as an app card
+           ========================================================== */
         .month-calendar-container {
             background: var(--white);
+            border: 1px solid var(--hairline);
+            border-radius: var(--r-tile);
+            box-shadow: var(--shadow-card);
+            padding: 16px;
         }
 
         .month-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 24px;
+            justify-content: space-between;
+            margin-bottom: 14px;
         }
 
         .month-name {
-            font-size: 16px;
-            font-weight: 500;
-            color: var(--gray-800);
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: -0.2px;
         }
 
         .month-nav {
@@ -164,192 +242,227 @@
             gap: 8px;
         }
 
+        /* Circular icon buttons, echoing the app's 42px icon circles */
         .nav-btn {
-            width: 40px;
-            height: 40px;
-            border: none;
-            background: transparent;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
-            cursor: pointer;
+            border: none;
+            background: var(--primary-light);
+            color: var(--primary);
+            font-size: 11px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.2s;
-            color: var(--gray-600);
-            font-size: 20px;
+            cursor: pointer;
+            transition: transform 0.18s ease, background 0.18s ease;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .nav-btn:hover {
-            background-color: var(--gray-100);
+            background: var(--primary);
+            color: var(--white);
         }
 
         .nav-btn:active {
-            background-color: var(--gray-200);
+            transform: scale(0.92);
         }
 
-        /* Calendar Grid */
         .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 8px;
+            gap: 4px;
         }
 
         .calendar-day-header {
             text-align: center;
-            padding: 8px;
             font-size: 11px;
-            font-weight: 500;
-            color: var(--gray-600);
+            font-weight: 700;
+            color: var(--text-secondary);
             text-transform: uppercase;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.4px;
+            padding-bottom: 8px;
         }
 
+        /* Day cells — square, pill-rounded, generous tap target */
         .calendar-day {
             aspect-ratio: 1;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            font-size: 13px;
-            font-weight: 400;
-            color: var(--gray-800);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
             cursor: pointer;
-            transition: all 0.2s;
-            border: 2px solid transparent;
+            border: 1.5px solid transparent;
+            transition: background 0.18s ease, color 0.18s ease,
+                        transform 0.18s ease, border-color 0.18s ease;
+            -webkit-tap-highlight-color: transparent;
+            position: relative;
         }
 
         .calendar-day:hover:not(.disabled):not(.other-month) {
-            background-color: var(--gray-100);
+            background: var(--primary-light);
         }
 
         .calendar-day.other-month {
-            color: var(--gray-400);
+            color: #C8C8C8;
             cursor: default;
         }
 
+        /* Unavailable — muted, clearly non-interactive */
         .calendar-day.disabled {
-            color: var(--gray-300);
+            color: #C8C8C8;
             cursor: not-allowed;
         }
 
+        /* Today — ringed in primary, matching todayTextColor in the app */
         .calendar-day.today {
-            border-color: var(--primary-blue);
-            color: var(--primary-blue);
+            color: var(--primary);
+            font-weight: 700;
+            border-color: var(--primary);
         }
 
+        /* Available — tinted fill so bookable days read at a glance */
         .calendar-day.available {
-            background-color: var(--light-blue);
-            color: var(--primary-blue);
-            font-weight: 500;
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            font-weight: 700;
         }
 
         .calendar-day.available:hover {
-            background-color: var(--primary-blue);
-            color: var(--white);
+            background: #FFD3DC;
+            transform: scale(1.06);
         }
 
+        /* Selected — solid primary, matching selectedDayBackgroundColor */
         .calendar-day.selected {
-            background-color: var(--primary-blue);
+            background: var(--primary);
             color: var(--white);
-            font-weight: 500;
+            font-weight: 700;
+            border-color: var(--primary);
+            box-shadow: var(--shadow-primary);
         }
 
-        /* Day Selector (Right) */
+        /* ==========================================================
+           Day strip + time slots
+           ========================================================== */
         .day-time-container {
-            background: var(--white);
+            min-width: 0;
         }
 
         .days-selector-wrapper {
-            position: relative;
-            margin-bottom: 32px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 16px;
         }
 
         .days-selector {
             display: flex;
-            gap: 16px;
+            gap: 8px;
             overflow-x: auto;
-            padding: 8px 48px;
             scroll-behavior: smooth;
+            flex: 1;
+            /* Vertical breathing room so the selected card's glow isn't
+               clipped by this scroll container. */
+            padding: 8px 4px 12px;
+            margin: -8px -4px -12px;
             -webkit-overflow-scrolling: touch;
         }
 
         .days-selector::-webkit-scrollbar {
-            height: 0;
+            display: none;
         }
 
         .day-nav-btn {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 40px;
-            height: 40px;
-            border: none;
-            background: var(--white);
+            width: 32px;
+            height: 32px;
+            min-width: 32px;
             border-radius: 50%;
-            cursor: pointer;
+            border: none;
+            background: var(--primary-light);
+            color: var(--primary);
+            font-size: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s;
-            color: var(--gray-600);
-            font-size: 20px;
-            box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
-            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.18s ease, background 0.18s ease;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .day-nav-btn:hover {
-            background-color: var(--gray-100);
-            box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
+            background: var(--primary);
+            color: var(--white);
+        }
+
+        .day-nav-btn:active {
+            transform: scale(0.92);
         }
 
         .day-nav-btn.left {
-            left: 0;
+            order: -1;
         }
 
         .day-nav-btn.right {
-            right: 0;
+            order: 1;
         }
 
+        /* Day cards — soft app cards with a clear selected state */
         .day-card {
-            min-width: 80px;
+            flex: 0 0 auto;
+            width: 60px;
+            padding: 10px 0;
+            border-radius: var(--r-tile);
+            background: var(--white);
+            border: 1.5px solid var(--hairline);
+            box-shadow: var(--shadow-card);
             text-align: center;
             cursor: pointer;
-            padding: 12px 16px;
-            border-radius: 8px;
-            transition: all 0.2s;
-            user-select: none;
+            transition: transform 0.18s ease, border-color 0.18s ease,
+                        box-shadow 0.18s ease, background 0.18s ease;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .day-card:hover:not(.disabled-day) {
-            background-color: var(--gray-100);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-raised);
+            border-color: var(--primary-light);
         }
 
         .day-card.disabled-day {
             opacity: 0.4;
             cursor: not-allowed;
+            box-shadow: none;
         }
 
         .day-card.selected-day {
-            background-color: var(--light-blue);
+            background: var(--primary-light);
+            border-color: var(--primary);
+            box-shadow: var(--shadow-primary);
         }
 
         .day-abbreviation {
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--gray-600);
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
             text-transform: uppercase;
-            margin-bottom: 4px;
+            letter-spacing: 0.4px;
+            margin-bottom: 2px;
         }
 
         .day-number {
-            font-size: 24px;
-            font-weight: 400;
-            color: var(--gray-800);
+            font-size: 19px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.1;
         }
 
-        .day-card.selected-day .day-abbreviation,
-        .day-card.selected-day .day-number {
-            color: var(--primary-blue);
+        .day-card.selected-day .day-number,
+        .day-card.selected-day .day-abbreviation {
+            color: var(--primary-dark);
         }
 
         /* Time Slots Section */
@@ -363,37 +476,46 @@
             gap: 12px;
         }
 
+        /* Time slots — app card language: soft shadow, hairline border,
+           lift on hover, solid primary when chosen. */
         .time-slot {
-            padding: 12px 16px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
+            padding: 13px 16px;
+            border: 1.5px solid var(--hairline);
+            border-radius: var(--r-tile);
             text-align: center;
             cursor: pointer;
             background-color: var(--white);
-            transition: all 0.2s;
+            box-shadow: var(--shadow-card);
+            transition: transform 0.18s ease, border-color 0.18s ease,
+                        box-shadow 0.18s ease, background 0.18s ease;
             font-size: 14px;
-            font-weight: 400;
-            color: var(--gray-800);
+            font-weight: 600;
+            color: var(--text);
+            -webkit-tap-highlight-color: transparent;
         }
 
         .time-slot:hover {
-            border-color: var(--primary-blue);
-            background-color: var(--light-blue);
+            border-color: var(--primary);
+            background-color: var(--primary-light);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-raised);
         }
 
         .time-slot.selected {
-            border-color: var(--primary-blue);
-            background-color: var(--primary-blue);
+            border-color: var(--primary);
+            background-color: var(--primary);
             color: var(--white);
-            border-width: 2px;
+            box-shadow: var(--shadow-primary);
         }
 
         .time-slot.disabled {
             background-color: var(--gray-100);
-            border-color: var(--gray-200);
+            border-color: var(--hairline);
             color: var(--gray-400);
             cursor: not-allowed;
-            opacity: 0.6;
+            opacity: 0.55;
+            box-shadow: none;
+            transform: none;
         }
 
         .time-slot.disabled:hover {
@@ -411,14 +533,17 @@
 
         .duration-pill {
             padding: 10px 20px;
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
+            border: 1.5px solid var(--hairline);
+            border-radius: 999px;
             cursor: pointer;
             background-color: var(--white);
-            transition: all 0.2s;
+            box-shadow: var(--shadow-card);
+            transition: transform 0.18s ease, background 0.18s ease,
+                        border-color 0.18s ease;
             font-size: 14px;
-            font-weight: 400;
-            color: var(--gray-800);
+            font-weight: 600;
+            color: var(--text);
+            -webkit-tap-highlight-color: transparent;
         }
 
         .duration-pill:hover {
@@ -427,9 +552,10 @@
         }
 
         .duration-pill.selected {
-            border-color: var(--primary-blue);
-            background-color: var(--primary-blue);
+            border-color: var(--primary);
+            background-color: var(--primary);
             color: var(--white);
+            box-shadow: var(--shadow-primary);
         }
 
         /* Free All Day Banner */
@@ -607,14 +733,14 @@
 
         .modal {
             background-color: var(--white);
-            border-radius: 8px;
-            padding: 24px;
+            border-radius: var(--r-shell);
+            padding: 26px 22px;
             max-width: 500px;
             width: 100%;
             max-height: 90vh;
             overflow-y: auto;
             position: relative;
-            box-shadow: 0 8px 10px 1px rgba(0, 0, 0, 0.14), 0 3px 14px 2px rgba(0, 0, 0, 0.12), 0 5px 5px -3px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
         }
 
         .modal-close {
@@ -676,20 +802,21 @@
         .form-group input,
         .form-group textarea {
             width: 100%;
-            padding: 12px 14px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            font-size: 14px;
+            padding: 14px 16px;
+            border: 1.5px solid var(--hairline);
+            border-radius: 14px;
+            font-size: 15px;
             font-family: inherit;
+            color: var(--text);
             background-color: var(--white);
-            transition: border-color 0.2s;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
         }
 
         .form-group input:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: var(--primary-blue);
-            box-shadow: 0 0 0 1px var(--primary-blue);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-light);
         }
 
         .form-group textarea {
@@ -703,32 +830,40 @@
             margin-top: 4px;
         }
 
-        /* Buttons */
+        /* Buttons — the app's pill CTA (radius 25, bold, primary fill) */
         .btn {
             width: 100%;
-            padding: 12px 24px;
+            padding: 15px 24px;
             border: none;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: 500;
+            border-radius: var(--r-pill);
+            font-size: 16px;
+            font-weight: 700;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.2s;
-            letter-spacing: 0.25px;
+            transition: transform 0.18s ease, background 0.18s ease,
+                        box-shadow 0.18s ease;
+            letter-spacing: 0.2px;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .btn-primary {
-            background-color: var(--primary-blue);
+            background-color: var(--primary);
             color: var(--white);
-            box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+            box-shadow: var(--shadow-primary);
         }
 
         .btn-primary:hover:not(:disabled) {
-            background-color: var(--hover-blue);
-            box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
+            background-color: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 22px rgba(255, 75, 110, 0.36);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: translateY(0) scale(0.99);
         }
 
         .btn-primary:disabled {
-            background-color: var(--gray-300);
+            background-color: var(--disabled, #CCCCCC);
             cursor: not-allowed;
             box-shadow: none;
         }
@@ -898,10 +1033,14 @@
         }
 
         @media (max-width: 768px) {
+            /* Keep the avatar beside the title on phones — stacking it
+               pushed the fold too far down. Extra bottom padding preserves
+               the header-to-body overlap. */
             .banner {
-                flex-direction: column;
-                align-items: flex-start;
-                padding: 24px 20px;
+                flex-direction: row;
+                align-items: center;
+                padding: 22px 18px 42px;
+                gap: 14px;
             }
 
             .profile-avatar {
@@ -918,19 +1057,22 @@
             }
 
             .main-container {
-                padding: 32px 20px 16px;
+                padding: 22px 16px 28px;
             }
 
             .section-title {
-                font-size: 20px;
+                font-size: 18px;
             }
 
             .calendar-layout {
                 gap: 24px;
             }
 
+            /* Two per row on phones — one full-width slot per line wastes
+               vertical space and pushes the CTA off screen. */
             .time-slots-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+                gap: 10px;
             }
 
             .footer {
@@ -954,27 +1096,73 @@
 
         @media (max-width: 480px) {
             .banner {
-                padding: 20px 16px;
+                padding: 18px 14px 40px;
+                gap: 12px;
+            }
+
+            .profile-avatar {
+                width: 54px;
+                height: 54px;
+            }
+
+            .profile-avatar-initials {
+                font-size: 19px;
             }
 
             .main-container {
-                padding: 24px 16px;
+                padding: 20px 14px 26px;
             }
 
             .meeting-title {
                 font-size: 20px;
             }
 
+            .user-name {
+                font-size: 11.5px;
+            }
+
             .modal {
-                padding: 20px;
+                padding: 22px 18px;
+                border-radius: 22px;
             }
 
             .calendar-grid {
-                gap: 4px;
+                gap: 3px;
             }
 
             .calendar-day {
-                font-size: 12px;
+                font-size: 13px;
+            }
+
+            .month-calendar-container {
+                padding: 14px 12px;
+            }
+
+            .day-card {
+                width: 54px;
+            }
+
+            .day-number {
+                font-size: 17px;
+            }
+        }
+
+        /* Tablets — centre the shell and let it breathe */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .main-container {
+                padding: 30px 28px 36px;
+            }
+
+            .banner {
+                padding: 32px 28px 46px;
+            }
+        }
+
+        /* Respect users who prefer reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+                animation: none !important;
             }
         }
     </style>

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { StyleSheet, Text, View, AppState, Platform, LogBox, TouchableOpacity, StatusBar } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
@@ -203,13 +204,22 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <AppErrorBoundary>
-      <AppContent />
-    </AppErrorBoundary>
+    // Single GestureHandlerRootView at the app root — the only instance allowed.
+    // Nested GestureHandlerRootView instances deadlock Android's touch dispatch,
+    // freezing the UI. All PanGestureHandler/Swipeable usage in the tree finds
+    // this root automatically without needing their own wrappers.
+    <GestureHandlerRootView style={styles.root}>
+      <AppErrorBoundary>
+        <AppContent />
+      </AppErrorBoundary>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',

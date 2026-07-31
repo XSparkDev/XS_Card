@@ -6,7 +6,7 @@ import Purchases, {
   PURCHASES_ERROR_CODE
 } from 'react-native-purchases';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, Alert, NativeModules } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import { shouldUseRevenueCat } from '../utils/paymentPlatform';
 import { authenticatedFetchWithRefresh } from '../utils/api';
 import * as FileSystem from 'expo-file-system';
@@ -220,15 +220,20 @@ class RevenueCatService {
       console.log('RevenueCat: SDK Response - Requested:', JSON.stringify(productIds));
       console.log('RevenueCat: SDK Response - Returned:', products.length, 'products');
       console.log('RevenueCat: SDK Response - Products:', products.map(p => ({ id: p.identifier, title: p.title, price: p.priceString })));
-      Alert.alert('RevenueCat SDK Response', `Requested: ${JSON.stringify(productIds)}\n\nReturned: ${products.length} products`);
 
       const packages: SubscriptionPackage[] = [];
 
       for (const product of products) {
+        // Case-insensitive so iOS ids ("Premium_Monthly") classify the same as
+        // Android's ("premium_monthly:monthly-autorenewing"). Matching on the
+        // literal lowercase 'monthly' previously tagged every iOS product as
+        // ANNUAL, which hid the Monthly plan entirely on iOS.
+        const isMonthly = product.identifier.toLowerCase().includes('monthly');
+
         // Create package structure that matches offerings format
         packages.push({
-          identifier: product.identifier.includes('monthly') ? 'monthly' : 'annual',
-          packageType: product.identifier.includes('monthly') ? 'MONTHLY' : 'ANNUAL',
+          identifier: isMonthly ? 'monthly' : 'annual',
+          packageType: isMonthly ? 'MONTHLY' : 'ANNUAL',
           product: {
             identifier: product.identifier,
             description: product.description,

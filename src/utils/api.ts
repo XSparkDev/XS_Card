@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandler, ERROR_CODES, handleAuthError, handleNetworkError, createAppError } from './errorHandler';
 // Firebase integration for enhanced token refresh
 import { auth } from '../config/firebaseConfig';
-// Import for keepLoggedIn preference check
-import { getKeepLoggedInPreference } from './authStorage';
+import { getKeepLoggedInPreference, getStoredAuthData } from './authStorage';
+// Single source of truth for token refresh/classification/sign-out
+import { ensureFreshIdToken, endSession, setAuthNavigationRef, authLog } from '../services/authSessionService';
 // Toast service for centralized imports
 import { toastService, useToast } from '../hooks/useToast';
 
@@ -32,11 +33,11 @@ export interface TokenValidationResponse {
     message?: string;
 }
 
-// Global navigation reference for automatic logout
-let globalNavigationRef: any = null;
-
+// Forwards the navigation ref to authSessionService, which is now the single
+// place that resets navigation on session end (whether triggered by a live
+// 401 response or a session-ending event discovered in the background).
 export const setGlobalNavigationRef = (navigationRef: any) => {
-  globalNavigationRef = navigationRef;
+  setAuthNavigationRef(navigationRef);
 };
 
 // Global AuthContext reference for forced logout notifications
@@ -182,7 +183,7 @@ export const getUserId = async (): Promise<string | null> => {
     }
     return null;
   } catch (error) {
-    console.error('Error getting user ID:', error);
+    if (__DEV__) console.error('Error getting user ID:', error);
     return null;
   }
 };
@@ -215,250 +216,79 @@ export const authenticatedFetch = async (endpoint: string, options: RequestInit 
 
     return response;
   } catch (error) {
-    console.error('Authenticated fetch error:', error);
+    if (__DEV__) console.error('Authenticated fetch error:', error);
     throw error;
   }
 };
 
-// ENHANCED: Token refresh function with Firebase integration
+// Token refresh, delegated entirely to authSessionService (which uses
+// Firebase's own getIdToken() and retries transient failures with backoff).
+// Kept as a thin wrapper since several call sites already import it.
 export const refreshAuthToken = async (): Promise<string> => {
-  try {
-    const currentToken = await AsyncStorage.getItem('userToken');
-    
-    if (!currentToken) {
-      const error = createAppError(ERROR_CODES.TOKEN_INVALID, new Error('No token to refresh'));
-      await handleAuthError(error);
+  const { token, errorClass } = await ensureFreshIdToken({ forceRefresh: true });
+  if (!token) {
+    if (errorClass === 'fatal') {
+      const error = createAppError(ERROR_CODES.TOKEN_INVALID, new Error('Session cannot be refreshed'));
+      await handleAuthError(error, () => forceLogoutExpiredToken());
       throw error;
     }
-
-    console.log('[Token Refresh] Attempting Firebase-enhanced token refresh...');
-    
-    // Try Firebase token refresh first (primary method)
-    const firebaseUser = auth.currentUser;
-    if (firebaseUser) {
-      try {
-        console.log('[Token Refresh] Using Firebase token refresh (primary method)');
-        const newFirebaseToken = await firebaseUser.getIdToken(true); // Force refresh
-        const newTokenWithBearer = `Bearer ${newFirebaseToken}`;
-        
-        // Store the new token
-        await AsyncStorage.setItem('userToken', newTokenWithBearer);
-        await AsyncStorage.setItem('lastLoginTime', Date.now().toString());
-        
-        console.log('[Token Refresh] Firebase token refresh successful');
-        return newTokenWithBearer;
-        
-      } catch (firebaseError) {
-        console.warn('[Token Refresh] Firebase refresh failed, falling back to backend:', firebaseError);
-        // Continue to backend refresh fallback below
-      }
-    } else {
-      console.warn('[Token Refresh] No Firebase user, using backend refresh');
-    }
-    
-    // Fallback: Backend token refresh
-    console.log('[Token Refresh] Using backend token refresh (fallback method)');
-    const response = await fetch(buildUrl(ENDPOINTS.REFRESH_TOKEN), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': currentToken,
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('[Token Refresh] Backend refresh failed:', response.status, errorData);
-      
-      // Handle specific error cases with proper error types
-      if (response.status === 401) {
-        const error = createAppError(ERROR_CODES.TOKEN_INVALID, new Error('Current token is invalid and cannot be refreshed'));
-        await handleAuthError(error, () => forceLogoutExpiredToken());
-        throw error;
-      }
-      
-      const error = createAppError(ERROR_CODES.TOKEN_REFRESH_FAILED, new Error(errorData.message || 'Token refresh failed'));
-      await handleAuthError(error);
-      throw error;
-    }
-
-    const data = await response.json();
-    
-    if (data.success && data.token) {
-      // Store the new token with Bearer prefix
-      const newTokenWithBearer = `Bearer ${data.token}`;
-      await AsyncStorage.setItem('userToken', newTokenWithBearer);
-      
-      console.log('[Token Refresh] Backend token refresh successful');
-      
-      // Update last login time to track token age
-      await AsyncStorage.setItem('lastLoginTime', Date.now().toString());
-      
-      return newTokenWithBearer;
-    } else {
-      const error = createAppError(ERROR_CODES.TOKEN_REFRESH_FAILED, new Error(data.message || 'Token refresh failed - invalid response'));
-      await handleAuthError(error);
-      throw error;
-    }
-  } catch (error) {
-    console.error('[Token Refresh] Error refreshing auth token:', error);
-    
-    // If it's already an AppError, re-throw it
-    if (error && typeof error === 'object' && 'code' in error) {
-      throw error;
-    }
-    
-    // Otherwise, wrap it in a proper error
-    const appError = createAppError(ERROR_CODES.TOKEN_REFRESH_FAILED, error as Error);
-    await handleAuthError(appError);
-    throw appError;
+    const error = createAppError(ERROR_CODES.TOKEN_REFRESH_FAILED, new Error('Token refresh temporarily unavailable'));
+    throw error;
   }
+  return `Bearer ${token}`;
 };
 
-// ENHANCED: Token validation function with Firebase integration
+// Token validation, delegated to authSessionService. A network-classified
+// failure returns false for THIS check without ending the session - callers
+// that need "is there a live session at all" should prefer checking
+// auth.currentUser directly rather than treating a transient false as fatal.
 export const validateAuthToken = async (): Promise<boolean> => {
-  try {
-    const currentToken = await AsyncStorage.getItem('userToken');
-    
-    if (!currentToken) {
-      console.log('[Token Validation] No token found - treating as expired (like manual expiry)');
-      return false;
-    }
-    
-    // 🔥 ENHANCED: Also check if lastLoginTime exists (like manual expiry does)
-    const lastLoginTime = await AsyncStorage.getItem('lastLoginTime');
-    if (!lastLoginTime) {
-      console.log('[Token Validation] No lastLoginTime found - treating as expired (like manual expiry)');
-      return false;
-    }
-
-    console.log('[Token Validation] Validating token with Firebase integration...');
-    
-    // Try Firebase validation first (primary method)
-    const firebaseUser = auth.currentUser;
-    if (firebaseUser) {
-      try {
-        console.log('[Token Validation] Using Firebase validation (primary method)');
-        await firebaseUser.getIdToken(false); // Don't force refresh, just validate
-        console.log('[Token Validation] Firebase validation successful');
-        return true;
-      } catch (firebaseError) {
-        console.warn('[Token Validation] Firebase validation failed, trying backend:', firebaseError);
-        // Continue to backend validation fallback below
-      }
-    } else {
-      console.warn('[Token Validation] No Firebase user, using backend validation');
-    }
-    
-    // Fallback: Backend validation
-    console.log('[Token Validation] Using backend validation (fallback method)');
-    const response = await fetch(buildUrl(ENDPOINTS.VALIDATE_TOKEN), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': currentToken,
-      },
-    });
-
-    if (!response.ok) {
-      console.log(`[Token Validation] Backend validation failed: ${response.status}`);
-      
-      // Handle specific validation failures
-      if (response.status === 401) {
-        const error = createAppError(ERROR_CODES.TOKEN_EXPIRED, new Error('Token validation failed - token expired'));
-        await ErrorHandler.handleError(error, { showUserMessage: false, logError: true });
-      }
-      
-      return false;
-    }
-
-    const data = await response.json();
-    console.log('[Token Validation] Backend validation successful:', data.message);
-    return data.valid;
-  } catch (error) {
-    console.error('[Token Validation] Error validating auth token:', error);
-    
-    // Handle network errors gracefully
-    await handleNetworkError(error, async () => {
-      await validateAuthToken();
-    });
-    
-    return false;
-  }
+  const { token } = await ensureFreshIdToken();
+  return !!token;
 };
 
-// ENHANCED: Enhanced authenticated fetch with Firebase integration
+// Authenticated fetch that keeps the ID token fresh and only ends the
+// session for a confirmed, unrecoverable auth failure - never for a network
+// blip or a single unlucky request.
 export const authenticatedFetchWithRefresh = async (endpoint: string, options: RequestInit = {}) => {
   try {
-    // Check if token needs refresh before making the request
-    const needsRefresh = await shouldRefreshToken();
-    if (needsRefresh) {
-      console.log('[Auth Fetch] Token appears old, attempting refresh before request...');
-      
-      // 🔥 NEW: Check keepLoggedIn preference before refresh
-      const keepLoggedIn = await getKeepLoggedInPreference();
-      if (!keepLoggedIn) {
-        console.log('[Auth Fetch] Token expired and keepLoggedIn is false - forcing logout');
-        const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, new Error('Session expired - please log in again'));
-        await handleAuthError(error, () => forceLogoutExpiredToken());
-        throw error;
-      }
-      
-      try {
-        await refreshAuthToken(); // Now uses Firebase-enhanced refresh
-        console.log('[Auth Fetch] Proactive token refresh successful');
-      } catch (refreshError) {
-        console.error('[Auth Fetch] Proactive token refresh failed:', refreshError);
-        // Continue with original request - if it fails, we'll try refresh again
-      }
+    // Cheap up-front check: Firebase itself decides whether the cached token
+    // is actually stale enough to warrant a network call.
+    if (auth.currentUser) {
+      await ensureFreshIdToken();
     }
-    
-    // First attempt with current token
+
     let response = await authenticatedFetch(endpoint, options);
-    
-    // If token is expired or invalid (401), handle appropriately
+
     if (response.status === 401) {
-      console.log('[Auth Fetch] Received 401 - token appears expired');
-      
-      // 🔥 NEW: Check keepLoggedIn preference before attempting refresh
-      const keepLoggedIn = await getKeepLoggedInPreference();
-      if (!keepLoggedIn) {
-        console.log('[Auth Fetch] 401 error and keepLoggedIn is false - forcing logout');
-        const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, new Error('Session expired - please log in again'));
-        await handleAuthError(error, () => forceLogoutExpiredToken());
-        throw error;
-      }
-      
-      // Attempt Firebase-enhanced token refresh before logout
-      try {
-        console.log('[Auth Fetch] Attempting Firebase-enhanced token refresh...');
-        await refreshAuthToken(); // Now uses Firebase-enhanced refresh
-        
-        console.log('[Auth Fetch] Token refresh successful, retrying original request...');
-        
-        // Retry the original request with the new token
-        response = await authenticatedFetch(endpoint, options);
-        
-        if (response.status === 401) {
-          // If still getting 401 after refresh, the refresh didn't work
-          console.log('[Auth Fetch] Still getting 401 after refresh, forcing logout');
-          const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, new Error('Authentication failed after token refresh'));
-          await handleAuthError(error, () => forceLogoutExpiredToken());
+      // Always attempt a forced token refresh before treating a 401 as fatal.
+      // A backend restart, edge deploy, CDN cache miss, or momentary auth-cache
+      // inconsistency can all produce transient 401s that have nothing to do
+      // with the user's actual auth status. Never end a session on the first 401.
+      const { token, errorClass } = await ensureFreshIdToken({ forceRefresh: true });
+
+      if (!token) {
+        if (errorClass === 'fatal') {
+          await forceLogoutExpiredToken();
+          const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, new Error('Session ended'));
           throw error;
         }
-        
-        console.log('[Auth Fetch] Request successful after token refresh');
-        return response;
-        
-      } catch (refreshError) {
-        console.error('[Auth Fetch] Token refresh failed:', refreshError);
-        
-        // If refresh fails, fall back to logout
-        console.log('[Auth Fetch] Falling back to logout due to refresh failure');
-        const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, refreshError as Error);
-        await handleAuthError(error, () => forceLogoutExpiredToken());
+        // Recoverable (network) failure: surface an error for this request only;
+        // do not touch the session — it may succeed on the next attempt.
+        const error = createAppError(ERROR_CODES.NETWORK_ERROR, new Error('Could not verify your session — check your connection'));
         throw error;
       }
+
+      response = await authenticatedFetch(endpoint, options);
+
+      if (response.status === 401) {
+        // A freshly-minted token was still rejected — confirmed auth failure.
+        await forceLogoutExpiredToken();
+        const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, new Error('Authentication failed after token refresh'));
+        throw error;
+      }
+
+      return response;
     }
 
     // Handle other HTTP errors
@@ -485,126 +315,58 @@ export const authenticatedFetchWithRefresh = async (endpoint: string, options: R
 
     return response;
   } catch (error) {
-    console.error('[Auth Fetch] Error:', error);
-    
-    // Handle network errors with retry
+    // Network errors here are genuinely transient - never end the session
+    // for one; just let the caller see the failure for this request.
     if (error instanceof TypeError && error.message.includes('fetch')) {
       await handleNetworkError(error, async () => {
         await authenticatedFetchWithRefresh(endpoint, options);
       });
     }
-    
+
     throw error;
   }
 };
 
-// NEW: Check if token needs refresh (based on expiry time)
-export const shouldRefreshToken = async (): Promise<boolean> => {
-  try {
-    const token = await AsyncStorage.getItem('userToken');
-    const lastLoginTimeStr = await AsyncStorage.getItem('lastLoginTime');
-    
-    if (!token || !lastLoginTimeStr) {
-      console.log('[Should Refresh] No token or login time found');
-      return false;
-    }
-
-    const lastLoginTime = parseInt(lastLoginTimeStr, 10);
-    const now = Date.now();
-    const tokenAge = now - lastLoginTime;
-    
-    // Firebase tokens expire in 1 hour (3600 seconds)
-    // Refresh if token is older than 50 minutes (3000 seconds) to be safe
-    const fiftyMinutes = 50 * 60 * 1000; // 50 minutes in milliseconds
-    
-    const needsRefresh = tokenAge > fiftyMinutes;
-    
-    if (needsRefresh) {
-      console.log(`[Should Refresh] Token is ${Math.round(tokenAge / 60000)} minutes old, needs refresh`);
-    } else {
-      console.log(`[Should Refresh] Token is ${Math.round(tokenAge / 60000)} minutes old, still valid`);
-    }
-    
-    return needsRefresh;
-  } catch (error) {
-    console.error('[Should Refresh] Error checking if token needs refresh:', error);
-    return false;
-  }
-};
-
-// NEW: Logout function that calls backend
+// Notifies the backend of the logout event. Best-effort — failures are
+// silently swallowed so local sign-out is never blocked by a server error.
 export const performServerLogout = async (): Promise<void> => {
   try {
-    const token = await AsyncStorage.getItem('userToken');
-    
+    const authData = await getStoredAuthData();
+    const token = authData?.userToken;
+
     if (token) {
-      // Call backend logout endpoint
       await fetch(buildUrl(ENDPOINTS.LOGOUT), {
         method: 'POST',
         headers: {
           'Authorization': token,
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       });
-      console.log('Successfully logged out on server');
     }
-  } catch (error) {
-    console.error('Error during server logout:', error);
-    // Don't throw error - continue with local logout even if server logout fails
+  } catch {
+    // Intentionally silent — local sign-out must not depend on server response.
   }
 };
 
-// NEW: Force logout when token is expired - Phase 4A Implementation
+// Ends a confirmed-unrecoverable session. Delegates the actual sign-out +
+// storage clearing to endSession() (the single path for that), then updates
+// React state and navigation - the two things only this layer can do.
 export const forceLogoutExpiredToken = async (navigationCallback?: () => void): Promise<void> => {
   try {
-    console.log('[Force Logout] Token expired - forcing logout...');
-    
-    // 🔥 ENHANCED: Use the same approach as manual expiry for consistency
-    // Clear the token and lastLoginTime first (like manual expiry does)
-    await AsyncStorage.removeItem('userToken');
-    await AsyncStorage.removeItem('lastLoginTime');
-    console.log('[Force Logout] Token and lastLoginTime cleared (like manual expiry)');
-    
-    // Then clear all other auth data
-    await AsyncStorage.multiRemove([
-      'userData', 
-      'authData',
-      'keepLoggedIn'
-    ]);
-    
-    console.log('[Force Logout] All auth data cleared successfully');
-    
-    // 🔥 CRITICAL FIX: Notify AuthContext about forced logout
-    // This prevents the infinite loop by ensuring AuthContext state is updated
+    await endSession('confirmed_auth_failure');
+
     if (globalAuthContextRef) {
-      console.log('[Force Logout] Notifying AuthContext about forced logout');
       globalAuthContextRef.dispatch({ type: 'CLEAR_USER' });
       globalAuthContextRef.dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
-    } else {
-      console.warn('[Force Logout] No AuthContext reference available');
     }
-    
-    // Try to navigate to login screen
+
+    // endSession() already resets navigation via the shared ref; a caller-
+    // supplied callback is an explicit override some flows still pass in.
     if (navigationCallback) {
-      console.log('[Force Logout] Using provided navigation callback');
       navigationCallback();
-    } else if (globalNavigationRef) {
-      console.log('[Force Logout] Using global navigation reference');
-      globalNavigationRef.reset({
-        index: 0,
-        routes: [{ name: 'Auth' }],
-      });
-    } else {
-      console.log('[Force Logout] No navigation available - auth data cleared, user will need to restart app');
     }
   } catch (error) {
-    console.error('[Force Logout] Error during forced logout:', error);
-    // Even if there's an error, we should still try to clear what we can
-    try {
-      await AsyncStorage.clear();
-    } catch (clearError) {
-      console.error('[Force Logout] Failed to clear storage:', clearError);
-    }
+    authLog('refresh_failed', { step: 'forceLogoutExpiredToken', error: String(error) });
   }
 };
 

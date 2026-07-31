@@ -124,6 +124,21 @@ exports.addContact = async (req, res) => {
             currentContacts = doc.data().contactList || [];
         }
 
+        // Duplicate guard: same logic as publicContactService so both paths are consistent.
+        const submittedEmail = String(contactInfo.email || '').trim().toLowerCase();
+        if (submittedEmail) {
+            const isDuplicate = currentContacts.some(
+                (c) => String(c.email || '').trim().toLowerCase() === submittedEmail
+            );
+            if (isDuplicate) {
+                return res.status(409).send({
+                    success: false,
+                    message: 'Contact already exists',
+                    code: 'CONTACT_ALREADY_EXISTS',
+                });
+            }
+        }
+
         // Check if free user has reached contact limit - Add strict validation
         if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
             console.log(`Contact limit reached for free user ${userId}. Current contacts: ${currentContacts.length}`);

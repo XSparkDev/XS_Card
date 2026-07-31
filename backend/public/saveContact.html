@@ -3,28 +3,62 @@
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Save Contact</title>
+    <!-- Montserrat — the app's typeface, so the card reads as an app screen -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* XS Card design system — values mirror src/constants/colors.ts and the
+           native Cards screen's card/elevation treatment. */
         :root {
             --primary: #FF4B6E;
+            --primary-dark: #E63E60;
+            --primary-light: #FFE5E9;
             --secondary: #1B2B5B;
             --white: #FFFFFF;
-            --black: #000000;
+            --black: #333333;
+            --text: #333333;
+            --text-secondary: #888888;
+            --page-bg: #F5F5F5;
+            --hairline: rgba(136, 136, 136, 0.13);
+
+            --r-shell: 24px;
+            --r-card: 18px;
+            --r-pill: 25px;
+
+            --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+            --shadow-float: 0 12px 40px rgba(27, 43, 91, 0.10),
+                            0 2px 10px rgba(0, 0, 0, 0.05);
+            --shadow-primary: 0 6px 18px rgba(255, 75, 110, 0.30);
         }
 
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont,
+                         'Segoe UI', Roboto, Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: var(--white);
+            background-color: var(--page-bg);
+            color: var(--text);
             min-height: 100vh;
             width: 100%;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
+        /* The card itself — elevated, rounded, floating on the page
+           background, echoing the native Cards screen. */
         .container {
-            width: 100%;
-            margin: 0;
-            padding: 0;
+            width: calc(100% - 24px);
+            max-width: 460px;
+            margin: 16px auto 28px;
+            padding: 0 0 8px;
+            background: var(--white);
+            border-radius: var(--r-shell);
+            border: 1px solid var(--hairline);
+            box-shadow: var(--shadow-float);
             box-sizing: border-box;
+            /* visible so the profile photo can overlap the logo panel */
+            overflow: visible;
         }
 
         /* XS Card Logo Header Styles */
@@ -48,19 +82,22 @@
             width: 100%;
             position: relative;
             overflow: visible;
-            margin-bottom: 60px;
-            background-color: #FFFFFF;
-            padding: 10px 10px 0 10px;
+            margin-bottom: 62px;
+            background: linear-gradient(180deg, #FAFAFB 0%, #F3F4F7 100%);
+            padding: 14px 14px 26px;
             box-sizing: border-box;
-            min-height: 17rem;
+            min-height: 15rem;
+            border-top-left-radius: var(--r-shell);
+            border-top-right-radius: var(--r-shell);
+            border-bottom: 1px solid var(--hairline);
         }
 
         .company-logo {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 10px;
-            min-height: 16rem;
+            border-radius: var(--r-card);
+            min-height: 13rem;
         }
 
         /* Add a logo frame similar to React screens for consistent overflow handling */
@@ -77,19 +114,20 @@
 
         .profile-overlay {
             position: absolute;
-            bottom: -56px;
+            bottom: -58px;
             left: 50%;
-            transform: translateX(-48px);
+            transform: translateX(-52px);
             z-index: 2;
         }
 
         .profile-container {
-            width: 96px;
-            height: 96px;
+            width: 104px;
+            height: 104px;
             overflow: hidden;
             border-radius: 50%;
-            border: 3px solid var(--white);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            border: 4px solid var(--white);
+            box-shadow: 0 8px 24px rgba(27, 43, 91, 0.18);
+            background: var(--white);
         }
 
         .profile-image {
@@ -100,49 +138,79 @@
         }
 
         .contact-info {
-            margin-top: 45px;
-            padding: 0 20px;
+            margin-top: 48px;
+            padding: 0 22px;
             text-align: center;
         }
 
         .name {
-            font-size: 2.25rem;
-            font-weight: 600;
-            margin: 15px 0 5px 0;
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin: 12px 0 4px;
             color: var(--secondary);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.1;
+            font-family: inherit;
+            line-height: 1.15;
             letter-spacing: -0.5px;
         }
 
-        .position, .company {
-            font-size: 1.75rem;
-            font-weight: 400;
+        .position {
+            font-size: 0.95rem;
+            font-weight: 500;
             margin: 2px 0;
-            color: #666;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+            color: var(--text-secondary);
+            font-family: inherit;
+            line-height: 1.35;
+        }
+
+        /* Company sits just under the role and carries a touch more weight —
+           it is the third thing the eye should reach. */
+        .company {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin: 4px 0 2px;
+            color: var(--text);
+            font-family: inherit;
             line-height: 1.3;
         }
 
+        /* Contact rows — left-aligned, separated by hairlines, each led by a
+           tinted icon circle (the app's 42px circle, scaled to 38px here). */
         .contact-section {
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            margin: 15px 0;
-            padding: 0px 40px;
+            gap: 13px;
+            margin: 0;
+            padding: 13px 4px;
+            text-align: left;
+            border-bottom: 1px solid var(--hairline);
+        }
+
+        .contact-section:last-child {
+            border-bottom: none;
         }
 
         .contact-icon {
-            color: var(--secondary);
-            margin-right: 15px;
-            font-size: 20px;
+            color: var(--primary);
+            margin-right: 0;
+            font-size: 19px;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 50%;
+            background: var(--primary-light);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .contact-text {
-            font-size: 18px;
-            font-weight: 500;
-            color: var(--secondary);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text);
+            font-family: inherit;
+            word-break: break-word;
+            line-height: 1.35;
         }
 
         .form-container {
@@ -303,39 +371,45 @@
             }
 
             .profile-container {
-                width: 118px;
-                height: 118px;
+                width: 104px;
+                height: 104px;
             }
 
             .profile-overlay {
-                transform: translateX(-59px);
-                bottom: -49px;
+                transform: translateX(-52px);
+                bottom: -58px;
             }
 
             .contact-info {
-                padding: 0 15px;
+                padding: 0 18px;
             }
 
+            /* Keep the row layout defined above — only the padding is tuned
+               for narrow screens. */
             .contact-section {
-                padding: 0px 20px;
-                margin: 12px 0;
+                padding: 12px 2px;
+                margin: 0;
             }
 
             .contact-icon {
                 font-size: 18px;
-                margin-right: 12px;
+                margin-right: 0;
             }
 
             .contact-text {
-                font-size: 16px;
+                font-size: 0.92rem;
             }
 
             .name {
-                font-size: 2rem;
+                font-size: 1.6rem;
             }
 
-            .position, .company {
-                font-size: 1.5rem;
+            .position {
+                font-size: 0.92rem;
+            }
+
+            .company {
+                font-size: 1rem;
             }
 
             .form-container {
@@ -739,14 +813,20 @@
         }
 
         .submit-btn {
-            background-color: var(--secondary);
+            background-color: var(--primary);
             color: var(--white);
-            padding: 14px 10px;
+            padding: 15px 18px;
             border: none;
-            border-radius: 80px;
+            border-radius: var(--r-pill);
             cursor: pointer;
-            font-size: 1.35rem;
-            font-weight: bold;
+            font-size: 1rem;
+            font-weight: 700;
+            font-family: inherit;
+            letter-spacing: 0.2px;
+            box-shadow: var(--shadow-primary);
+            transition: transform 0.18s ease, background 0.18s ease,
+                        box-shadow 0.18s ease;
+            -webkit-tap-highlight-color: transparent;
             width: calc(100% - 20px);
             margin: 10px 10px;
             display: flex;
@@ -757,7 +837,13 @@
             appearance: none;
             box-sizing: border-box;
         }        .submit-btn:hover {
-            opacity: 0.9;
+            background-color: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 22px rgba(255, 75, 110, 0.36);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0) scale(0.99);
         }
         
         .submit-btn:disabled {
@@ -784,8 +870,8 @@
             left: 0;
             right: 0;
             background: white;
-            border-radius: 20px 20px 0 0;
-            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.15);
+            border-radius: var(--r-shell) var(--r-shell) 0 0;
+            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
             z-index: 10;
             max-height: 85vh;
             padding-bottom: env(safe-area-inset-bottom);
@@ -798,12 +884,16 @@
         .app-btn {
             background-color: var(--white);
             color: var(--secondary);
-            padding: 14px 10px;
-            border: 2px solid var(--secondary);
-            border-radius: 80px;
+            padding: 14px 18px;
+            border: 1.5px solid var(--hairline);
+            border-radius: var(--r-pill);
             cursor: pointer;
-            font-size: 1.35rem;
-            font-weight: bold;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: inherit;
+            box-shadow: var(--shadow-card);
+            transition: transform 0.18s ease, border-color 0.18s ease;
+            -webkit-tap-highlight-color: transparent;
             width: calc(100% - 20px);
             margin: 10px 10px;
             display: flex;
@@ -1610,6 +1700,34 @@
                 font-size: 16px;
             }
         }
+
+        /* ==========================================================
+           Responsive — mobile-first; most visitors arrive straight
+           from a QR scan on a phone.
+           ========================================================== */
+        @media (max-width: 380px) {
+            .container {
+                width: calc(100% - 16px);
+                margin: 10px auto 22px;
+            }
+            .name { font-size: 1.5rem; }
+            .contact-text { font-size: 0.9rem; }
+            .logo-container { min-height: 12.5rem; padding: 12px 12px 24px; }
+            .profile-container { width: 92px; height: 92px; }
+            .profile-overlay { bottom: -52px; transform: translateX(-46px); }
+            .contact-info { margin-top: 42px; padding: 0 16px; }
+        }
+
+        /* Tablet / desktop — the card stays a card rather than stretching */
+        @media (min-width: 700px) {
+            .container {
+                margin: 40px auto 48px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; animation: none !important; }
+        }
     </style>
     <!-- Montserrat — same font family used throughout the app -->
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -2094,6 +2212,10 @@ END:VCARD`;
                 if (!savedToDb) {
                     // Re-enable button if save failed
                     resetSubmitButton(submitBtn, originalText);
+                    return;
+                }
+                if (savedToDb === 'duplicate') {
+                    // Already shown the overlay inside saveContactToDatabase(); nothing more to do.
                     return;
                 }
 
@@ -2826,6 +2948,13 @@ END:VCARD`;
                 const result = await response.json();
                 console.log('Response data:', result);
 
+                if (response.status === 409) {
+                    // Contact already exists — show the existing overlay in
+                    // "already connected" mode instead of the normal success flow.
+                    showAlreadyExistsOverlay();
+                    return 'duplicate';
+                }
+
                 if (!response.ok) {
                     throw new Error(`Failed to save contact: ${response.status}`);
                 }
@@ -2836,6 +2965,36 @@ END:VCARD`;
                 alert('Failed to save contact: ' + error.message);
                 return false;
             }
+        }
+
+        // Show the existing successOverlay with "already connected" messaging.
+        // Reuses all overlay styles, animations, and button handlers as-is.
+        function showAlreadyExistsOverlay() {
+            const overlay = document.getElementById('successOverlay');
+
+            // Swap the header content to reflect the duplicate state.
+            const title = overlay.querySelector('.success-title');
+            const subtitle = overlay.querySelector('.success-subtitle');
+            const noticeIcon = overlay.querySelector('.notice-icon');
+            const noticeText = overlay.querySelector('.completion-notice p');
+            const exchangeSummary = overlay.querySelector('.exchange-summary');
+
+            if (title) title.textContent = 'Already Connected';
+            if (subtitle) {
+                const ownerName = userData ? userData.name : 'this person';
+                subtitle.innerHTML = `You have already exchanged contact details with <span class="contact-name">${ownerName}</span>.`;
+            }
+            if (noticeIcon) noticeIcon.textContent = '🤝';
+            if (noticeText) noticeText.textContent = 'No need to scan again — your details are already with them.';
+            // Hide the exchange summary row (it references a new save that didn't happen).
+            if (exchangeSummary) exchangeSummary.style.display = 'none';
+
+            // Hide the modal overlay backdrop and show the overlay.
+            const modalOverlay = document.getElementById('modalOverlay');
+            if (modalOverlay) modalOverlay.classList.remove('active');
+
+            overlay.style.display = 'flex';
+            setupEnhancedSuccessButtons();
         }
 
         // ============= SCAN RATE LIMIT (5 scans / rolling hour for free users) =============

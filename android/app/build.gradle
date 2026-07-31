@@ -67,8 +67,8 @@ android {
         applicationId 'com.p.zzles.xscard'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 26
-        versionName "208"
+        versionCode 40
+        versionName "2.0.5"
         
         // Add build config to handle Windows path length issues
         buildConfigField "boolean", "REANIMATED_DISABLED", "false"
