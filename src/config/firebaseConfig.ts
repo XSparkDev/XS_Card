@@ -40,37 +40,31 @@ let app: FirebaseApp;
 let auth: Auth;
 
 try {
-  // Log the actual config being used (without sensitive data)
-  console.log('🔥 [Firebase Config] Initializing with:');
-  console.log('   Project ID:', firebaseConfig.projectId);
-  console.log('   Auth Domain:', firebaseConfig.authDomain);
-  console.log('   Storage Bucket:', firebaseConfig.storageBucket);
-  console.log('   API Key:', firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 20)}...` : 'MISSING');
-  console.log('   App ID:', firebaseConfig.appId);
-  
-  // Check if Firebase is already initialized and delete it to force reinit
-  try {
-    // @ts-ignore - getApp and deleteApp might not be in types
-    const { getApp, deleteApp } = require('firebase/app');
-    try {
-      const existingApp = getApp();
-      console.log('⚠️  [Firebase Config] Existing Firebase app detected, deleting to force reinit...');
-      deleteApp(existingApp).catch(() => {
-        // Ignore errors during deletion
-      });
-      console.log('✅ [Firebase Config] Old Firebase app deletion initiated');
-    } catch (e: any) {
-      // No existing app, that's fine
-      if (!e.message?.includes('No Firebase App')) {
-        console.log('ℹ️  [Firebase Config] No existing app to delete');
-      }
-    }
-  } catch (e) {
-    // getApp/deleteApp not available, try direct initialization
-    console.log('ℹ️  [Firebase Config] Initializing Firebase (no existing app check)');
+  if (__DEV__) {
+    console.log('🔥 [Firebase Config] Initializing with:');
+    console.log('   Project ID:', firebaseConfig.projectId);
+    console.log('   Auth Domain:', firebaseConfig.authDomain);
   }
-  
-  app = initializeApp(firebaseConfig);
+
+  // In dev, Fast Refresh can re-evaluate this module without a true process
+  // restart, so a Firebase app may already exist. Reuse it rather than
+  // deleting and recreating it: deleteApp() is async and was previously
+  // fired without being awaited, racing the very next initializeApp() call
+  // and risking a torn-down auth instance mid-session-restore. In production
+  // this module only ever runs once per cold start, so no existing app is
+  // ever found and this branch is never hit.
+  let existingApp: FirebaseApp | undefined;
+  if (__DEV__) {
+    try {
+      // @ts-ignore - getApp may throw if no app exists yet; that's expected.
+      const { getApp } = require('firebase/app');
+      existingApp = getApp();
+    } catch {
+      existingApp = undefined;
+    }
+  }
+
+  app = existingApp ?? initializeApp(firebaseConfig);
 
   // Use AsyncStorage-backed persistence so Firebase itself remembers the
   // signed-in user (and its refresh token) across app restarts. Without this,
@@ -87,12 +81,8 @@ try {
     auth = getAuth(app);
   }
 
-  console.log('✅ [Firebase Config] Firebase client initialized successfully');
-  console.log('   Project:', firebaseConfig.projectId);
-  console.log('   Auth instance created with AsyncStorage persistence');
-
-  if (firebaseConfig.projectId) {
-    console.log('   Firebase Project ID:', firebaseConfig.projectId);
+  if (__DEV__) {
+    console.log('✅ [Firebase Config] Firebase client initialized successfully');
   }
 } catch (error: any) {
   console.error('❌ [Firebase Config] Firebase initialization failed:', error);

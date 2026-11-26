@@ -23,6 +23,16 @@ import { shouldUseRevenueCat, getPlatformConfig } from '../../utils/paymentPlatf
 import revenueCatService, { SubscriptionPackage, SubscriptionStatus } from '../../services/revenueCatService';
 import { getRevenueCatApiKey } from '../../config/revenueCatConfig';
 import { PRICING, DEFAULT_CURRENCY, getUserCurrency, getPricing } from '../../config/pricing';
+// Regional display currency + psychological pricing. Display-only: billing
+// still comes from RevenueCat and is never computed here.
+import {
+  resolveDisplayCurrency,
+  saveCurrencyPreference,
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from '../../services/currencyService';
+import { buildPricingDisplay } from '../../utils/pricingDisplay';
+import { getCurrencySymbol } from '../../utils/psychologicalPricing';
 
 type UnlockPremiumStackParamList = {
   UnlockPremium: undefined;
@@ -37,7 +47,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   const [isProcessing, setIsProcessing] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [currency, setCurrency] = useState<'ZAR' | 'USD'>(DEFAULT_CURRENCY as 'ZAR' | 'USD');
+  const [currency, setCurrency] = useState<SupportedCurrency>(DEFAULT_CURRENCY as SupportedCurrency);
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
   const [loadingSubscriptionData, setLoadingSubscriptionData] = useState(false);
   const { logout, updateUserPlan } = useAuth(); // Use our centralized auth context
@@ -69,10 +79,15 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   };
 
   useEffect(() => {
-    // Auto-detect user's preferred currency
-    const detectedCurrency = getUserCurrency();
-    setCurrency(detectedCurrency as 'ZAR' | 'USD');
-    console.log(`Auto-detected currency: ${detectedCurrency}`);
+    // Resolve the display currency: a saved user choice wins, otherwise detect
+    // from device region. Once store packages load, a second pass upgrades this
+    // to the actual billing currency (see the effect below).
+    resolveDisplayCurrency(null)
+      .then(({ currency: resolved, source }) => {
+        setCurrency(resolved);
+        console.log(`Display currency: ${resolved} (source: ${source})`);
+      })
+      .catch(() => setCurrency(DEFAULT_CURRENCY as SupportedCurrency));
 
     const getUserData = async () => {
       try {
@@ -287,6 +302,13 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
   };
 
 
+  // Manual currency override. Persisted, so the user's choice survives relaunch
+  // and wins over region detection on subsequent visits.
+  const selectCurrency = (next: SupportedCurrency) => {
+    setCurrency(next);
+    saveCurrencyPreference(next);
+  };
+
   // Currency Toggle Component - USD first (bigger market)
   const CurrencyToggle = () => (
     <View style={styles.currencyToggleContainer}>
@@ -297,7 +319,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             styles.toggleOption,
             currency === 'USD' && styles.toggleOptionActive
           ]}
-          onPress={() => setCurrency('USD')}
+          onPress={() => selectCurrency('USD')}
         >
           <Text style={[
             styles.toggleText,
@@ -311,7 +333,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             styles.toggleOption,
             currency === 'ZAR' && styles.toggleOptionActive
           ]}
-          onPress={() => setCurrency('ZAR')}
+          onPress={() => selectCurrency('ZAR')}
         >
           <Text style={[
             styles.toggleText,
@@ -525,7 +547,8 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     );
   };
 
-  const symbol = currencySymbols[currency];
+  // Symbol lookup now covers every supported currency, not just ZAR/USD.
+  const symbol = getCurrencySymbol(currency);
 
   // Helper function to get trial text from package
   const getTrialText = (pkg: SubscriptionPackage | undefined): string => {
@@ -541,13 +564,37 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
     return `${intro.priceString} for ${intro.periodNumberOfUnits} ${intro.periodUnit.toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''}`;
   };
 
-  // Get packages for display
-  const annualPackage = revenueCatPackages.find(pkg => 
-    pkg.identifier.includes('annual') || pkg.packageType === 'ANNUAL'
+  // Get packages for display. Matching is case-insensitive so store identifiers
+  // like "Premium_Monthly" resolve the same way as "premium_monthly".
+  const annualPackage = revenueCatPackages.find(pkg =>
+    pkg.identifier.toLowerCase().includes('annual') || pkg.packageType === 'ANNUAL'
   );
-  const monthlyPackage = revenueCatPackages.find(pkg => 
-    pkg.identifier.includes('monthly') || pkg.packageType === 'MONTHLY'
+  const monthlyPackage = revenueCatPackages.find(pkg =>
+    pkg.identifier.toLowerCase().includes('monthly') || pkg.packageType === 'MONTHLY'
   );
+
+  // Single source of truth for every price string on this screen. Store prices
+  // win; conversion only fills gaps and is flagged via hasApproximatePricing.
+  const priceDisplay = buildPricingDisplay(
+    monthlyPackage?.product,
+    annualPackage?.product,
+    currency,
+  );
+
+  // Once store packages load, prefer the real billing currency over the
+  // device-derived guess — unless the user explicitly picked one themselves.
+  const storeCurrencyCode = annualPackage?.product.currencyCode
+    ?? monthlyPackage?.product.currencyCode
+    ?? null;
+
+  useEffect(() => {
+    if (!storeCurrencyCode) return;
+    resolveDisplayCurrency(storeCurrencyCode)
+      .then(({ currency: resolved, isManual }) => {
+        if (!isManual) setCurrency(resolved);
+      })
+      .catch(() => { /* keep the currency we already resolved */ });
+  }, [storeCurrencyCode]);
 
   // Determine if we're using RevenueCat pricing
   const useRevenueCat = shouldUseRevenueCat() && revenueCatPackages.length > 0;
@@ -604,10 +651,18 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
             <Text style={styles.subscriptionInfoTitle}>XS Card Premium Subscription</Text>
             <Text style={styles.subscriptionInfoText}>
               • {selectedPlan === 'annually' ? 'Annual' : 'Monthly'} subscription{'\n'}
-              • Price: {currencySymbols[currency]}{selectedPlan === 'annually' ? pricing[currency].annually.total : pricing[currency].monthly.total}{'\n'}
+              • Price: {(selectedPlan === 'annually' ? priceDisplay.annual : priceDisplay.monthly)?.priceText ?? '—'}{'\n'}
               • Auto-renewable subscription{'\n'}
               • Cancel anytime in your device settings
             </Text>
+            {priceDisplay.hasApproximatePricing && (
+              <Text style={styles.approximatePriceNotice}>
+                Prices shown are approximate conversions for reference. You will be
+                charged in your store account's currency, and the exact amount is
+                confirmed by {Platform.OS === 'ios' ? 'the App Store' : 'Google Play'} before
+                you complete the purchase.
+              </Text>
+            )}
             
             <View style={styles.legalLinksContainer}>
               <TouchableOpacity 
@@ -646,25 +701,19 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
                     ]}
                     onPress={() => setSelectedPlan('annually')}
                   >
-                    {monthlyPackage && (
+                    {priceDisplay.savings && (
                       <View style={styles.saveBadge}>
                         <Text style={styles.saveText}>
-                          Save {currency === 'ZAR' ? 'R' : '$'}{currency === 'ZAR' ? 
-                            '119.99' : 
-                            (monthlyPackage.product.price * 12 - annualPackage.product.price).toFixed(2)}
+                          Save {priceDisplay.savings.formatted}
                         </Text>
                       </View>
                     )}
                     <Text style={styles.planType}>Annually</Text>
                     <Text style={styles.price}>
-                      {currency === 'ZAR' ? 
-                        'R1,799.99' : 
-                        annualPackage.product.priceString}
+                      {priceDisplay.annual?.priceText}
                     </Text>
                     <Text style={styles.monthlyPrice}>
-                      {currency === 'ZAR' ? 
-                        'R149.99/month' : 
-                        `${(annualPackage.product.price / 12).toFixed(2)} ${annualPackage.product.currencyCode}/month`}
+                      {priceDisplay.annualMonthlyEquivalent}
                     </Text>
                     {annualPackage.product.introPrice && (
                       <Text style={styles.trialBadge}>{getTrialText(annualPackage)}</Text>
@@ -683,9 +732,7 @@ const UnlockPremium = ({ navigation }: NativeStackScreenProps<UnlockPremiumStack
                   >
                     <Text style={styles.planType}>Monthly</Text>
                     <Text style={styles.price}>
-                      {currency === 'ZAR' ? 
-                        'R159.99' : 
-                        monthlyPackage.product.priceString}
+                      {priceDisplay.monthly?.priceText}
                     </Text>
                     {monthlyPackage.product.introPrice && (
                       <Text style={styles.trialBadge}>{getTrialText(monthlyPackage)}</Text>
@@ -1214,6 +1261,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.gray,
     lineHeight: 20,
+    marginBottom: 12,
+  },
+  // Shown only when a displayed price came from currency conversion rather than
+  // a real store price, so the user knows the charge may differ.
+  approximatePriceNotice: {
+    fontSize: 12,
+    color: COLORS.gray,
+    lineHeight: 17,
+    fontStyle: 'italic',
     marginBottom: 12,
   },
   legalLinksContainer: {

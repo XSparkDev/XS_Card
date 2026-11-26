@@ -23,7 +23,6 @@ import {
   PanGestureHandlerGestureEvent,
   PanGestureHandlerStateChangeEvent,
   State,
-  GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import { COLORS } from '../../constants/colors';
 
@@ -125,7 +124,7 @@ const DraggablePreviewPanel = forwardRef<DraggablePreviewPanelRef, DraggablePrev
     };
 
     return (
-      <GestureHandlerRootView style={styles.root} pointerEvents="box-none">
+      <View style={styles.root} pointerEvents="box-none">
         <Animated.View
           style={[
             styles.panel,
@@ -141,7 +140,7 @@ const DraggablePreviewPanel = forwardRef<DraggablePreviewPanelRef, DraggablePrev
 
           <View style={styles.content}>{children}</View>
         </Animated.View>
-      </GestureHandlerRootView>
+      </View>
     );
   },
 );

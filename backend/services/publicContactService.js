@@ -50,6 +50,20 @@ const addPublicContact = async ({ userId, contactInfo, cardIndex }) => {
     currentContacts = doc.data().contactList || [];
   }
 
+  // Duplicate guard: reject if a contact with the same email already exists.
+  // Email is the canonical identifier — the scanner entered it themselves and
+  // it is always required, so it is the most reliable match key.
+  const submittedEmail = String(contactInfo.email || '').trim().toLowerCase();
+  const isDuplicate = currentContacts.some(
+    (c) => String(c.email || '').trim().toLowerCase() === submittedEmail
+  );
+  if (isDuplicate) {
+    const error = new Error('Contact already exists');
+    error.status = 409;
+    error.code = 'CONTACT_ALREADY_EXISTS';
+    throw error;
+  }
+
   if (userData.plan === 'free' && currentContacts.length >= FREE_PLAN_CONTACT_LIMIT) {
     const error = new Error('Contact limit reached');
     error.status = 403;

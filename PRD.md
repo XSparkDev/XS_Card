@@ -188,13 +188,13 @@
   - Android (API 24+) via EAS Build
 
 **Bundle Identifiers:**
-- iOS: com.xscard.app
-- Android: com.xscard.app
+- iOS: com.p.zzles.xscard
+- Android: com.p.zzles.xscard
 
 **Build System:**
 - iOS: EAS Build + Xcode
-- Android: EAS Build + Gradle
-- Current Version: 2.0.0 (Build 1)
+- Android: EAS Build + Gradle (Play upload signing via `android/keystore.properties` + `app/play-upload.keystore`, gitignored)
+- Current Version: 2.0.5 (iOS Build 1 / Android versionCode 27)
 
 ### Third-Party Integrations
 
@@ -1015,6 +1015,28 @@ The system delivers real-time notifications for sharing activities and system ev
 - Update confirmations: When card updates are successfully synced
 - Customizable preferences: Toggle notification types in settings
 - Deep linking: Tap notification to open relevant card or screen
+
+#### Automated Lead Follow-Up Email Journey
+After a QR card scan creates a new contact, the system runs an automated multi-day email nurture sequence for both the card owner and the scanner, reusing the existing transactional email infrastructure (`sendMailWithStatus` — SMTP → Resend → Gmail fallback chain).
+
+**Acceptance Criteria:**
+- Campaign creation: Saving a scanned contact automatically creates a `followUpCampaigns` record with six scheduled email slots (Day 1, Day 6, Day 9 × owner and scanner)
+- Stable identity: Each contact is assigned an immutable UUID (`contactId`) at creation; campaigns link by UUID, never by array index, phone, or email
+- Scheduling: A background job polls active campaigns every 30 minutes and sends due emails; no external cron dependency
+- Campaign statuses: active, contacted, not_interested, completed, cancelled
+- Cancellation on delete: Deleting a contact (single or bulk) cancels all pending emails for that contact's campaign
+- Mark as Contacted: Contacts screen shows a follow-up status badge per contact and a "Mark as Contacted" action that cancels remaining emails via `PATCH /Contacts/:id/contact/:index/followup`
+- Scanner without email: Scanner-side slots are marked skipped; owner-side slots still send
+- Branded templates: All six emails use XS Card branding (navy header, red CTA), table-based responsive HTML
+
+#### Free-Plan Scan Rate Limiting
+Free users are limited to 5 QR scans per rolling hour; the limit state is communicated persistently and the QR code is disabled while over the limit.
+
+**Acceptance Criteria:**
+- Scan counter: "X of 5 scans used this hour" indicator with color escalation (1–2 green, 3–4 orange, 5 red)
+- Limit reached: QR code is replaced with a non-scannable placeholder until the window resets
+- Persistent countdown banner: A red header banner shows the time remaining until scans reset; it must always render above all page content on every screen (zIndex/elevation above content shell)
+- Premium users: No scan limits; counter and banner never render
 
 #### User Profiles & Settings
 The system allows users to manage their profiles, notification preferences, and app settings.

@@ -48,25 +48,25 @@ export const ERROR_CODES = {
 // User-friendly error messages
 const ERROR_MESSAGES = {
   [ERROR_CODES.TOKEN_EXPIRED]: {
-    user: 'Your session has expired. Please log in again.',
+    user: 'Refreshing your secure sign-in…',
     technical: 'Authentication token has expired',
     severity: 'medium' as const,
     recoverable: true,
   },
   [ERROR_CODES.TOKEN_INVALID]: {
-    user: 'Your session is invalid. Please log in again.',
+    user: "We're securely reconnecting your account…",
     technical: 'Authentication token is invalid',
     severity: 'medium' as const,
     recoverable: true,
   },
   [ERROR_CODES.TOKEN_REFRESH_FAILED]: {
-    user: 'Unable to refresh your session. Please log in again.',
+    user: "We're securely reconnecting your account…",
     technical: 'Token refresh operation failed',
     severity: 'medium' as const,
     recoverable: true,
   },
   [ERROR_CODES.AUTHENTICATION_FAILED]: {
-    user: 'Authentication failed. Please log in again.',
+    user: 'Just a moment while we restore your secure session.',
     technical: 'User authentication failed',
     severity: 'medium' as const,
     recoverable: true,

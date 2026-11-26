@@ -1,20 +1,20 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { Platform } from 'react-native';
-import { 
-  getStoredAuthData, 
-  storeAuthData, 
-  clearAuthData, 
+import {
+  getStoredAuthData,
+  storeAuthData,
+  clearAuthData,
   getKeepLoggedInPreference,
   setKeepLoggedInPreference,
-  updateLastLoginTime,
   AuthData
 } from '../utils/authStorage';
-import { ErrorHandler, ERROR_CODES, handleAuthError, handleStorageError, createAppError } from '../utils/errorHandler';
+import { handleAuthError, handleStorageError, createAppError, ERROR_CODES } from '../utils/errorHandler';
 // Firebase integration
 import { auth } from '../config/firebaseConfig';
-import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser, sendEmailVerification } from 'firebase/auth';
+import { onIdTokenChanged, User as FirebaseUser, sendEmailVerification } from 'firebase/auth';
+// Single source of truth for token refresh, error classification, and sign-out.
+import { authLog, ensureFreshIdToken, endSession } from '../services/authSessionService';
 // API utilities for data recovery
-import { buildUrl, ENDPOINTS, setGlobalAuthContextRef, authenticatedFetchWithRefresh } from '../utils/api';
+import { ENDPOINTS, setGlobalAuthContextRef, authenticatedFetchWithRefresh } from '../utils/api';
 import { planIsPremium } from '../utils/userPlan';
 import { AppState } from 'react-native';
 
@@ -159,15 +159,20 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
       };
     
     case 'RESTORE_AUTH':
+      // Populate the UI with cached data immediately (avoids flash on fast
+      // warm starts and lets offline users see their profile), but never set
+      // isAuthenticated here — Firebase is the only authority for that.
+      // isLoading stays true until onIdTokenChanged settles and dispatches
+      // SET_USER or CLEAR_USER, which is when the splash is allowed to exit.
       return {
         ...state,
         user: action.payload.userData,
         userToken: action.payload.userToken,
-        isAuthenticated: !!(action.payload.userToken && action.payload.userData),
-        isEmailVerified: false, // Will be updated by Firebase auth state listener
+        isAuthenticated: false,
+        isEmailVerified: false,
         keepLoggedIn: action.payload.keepLoggedIn,
         lastLoginTime: action.payload.lastLoginTime,
-        isLoading: false,
+        isLoading: true,
         error: null,
       };
     
@@ -188,6 +193,88 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
       return state;
   }
 };
+
+// ── Profile recovery ────────────────────────────────────────────────────────
+// Called when Firebase has a valid session but AsyncStorage has no cached
+// profile (first install on new device, storage cleared externally, etc.).
+// Uses authenticatedFetchWithRefresh so the token is always fresh and retried
+// on failure. Hard 8-second timeout ensures the splash never hangs forever.
+// On any failure: dispatches CLEAR_USER so the splash exits to SignIn cleanly;
+// the Firebase session stays intact and the next launch retries automatically.
+async function recoverUserProfile(
+  firebaseUser: FirebaseUser,
+  token: string,
+  dispatch: React.Dispatch<AuthAction>,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await authenticatedFetchWithRefresh(ENDPOINTS.GET_USER, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const userData = data.user
+        ? {
+            ...data.user,
+            id: data.user.uid || data.user.id || firebaseUser.uid,
+            uid: data.user.uid || data.user.id || firebaseUser.uid,
+            name: data.user.name || data.user.displayName || '',
+            email: data.user.email || firebaseUser.email || '',
+          }
+        : {
+            id: firebaseUser.uid,
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || data.name || '',
+            email: firebaseUser.email || data.email || '',
+            plan: data.plan || 'free',
+          };
+
+      const keepLoggedIn = await getKeepLoggedInPreference();
+
+      await storeAuthData({
+        userToken: `Bearer ${token}`,
+        userData,
+        userRole: userData.plan === 'admin' ? 'admin' : 'user',
+        keepLoggedIn,
+        lastLoginTime: Date.now(),
+      });
+
+      dispatch({
+        type: 'SET_USER',
+        payload: {
+          user: userData,
+          token: `Bearer ${token}`,
+          keepLoggedIn,
+          lastLoginTime: Date.now(),
+          isEmailVerified: true,
+        },
+      });
+    } else if (response.status === 401 || response.status === 403 || response.status === 404) {
+      // Backend explicitly rejected this user — genuine, unrecoverable failure.
+      authLog('session_invalidated', { reason: `profile_recovery_${response.status}` });
+      await endSession(`profile_recovery_${response.status}`);
+      dispatch({ type: 'CLEAR_USER' });
+      dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
+    } else {
+      // 5xx or unexpected — transient. Clear user so splash exits to SignIn;
+      // the Firebase session is intact and the next launch will retry.
+      authLog('profile_recovery_failed', { status: response.status });
+      dispatch({ type: 'CLEAR_USER' });
+    }
+  } catch (error) {
+    const reason = (error as Error).name === 'AbortError' ? 'timeout_8s' : String(error);
+    authLog('profile_recovery_failed', { reason });
+    // Network failure or timeout: Firebase session is still valid.
+    // CLEAR_USER exits the splash to SignIn rather than leaving it stuck.
+    dispatch({ type: 'CLEAR_USER' });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -251,8 +338,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     resolvePlan(true);
 
     // Near-real-time refresh on app foreground (no loading flicker).
+    // Guard against firing during logout: if Firebase already signed out,
+    // auth.currentUser is null and any API call here would fail or be wasteful.
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') resolvePlan(false);
+      if (next === 'active' && auth.currentUser) resolvePlan(false);
     });
 
     return () => {
@@ -261,53 +350,51 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [userId]);
 
-  // Firebase Auth State Listener - NEW INTEGRATION
+  // Firebase session listener — the ONE place that reacts to Firebase's view
+  // of the session. Uses onIdTokenChanged rather than onAuthStateChanged so
+  // this also fires whenever Firebase silently refreshes the ID token in the
+  // background, keeping AsyncStorage's cached copy in sync without polling.
+  //
+  // INVARIANT: SET_FIREBASE_READY is dispatched as the very LAST action in
+  // every code path. The splash screen waits for firebaseReady before it is
+  // allowed to navigate, so this guarantees the app never enters MainApp
+  // before user state (SET_USER or CLEAR_USER) has fully settled.
   useEffect(() => {
-    console.log('AuthProvider: Setting up Firebase auth state listener');
-    
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      // Mark Firebase as ready once the listener fires (regardless of user state)
-      dispatch({ type: 'SET_FIREBASE_READY', payload: true });
-      console.log('AuthProvider: Firebase auth state ready, user:', !!firebaseUser);
+    authLog('app_launch');
+
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       try {
-        console.log('Firebase auth state changed:', !!firebaseUser);
-        
         if (firebaseUser) {
-          console.log('Firebase user authenticated:', firebaseUser.uid);
-          
-          // 🔥 CRITICAL: Check email verification FIRST
+          // Unverified accounts: block the local session without wiping
+          // Firebase's own session (so resendVerificationEmail still works).
           if (!firebaseUser.emailVerified) {
-            console.log('AuthProvider: Email not verified, blocking authentication');
-            
-            // Clear any existing auth data
-            await clearAuthData();
             dispatch({ type: 'CLEAR_USER' });
+            dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
             dispatch({ type: 'SET_EMAIL_VERIFIED', payload: false });
-            
-            // Set error for unverified email
             dispatch({ type: 'SET_ERROR', payload: 'Email not verified. Please check your inbox and verify your email address.' });
-            return; // Block authentication
+            return; // finally block dispatches SET_FIREBASE_READY
           }
-          
-          console.log('AuthProvider: Email verified, proceeding with authentication');
-          
-          // Get fresh token from Firebase
-          const token = await firebaseUser.getIdToken();
-          console.log('Firebase token refreshed automatically');
-          
-          // Check if we have stored auth data
+
+          const { token, errorClass } = await ensureFreshIdToken();
+
+          if (!token) {
+            if (errorClass === 'fatal') {
+              // Firebase confirmed this session cannot be revived (disabled
+              // account, revoked refresh token). Only legitimate auto-logout.
+              authLog('session_invalidated', { reason: 'fatal_token_error' });
+              await endSession('fatal_token_error');
+              dispatch({ type: 'CLEAR_USER' });
+              dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
+            }
+            // Recoverable (network) errors: change nothing — ensureFreshIdToken
+            // already retried with backoff; the next foreground/API call retries.
+            return; // finally block dispatches SET_FIREBASE_READY
+          }
+
           const storedAuthData = await getStoredAuthData();
-          
-          if (storedAuthData && storedAuthData.userData) {
-            // ✅ HAPPY PATH: Both Firebase user AND stored data exist
-            // Update token in storage with fresh Firebase token
-            await storeAuthData({
-              ...storedAuthData,
-              userToken: `Bearer ${token}`,
-              lastLoginTime: Date.now()
-            });
-            
-            // Update context state
+
+          if (storedAuthData?.userData) {
+            // Happy path: Firebase session and cached profile both present.
             dispatch({
               type: 'SET_USER',
               payload: {
@@ -315,201 +402,69 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 token: `Bearer ${token}`,
                 keepLoggedIn: storedAuthData.keepLoggedIn,
                 lastLoginTime: Date.now(),
-                isEmailVerified: true // Email is verified since we passed the check above
-              }
+                isEmailVerified: true,
+              },
             });
-            
-            console.log('AuthProvider: Firebase token updated in context and storage');
           } else {
-            // 🔥 FIX: Firebase user exists but no stored data - DATA INCONSISTENCY
-            console.warn('AuthProvider: Firebase user authenticated but no stored user data - attempting to recover');
-            
-            try {
-              // Try to re-fetch user data from backend using Firebase token
-              const response = await fetch(buildUrl(ENDPOINTS.GET_USER), {
-                method: 'GET',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                },
-              });
-
-              if (response.ok) {
-                const data = await response.json();
-                console.log('AuthProvider: Successfully recovered user data from backend');
-                
-                // 🔥 FIX: Improved user data structure handling
-                let userData;
-                
-                if (data.user) {
-                  // Backend returned user object in data.user
-                  userData = {
-                    ...data.user,
-                    id: data.user.uid || data.user.id || firebaseUser.uid,
-                    uid: data.user.uid || data.user.id || firebaseUser.uid,
-                    name: data.user.name || data.user.displayName || '',
-                    email: data.user.email || firebaseUser.email || ''
-                  };
-                } else {
-                  // Backend returned user data directly or use Firebase user as fallback
-                  userData = {
-                    id: firebaseUser.uid,
-                    uid: firebaseUser.uid,
-                    name: firebaseUser.displayName || data.name || '',
-                    email: firebaseUser.email || data.email || '',
-                    plan: data.plan || 'free'
-                  };
-                }
-
-                // Get keepLoggedIn preference (should still exist)
-                const keepLoggedIn = await getKeepLoggedInPreference();
-                
-                // Store the recovered data
-                await storeAuthData({
-                  userToken: `Bearer ${token}`,
-                  userData: userData,
-                  userRole: userData.plan === 'admin' ? 'admin' : 'user',
-                  keepLoggedIn,
-                  lastLoginTime: Date.now(),
-                });
-
-                // Update context state with recovered data
-                dispatch({
-                  type: 'SET_USER',
-                  payload: {
-                    user: userData,
-                    token: `Bearer ${token}`,
-                    keepLoggedIn,
-                    lastLoginTime: Date.now(),
-                    isEmailVerified: true // Email is verified since we passed the check above
-                  }
-                });
-                
-                console.log('AuthProvider: Data recovery successful - user re-authenticated');
-              } else {
-                console.error('AuthProvider: Backend user recovery failed with status:', response.status);
-                throw new Error(`Backend responded with ${response.status}`);
-              }
-            } catch (recoveryError) {
-              console.error('AuthProvider: Failed to recover user data from backend:', recoveryError);
-              console.log('AuthProvider: Forcing logout due to data inconsistency');
-              
-              // If we can't recover data, force logout to maintain consistency
-              try {
-                await firebaseSignOut(auth);
-              } catch (signOutError) {
-                console.error('AuthProvider: Error signing out of Firebase:', signOutError);
-              }
-              
-              await clearAuthData();
-              dispatch({ type: 'CLEAR_USER' });
-              dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
-            }
+            // Firebase has a valid session but no cached profile (e.g. storage
+            // cleared externally, new device after migration). Recover from
+            // backend with timeout and authenticated request; CLEAR_USER on any
+            // failure so the splash exits to SignIn rather than hanging.
+            await recoverUserProfile(firebaseUser, token, dispatch);
           }
         } else {
-          console.log('Firebase user signed out');
-          
-          // Check if this was an intentional logout
+          // Firebase reports no live session.
           const keepLoggedIn = await getKeepLoggedInPreference();
           if (!keepLoggedIn) {
-            console.log('AuthProvider: Firebase signout detected with keepLoggedIn=false');
-            // Clear local auth data if user doesn't want to stay logged in
+            // keepLoggedIn = false: intentional — wipe local state too.
             await clearAuthData();
-            dispatch({ type: 'CLEAR_USER' });
-          } else {
-            // 🔥 CRITICAL FIX: Firebase user signed out but keepLoggedIn is true
-            // This means we have stored data but Firebase lost the user
-            console.log('AuthProvider: Firebase signout detected with keepLoggedIn=true - attempting to restore');
-            
-            // Check if we have stored auth data
-            const storedAuthData = await getStoredAuthData();
-            if (storedAuthData && storedAuthData.userToken) {
-              console.log('AuthProvider: Found stored auth data, attempting to restore Firebase user');
-              
-              try {
-                // Try to restore Firebase user using stored token
-                // Note: We can't directly sign in with token, but we can validate it
-                const token = storedAuthData.userToken.replace('Bearer ', '');
-                
-                // For now, we'll keep the stored data and let the token validation handle it
-                // The SplashScreen will validate the token and handle the result
-                console.log('AuthProvider: Keeping stored auth data for token validation');
-                
-                // Don't clear the user - let the validation process handle it
-                // This allows the SplashScreen to attempt token validation
-              } catch (restoreError) {
-                console.error('AuthProvider: Failed to restore Firebase user:', restoreError);
-                // If we can't restore, clear the data to maintain consistency
-                await clearAuthData();
-                dispatch({ type: 'CLEAR_USER' });
-                dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
-              }
-            } else {
-              console.log('AuthProvider: No stored auth data found, clearing state');
-              await clearAuthData();
-              dispatch({ type: 'CLEAR_USER' });
-              dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
-            }
           }
+          // keepLoggedIn = true: genuine "no session" signal from Firebase
+          // (not a timing race — Firebase persistence resolves before this
+          // first callback). Reflect in-memory without wiping the preference.
+          dispatch({ type: 'CLEAR_USER' });
         }
       } catch (error) {
-        console.error('AuthProvider: Error in Firebase auth state listener:', error);
-        // Don't throw error here - let the app continue functioning
+        authLog('refresh_failed', { step: 'listener', error: String(error) });
+        // On any unexpected error mark ready so the splash doesn't hang.
+        // The user lands on SignIn and can retry.
+        dispatch({ type: 'CLEAR_USER' });
+      } finally {
+        // SET_FIREBASE_READY fires unconditionally here for every path that
+        // didn't already return early (the early-return paths each dispatch
+        // it explicitly just before their return statement above).
+        dispatch({ type: 'SET_FIREBASE_READY', payload: true });
       }
     });
 
-    return () => {
-      console.log('AuthProvider: Cleaning up Firebase auth state listener');
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
-  // Restore authentication state on app start - ENHANCED
+  // Optimistic cache hydration on app start. This lets the UI show cached
+  // user data immediately (useful offline, and for a smooth splash), but it
+  // is deliberately NOT the source of truth for isAuthenticated: the
+  // onIdTokenChanged listener above is what SplashScreen actually waits on
+  // (via firebaseReady) before navigating, so this cannot cause a premature
+  // redirect - it can only make the wait feel instant when Firebase confirms
+  // what this cache already showed.
   useEffect(() => {
     const restoreAuthState = async () => {
       try {
         dispatch({ type: 'SET_LOADING', payload: true });
-        
-        console.log('AuthProvider: Restoring auth state from storage - Platform:', Platform.OS);
-        
-        // First, always load the keepLoggedIn preference
+
         const keepLoggedIn = await getKeepLoggedInPreference();
-        console.log('AuthProvider: Loaded keepLoggedIn preference:', keepLoggedIn);
         dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: keepLoggedIn });
-        
-        // Then check for stored auth data
+
         const authData = await getStoredAuthData();
-        
-        if (Platform.OS === 'ios') {
-          console.log('iOS AuthProvider: Auth data check result:', authData ? 'exists' : 'null');
-          if (authData) {
-            console.log('iOS AuthProvider: Token exists:', authData.userToken ? 'yes' : 'no');
-            console.log('iOS AuthProvider: KeepLoggedIn from storage:', authData.keepLoggedIn);
-          }
-        }
-        
+
         if (authData) {
-          console.log('AuthProvider: Found stored auth data');
-          console.log('AuthProvider: Stored keepLoggedIn:', authData.keepLoggedIn);
-          console.log('AuthProvider: Loaded keepLoggedIn preference:', keepLoggedIn);
-          
-          // Use the preference from storage (authData.keepLoggedIn) as it's more reliable
           const finalKeepLoggedIn = authData.keepLoggedIn !== undefined ? authData.keepLoggedIn : keepLoggedIn;
-          console.log('AuthProvider: Final keepLoggedIn value:', finalKeepLoggedIn);
-          
           dispatch({ type: 'RESTORE_AUTH', payload: { ...authData, keepLoggedIn: finalKeepLoggedIn } });
-          
-          // Firebase auth state listener will handle token refresh automatically
         } else {
-          console.log('AuthProvider: No stored auth data found');
           dispatch({ type: 'SET_LOADING', payload: false });
         }
       } catch (error) {
-        console.error('AuthProvider: Error restoring auth state:', error);
-        
-        // Handle storage errors gracefully
         await handleStorageError(error);
-        
         dispatch({ type: 'SET_ERROR', payload: 'Failed to restore authentication state' });
       }
     };
@@ -517,110 +472,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     restoreAuthState();
   }, []);
 
-  // Login function - ENHANCED for Firebase
-  const login = async (email: string, password: string, keepLoggedIn: boolean): Promise<void> => {
-    try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'CLEAR_ERROR' });
-
-      console.log('AuthProvider: Starting Firebase-enhanced login process');
-      
-      // Note: The actual Firebase authentication will be handled in SignInScreen
-      // This function will be called after successful Firebase authentication
-      // to update the context state with user data from backend
-      
-      // For now, this maintains backward compatibility
-      const error = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, new Error('Login implementation updated to use Firebase client SDK in SignInScreen'));
-      await handleAuthError(error);
-      throw error;
-      
-    } catch (error) {
-      // Handle authentication errors with proper error handling
-      if (error && typeof error === 'object' && 'code' in error) {
-        // Already an AppError, just update UI state
-        dispatch({ type: 'SET_ERROR', payload: (error as any).userMessage });
-      } else {
-        // Convert to AppError and handle
-        const appError = createAppError(ERROR_CODES.AUTHENTICATION_FAILED, error as Error);
-        await handleAuthError(appError);
-        dispatch({ type: 'SET_ERROR', payload: appError.userMessage });
-      }
-      throw error;
+  // Login is handled directly in SignInScreen via Firebase's signInWithEmailAndPassword.
+  // The onIdTokenChanged listener above reacts automatically and sets context state.
+  // This stub satisfies the AuthContextType interface for any legacy call sites.
+  const login = async (_email: string, _password: string, _keepLoggedIn: boolean): Promise<void> => {
+    if (__DEV__) {
+      console.warn('[Auth] context.login() is a no-op. Use Firebase signInWithEmailAndPassword in SignInScreen directly.');
     }
   };
 
   // Logout function - ENHANCED for Firebase
+  // Explicit, user-initiated sign-out - the one path here that's always
+  // supposed to end the session, so it goes straight to endSession().
   const logout = async (): Promise<void> => {
     try {
       dispatch({ type: 'SET_LOADING', payload: true });
-      
-      console.log('AuthProvider: Starting Firebase-enhanced logout process');
-      
-      // Sign out from Firebase first
-      try {
-        await firebaseSignOut(auth);
-        console.log('AuthProvider: Firebase signout successful');
-      } catch (firebaseError) {
-        console.error('AuthProvider: Firebase signout error:', firebaseError);
-        // Continue with local logout even if Firebase signout fails
-      }
-      
-      // Clear auth data from storage
-      await clearAuthData();
-      
-      // Update state
+      await endSession('user_initiated_logout');
       dispatch({ type: 'CLEAR_USER' });
-      
-      // Get the keepLoggedIn preference (which was cleared) and restore it to false
       dispatch({ type: 'SET_KEEP_LOGGED_IN', payload: false });
-      
-      console.log('AuthProvider: Logout complete');
-      
     } catch (error) {
-      console.error('Error during logout:', error);
-      
-      // Handle storage errors during logout
       await handleStorageError(error);
-      
       dispatch({ type: 'SET_ERROR', payload: 'Failed to logout' });
       throw error;
     }
   };
 
-  // Refresh token function - ENHANCED with Firebase
+  // Exposed for callers that want to force a refresh explicitly; routine
+  // refresh happens automatically via the onIdTokenChanged listener above.
   const refreshToken = async (): Promise<void> => {
-    try {
-      console.log('AuthProvider: Firebase-enhanced token refresh');
-      
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        // Force token refresh from Firebase
-        const newToken = await currentUser.getIdToken(true);
-        console.log('AuthProvider: Firebase token force-refreshed');
-        
-        // Update stored token
-        const authData = await getStoredAuthData();
-        if (authData) {
-          await storeAuthData({
-            ...authData,
-            userToken: `Bearer ${newToken}`,
-            lastLoginTime: Date.now()
-          });
-          console.log('AuthProvider: Refreshed token stored');
-        }
-      } else {
-        console.log('AuthProvider: No Firebase user for token refresh');
-        throw new Error('No authenticated user for token refresh');
+    const { token, errorClass } = await ensureFreshIdToken({ forceRefresh: true });
+    if (!token) {
+      const appError = createAppError(ERROR_CODES.TOKEN_REFRESH_FAILED, new Error(`Token refresh failed (${errorClass ?? 'unknown'})`));
+      if (errorClass === 'fatal') {
+        await handleAuthError(appError);
+        dispatch({ type: 'SET_ERROR', payload: appError.userMessage });
       }
-    } catch (error) {
-      console.error('Error refreshing token:', error);
-      
-      // Handle token refresh errors
-      const appError = createAppError(ERROR_CODES.TOKEN_REFRESH_FAILED, error as Error);
-      await handleAuthError(appError);
-      
-      dispatch({ type: 'SET_ERROR', payload: appError.userMessage });
-      throw error;
+      throw appError;
     }
   };
 
@@ -632,15 +519,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error('No authenticated user');
       }
       
-      // Use Firebase's built-in resend verification
       await sendEmailVerification(currentUser);
-      console.log('AuthProvider: Verification email sent');
-      
-      // Clear any existing errors
       dispatch({ type: 'CLEAR_ERROR' });
       
     } catch (error) {
-      console.error('Error sending verification email:', error);
       dispatch({ type: 'SET_ERROR', payload: 'Failed to send verification email. Please try again.' });
       throw error;
     }
@@ -706,7 +588,7 @@ export const useAuth = (): AuthContextType => {
 export const setAuthUser = async (user: User, token: string, keepLoggedIn: boolean): Promise<void> => {
   const now = Date.now();
   
-  // Store in AsyncStorage
+  // lastLoginTime is written as part of storeAuthData — no separate call needed.
   await storeAuthData({
     userToken: token,
     userData: user,
@@ -714,9 +596,6 @@ export const setAuthUser = async (user: User, token: string, keepLoggedIn: boole
     keepLoggedIn,
     lastLoginTime: now,
   });
-  
-  // Update last login time
-  await updateLastLoginTime();
 };
 
 export default AuthContext;
